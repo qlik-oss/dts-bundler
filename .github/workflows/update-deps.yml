@@ -26,6 +26,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Update pnpm
+        run: pnpm self-update
       - name: Install Dependencies
         run: pnpm install
       - name: Update Dependencies

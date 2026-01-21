@@ -5,7 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 import pkg from "./package.json" with { type: "json" };
 
-const version = pkg.version;
+const version = pkg.version || "development";
 
 // Parse command-line arguments
 function parseArgs() {

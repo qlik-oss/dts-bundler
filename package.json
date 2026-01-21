@@ -1,6 +1,5 @@
 {
   "name": "@qlik/dts-bundler",
-  "version": "0.0.1",
   "description": "Bundle TypeScript declaration files into a single file",
   "keywords": [],
   "license": "ISC",
@@ -36,5 +35,9 @@
     "eslint": "^9.39.2",
     "prettier": "^3.8.0",
     "vitest": "^4.0.17"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "engines": {
+    "node": ">=20"
   }
 }
