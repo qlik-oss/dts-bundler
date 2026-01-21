@@ -8,6 +8,9 @@ export default qlik.compose(
   {
     rules: {
       "@typescript-eslint/method-signature-style": "off",
+      "max-classes-per-file": "off",
+      "no-continue": "off",
+      "class-methods-use-this": "off",
     },
   },
 );

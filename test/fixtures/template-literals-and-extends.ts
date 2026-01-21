@@ -1,0 +1,17 @@
+type DataAttributes = Record<`data-${string}`, string>;
+
+interface MenuItemBase extends DataAttributes {
+  label?: string;
+  description?: string;
+  valueLabel?: string;
+  disabled?: boolean;
+}
+
+interface MenuItemRow extends MenuItemBase {
+  component: "item";
+  onClick?: () => void;
+}
+
+export type MenuRowTypes = {
+  Item: MenuItemRow;
+};
