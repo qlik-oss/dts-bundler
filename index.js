@@ -196,8 +196,8 @@ function extractTypeReferences(node, references = new Set(), aliasMap = new Map(
   }
 
   // Recursively visit all child nodes using a more thorough visitor
-  function visit(node) {
-    extractTypeReferences(node, references, aliasMap);
+  function visit(nextNode) {
+    extractTypeReferences(nextNode, references, aliasMap);
   }
 
   node.forEachChild(visit);
