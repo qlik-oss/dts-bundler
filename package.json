@@ -1,0 +1,40 @@
+{
+  "name": "@qlik/dts-bundler",
+  "version": "0.0.1",
+  "description": "Bundle TypeScript declaration files into a single file",
+  "keywords": [],
+  "license": "ISC",
+  "author": "nilzona",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "bin": {
+    "bundle-types": "./index.js"
+  },
+  "scripts": {
+    "format:check": "prettier --check '**' --ignore-unknown",
+    "format:write": "prettier --write '**' --ignore-unknown",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:update": "vitest run -u",
+    "test:watch": "vitest"
+  },
+  "prettier": "@qlik/prettier-config",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@qlik/eslint-config": "^1.4.15",
+    "@qlik/prettier-config": "^0.4.32",
+    "@qlik/tsconfig": "^0.3.1",
+    "eslint": "^9.39.2",
+    "prettier": "^3.8.0",
+    "vitest": "^4.0.17"
+  }
+}
