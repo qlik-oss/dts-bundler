@@ -8,8 +8,15 @@ import { OtherLib } from "other-lib";
 type LocalHelper = {
   help(): void;
 };
+/**
+ * A Local helper type for internal use.
+ */
+type OtherLocalHelper = {
+  helpMe(): void;
+};
 export interface Combined {
   local: LocalHelper;
+  otherLocal: OtherLocalHelper;
   lib: LibType;
   other: OtherLib;
 }
