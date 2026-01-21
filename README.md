@@ -152,7 +152,7 @@ async function build() {
   const bundled = bundleDts({
     entry: "./src/public-api.ts",
   });
-  
+
   fs.writeFileSync("./dist/index.d.ts", bundled);
 
   console.log("✓ Types bundled!");
