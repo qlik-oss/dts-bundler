@@ -89,4 +89,30 @@ describe("TypeScript Declaration Bundler", () => {
     expect(output).toContain("interface Config");
     expect(output).not.toContain("./typeAliases");
   });
+
+  it("should tree shake and remove unused types", async () => {
+    const output = bundleDts({
+      entry: path.join(testDir, "input6.ts"),
+    });
+
+    await expect(output).toMatchFileSnapshot("__snapshots__/bundle7.d.ts");
+    expect(output).toContain("interface UsedType");
+    expect(output).not.toContain("interface UnusedType");
+    expect(output).not.toContain("interface AnotherUnusedType");
+  });
+
+  it("should handle import aliases", async () => {
+    const output = bundleDts({
+      entry: path.join(testDir, "input7.ts"),
+    });
+
+    await expect(output).toMatchFileSnapshot("__snapshots__/bundle8.d.ts");
+    expect(output).toContain("type Status");
+    expect(output).toContain("type Result");
+    expect(output).toContain("export type UserStatus = Status");
+    expect(output).toContain("export type ApiResponse<T> = Result<T>");
+    expect(output).toContain("export interface Config");
+    expect(output).not.toContain("MyStatus");
+    expect(output).not.toContain("MyResult");
+  });
 });
