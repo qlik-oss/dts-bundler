@@ -167,6 +167,10 @@ describe("TypeScript Declaration Bundler", () => {
     it.skip("should handle .cts extension (CommonJS modules)", () => {
       runTestCase("cts-extension");
     });
+
+    it("allow arbitrary extensions (.json)", () => {
+      runTestCase("allow-arbitrary-extensions");
+    });
   });
 
   describe("Declaration Patterns", () => {
@@ -222,6 +226,14 @@ describe("TypeScript Declaration Bundler", () => {
 
     it.skip("should respect preserve const enum when enabled", () => {
       runTestCase("respect-preserve-const-enum", { respectPreserveConstEnum: true });
+    });
+
+    it("should handle extending other modules", () => {
+      runTestCase("extend-other-module");
+    });
+
+    it("should handle globalThis references", () => {
+      runTestCase("globalThis");
     });
   });
 
