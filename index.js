@@ -20,6 +20,7 @@ class TypeDeclaration {
     this.node = node;
     this.sourceFileNode = sourceFileNode; // The TypeScript SourceFile node
     this.isExported = isExported;
+    this.wasOriginallyExported = isExported; // Track original export status
     this.dependencies = new Set(); // Set of TypeDeclaration IDs
     this.externalDependencies = new Map(); // Map<moduleName, Set<importName>>
     this.text = null; // Cached text representation
@@ -316,9 +317,8 @@ class DeclarationParser {
     const name = this.getDeclarationName(statement);
     if (!name) return;
 
-    // A declaration is exported if:
-    // 1. It has export keyword in the entry file, OR
-    // 2. It's in a non-entry file (all types from imported files are available)
+    // A declaration is exported only if it has export keyword in the ENTRY file
+    // Imported types are inlined but not re-exported
     const hasExport = this.hasExportModifier(statement);
     const isExported = isEntry ? hasExport : false;
 
@@ -660,9 +660,24 @@ class OutputGenerator {
     // Type declarations
     lines.push(...this.generateDeclarations());
 
-    // Ensure module export
-    const hasExports = lines.some((line) => line.trim().startsWith("export "));
-    if (!hasExports) {
+    // Add export {} only if there are no interface/type/class exports
+    const hasTypeExports = lines.some((line) => {
+      const trimmed = line.trim();
+      return (
+        trimmed.startsWith("export interface") ||
+        trimmed.startsWith("export type") ||
+        trimmed.startsWith("export class") ||
+        trimmed.startsWith("export enum") ||
+        trimmed.startsWith("export namespace") ||
+        trimmed.startsWith("export declare interface") ||
+        trimmed.startsWith("export declare type") ||
+        trimmed.startsWith("export declare class") ||
+        trimmed.startsWith("export declare enum") ||
+        trimmed.startsWith("export declare namespace")
+      );
+    });
+
+    if (!hasTypeExports) {
       lines.push("export {};");
     }
 
