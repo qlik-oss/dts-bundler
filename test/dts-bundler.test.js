@@ -167,10 +167,6 @@ describe("TypeScript Declaration Bundler", () => {
     it.skip("should handle .cts extension (CommonJS modules)", () => {
       runTestCase("cts-extension");
     });
-
-    it.skip("should handle JavaScript files when allowJs is enabled", () => {
-      runTestCase("allow-js");
-    });
   });
 
   describe("Declaration Patterns", () => {

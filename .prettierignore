@@ -1,2 +1,5 @@
 **/__snapshots__
 pnpm-lock.yaml
+
+# special case
+test/fixtures/import-type-from-deps/module-with-import-type.d.ts

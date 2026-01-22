@@ -2,9 +2,45 @@
 
 ## Overview
 
-This plan addresses 31 failing test cases that reveal missing features in the dts-bundler implementation. The features are organized into 4 phases based on dependencies and complexity.
+This plan addresses 31 failing test cases that reveal missing features in the dts-bundler implementation. The features are organized into 5 phases based on dependencies and complexity.
 
-**Total Estimated Effort**: 53-72 hours
+**Total Estimated Effort**: 57-78 hours
+
+---
+
+## Phase 0: Test Infrastructure (4-6 hours)
+
+**Goal**: Enable per-fixture TypeScript compiler options via tsconfig.json files
+
+**Critical blocker**: Many test features cannot be properly tested without TypeScript compiler options support. Tests like `allow-js`, `mts-extension`, and `cts-extension` require specific compiler settings to function.
+
+### 0.1 Extend bundleDts API (1-2h)
+
+- Add `compilerOptions?: ts.CompilerOptions` parameter to `BundleDtsOptions` interface
+- Pass compiler options through bundler phases
+- Document new API capability
+
+### 0.2 Update runTestCase() Helper (1h)
+
+- Check for `tsconfig.json` in fixture directory
+- Parse using `ts.parseConfigFileTextToJson()` and `ts.parseJsonConfigFileContent()`
+- Merge parsed `compilerOptions` into bundleDts call
+- Maintain backwards compatibility for fixtures without tsconfig.json
+
+### 0.3 Refactor FileCollector to Use ts.createProgram() (2-3h)
+
+- Replace direct `ts.createSourceFile()` calls with `ts.createProgram()`
+- Configure program with provided compiler options
+- Enable proper handling of module resolution and other TS options
+- Ensure source file retrieval works correctly from program
+
+### 0.4 Create tsconfig.json Files for Affected Fixtures (30min)
+
+- `mts-extension/tsconfig.json`: `{ "compilerOptions": { "module": "Node16" } }`
+- `cts-extension/tsconfig.json`: `{ "compilerOptions": { "module": "Node16" } }`
+- `respect-preserve-const-enum/tsconfig.json`: `{ "compilerOptions": { "preserveConstEnums": true } }`
+
+**Phase 0 Completion**: Test infrastructure ready → Unblocks Phase 1
 
 ---
 
@@ -200,15 +236,7 @@ This plan addresses 31 failing test cases that reveal missing features in the dt
 - Break circular dependencies
 - Preserve type semantics
 
-### 4.4 JavaScript File Support (1-2h)
-
-**Tests**: `allow-js`
-
-- Handle `.js` input files with `allowJs`
-- Parse JSDoc type annotations
-- Generate `.d.ts` from JS sources
-
-### 4.5 Type-Checking Options (1-2h)
+### 4.4 Type-Checking Options (1-2h)
 
 **Tests**: Various edge cases
 
@@ -224,21 +252,22 @@ This plan addresses 31 failing test cases that reveal missing features in the dt
 
 ### Development Workflow
 
-1. **For each feature**:
+1. **Start with Phase 0** - Critical infrastructure work
+2. **For each feature**:
    - Read failing test fixture (input + expected output)
    - Trace through bundler phases to locate insertion point
    - Implement handling in appropriate phase class
    - Run test with `npm test -- -t "test-name"`
    - Debug and iterate
 
-2. **Integration points**:
+3. **Integration points**:
    - **TypeRegistry**: Type resolution and tracking
    - **FileCollector**: Module discovery and loading
    - **DeclarationParser**: AST parsing and transformation
    - **TreeShaker**: Dependency analysis
    - **OutputGenerator**: Final code generation
 
-3. **Testing approach**:
+4. **Testing approach**:
    - Fix tests incrementally
    - Run full suite after each phase
    - Use `UPDATE_EXPECTED=1` only when confident
@@ -246,6 +275,7 @@ This plan addresses 31 failing test cases that reveal missing features in the dt
 
 ### Risk Mitigation
 
+- **Phase 0 foundation**: Must be solid before proceeding; test thoroughly
 - **Namespace complexity**: Most complex feature, allocate extra time
 - **AST manipulation**: TypeScript compiler API has edge cases, expect debugging
 - **Dependency tracking**: Changes may affect tree-shaking, test thoroughly
@@ -264,12 +294,13 @@ This plan addresses 31 failing test cases that reveal missing features in the dt
 
 **If time-constrained, prioritize**:
 
-1. **Phase 1** (all) - Core functionality
-2. **Phase 2.1-2.2** - Default exports + namespaces (most requested)
-3. **Phase 3.1** - Declare global (common use case)
-4. **Phase 2.3-2.6** - Export patterns
-5. **Phase 3.2-3.5** - Declarations + config
-6. **Phase 4** - Nice-to-have
+1. **Phase 0** (all) - MUST complete, blocks everything else
+2. **Phase 1** (all) - Core functionality
+3. **Phase 2.1-2.2** - Default exports + namespaces (most requested)
+4. **Phase 3.1** - Declare global (common use case)
+5. **Phase 2.3-2.6** - Export patterns
+6. **Phase 3.2-3.5** - Declarations + config
+7. **Phase 4** - Nice-to-have
 
 **Can defer**:
 
@@ -283,9 +314,11 @@ This plan addresses 31 failing test cases that reveal missing features in the dt
 
 1. **Review this plan**: Validate priorities and estimates
 2. **Set up tracking**: Create issues or checklist for each feature
-3. **Begin Phase 1**: Start with `mts-extension` (simplest)
-4. **Iterate**: Fix one test at a time, commit incrementally
-5. **Refactor**: After Phase 2, consider refactoring if code becomes complex
-6. **Document**: Update README with new options and capabilities
+3. **Begin Phase 0**: Critical infrastructure work - cannot skip
+4. **Validate Phase 0**: Ensure tsconfig.json loading works before proceeding
+5. **Begin Phase 1**: Start with `mts-extension` (simplest)
+6. **Iterate**: Fix one test at a time, commit incrementally
+7. **Refactor**: After Phase 2, consider refactoring if code becomes complex
+8. **Document**: Update README with new options and capabilities
 
-**Estimated Timeline**: 2-3 weeks at 4-6 hours/day, or 1 week full-time
+**Estimated Timeline**: 2-3 weeks at 4-6 hours/day, or 1-1.5 weeks full-time
