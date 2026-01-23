@@ -116,13 +116,11 @@ export class FileCollector {
       // Extract triple-slash reference directives with preserve="true" or preserve='true'
       const referencedTypes = new Set<string>();
       const typeRefs = (
-        sourceFile as ts.SourceFile & { typeReferenceDirectives?: Array<{ fileName: string; preserve?: boolean }> }
+        sourceFile as ts.SourceFile & { typeReferenceDirectives: Array<{ fileName: string; preserve?: boolean }> }
       ).typeReferenceDirectives;
-      if (typeRefs) {
-        for (const ref of typeRefs) {
-          if (ref.preserve === true) {
-            referencedTypes.add(ref.fileName);
-          }
+      for (const ref of typeRefs) {
+        if (ref.preserve === true) {
+          referencedTypes.add(ref.fileName);
         }
       }
 
@@ -137,6 +135,19 @@ export class FileCollector {
               const resolved = FileCollector.resolveImport(filePath, importPath);
               if (resolved) {
                 toProcess.push({ file: resolved, isEntry: false });
+              }
+            }
+          }
+        } else if (ts.isImportEqualsDeclaration(statement)) {
+          if (ts.isExternalModuleReference(statement.moduleReference)) {
+            const expr = statement.moduleReference.expression;
+            if (ts.isStringLiteral(expr)) {
+              const importPath = expr.text;
+              if (this.shouldInline(importPath)) {
+                const resolved = FileCollector.resolveImport(filePath, importPath);
+                if (resolved) {
+                  toProcess.push({ file: resolved, isEntry: false });
+                }
               }
             }
           }

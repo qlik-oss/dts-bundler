@@ -75,7 +75,9 @@ export class DependencyAnalyzer {
           if (!declaration.externalDependencies.has(moduleName)) {
             declaration.externalDependencies.set(moduleName, new Set());
           }
-          declaration.externalDependencies.get(moduleName)?.add(refName);
+          // Use the original import name from the registry (which might include "= " prefix)
+          const importName = importInfo.originalName;
+          declaration.externalDependencies.get(moduleName)?.add(importName);
         } else if (importInfo.sourceFile) {
           const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
           const depId = this.registry.nameIndex.get(key);
@@ -108,6 +110,9 @@ export class DependencyAnalyzer {
         for (const type of clause.types) {
           if (ts.isIdentifier(type.expression)) {
             references.add(type.expression.text);
+          } else if (ts.isPropertyAccessExpression(type.expression)) {
+            // Handle qualified names like MyModule.SomeCoolInterface
+            DependencyAnalyzer.extractPropertyAccess(type.expression, references);
           }
         }
       }
@@ -125,6 +130,20 @@ export class DependencyAnalyzer {
         references.add(current.right.text);
       }
       current = current.left;
+    }
+    if (ts.isIdentifier(current)) {
+      references.add(current.text);
+    }
+  }
+
+  private static extractPropertyAccess(propAccess: ts.PropertyAccessExpression, references: Set<string>): void {
+    // Extract all parts of a property access chain like MyModule.SomeCoolInterface
+    let current: ts.Expression = propAccess;
+    while (ts.isPropertyAccessExpression(current)) {
+      if (ts.isIdentifier(current.name)) {
+        references.add(current.name.text);
+      }
+      current = current.expression;
     }
     if (ts.isIdentifier(current)) {
       references.add(current.text);

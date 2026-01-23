@@ -91,16 +91,29 @@ export class OutputGenerator {
       const imports = Array.from(this.usedExternals.get(moduleName) ?? []);
       if (imports.length === 0) continue;
 
-      const isTypeOnly = imports.every((imp) => imp.isTypeOnly);
+      // Separate CommonJS import = require() from ES6 imports
+      const cjsImports = imports.filter((imp) => imp.normalizedName.startsWith("= "));
+      const esImports = imports.filter((imp) => !imp.normalizedName.startsWith("= "));
+
+      // Emit CommonJS import = require() statements
+      for (const cjsImport of cjsImports) {
+        const importName = cjsImport.normalizedName.substring(2); // Remove "= " prefix
+        lines.push(`import ${importName} = require("${moduleName}");`);
+      }
+
+      // Emit ES6 imports if any
+      if (esImports.length === 0) continue;
+
+      const isTypeOnly = esImports.every((imp) => imp.isTypeOnly);
       const typePrefix = isTypeOnly ? "type " : "";
 
-      const hasNamespace = imports.some((imp) => imp.normalizedName.startsWith("* as "));
+      const hasNamespace = esImports.some((imp) => imp.normalizedName.startsWith("* as "));
 
       if (hasNamespace) {
-        const importList = imports.map((imp) => imp.normalizedName).sort();
+        const importList = esImports.map((imp) => imp.normalizedName).sort();
         lines.push(`import ${typePrefix}${importList.join(", ")} from "${moduleName}";`);
       } else {
-        const importList = imports
+        const importList = esImports
           .map((imp) => imp.normalizedName)
           .filter((name) => !name.startsWith("default as "))
           .sort();
@@ -133,6 +146,15 @@ export class OutputGenerator {
         text = OutputGenerator.stripExportModifier(text);
       }
 
+      // Add declare keyword only to non-exported class/enum declarations
+      // Interfaces and types don't need declare keyword in .d.ts files
+      if (!declaration.isExported && !text.trim().startsWith("declare ")) {
+        text = OutputGenerator.addDeclareKeyword(text);
+      }
+
+      // Strip implementation details for declaration files
+      text = OutputGenerator.stripImplementationDetails(text);
+
       text = this.replaceRenamedReferences(text, declaration);
 
       lines.push(text);
@@ -144,6 +166,33 @@ export class OutputGenerator {
   private static stripExportModifier(text: string): string {
     return text.replace(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))export\s+/, "$1");
   }
+
+  private static addDeclareKeyword(text: string): string {
+    // Only add declare to class and enum (not interface, type, namespace, module)
+    const match = text.match(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(class|enum)(?:\s|$)/);
+    if (match) {
+      const prefix = match[1]; // comments
+      const declarationKeyword = match[2]; // class or enum
+      const rest = text.substring(match[0].length - 1); // everything after the keyword
+      return `${prefix}declare ${declarationKeyword}${rest}`;
+    }
+    return text;
+  }
+
+  /* eslint-disable no-param-reassign */
+  private static stripImplementationDetails(text: string): string {
+    // Strip public/private/protected modifiers from class members
+    text = text.replace(/^(\s*)(public|private|protected)\s+/gm, "$1");
+
+    // Strip property initializers (e.g., field: string = ""; becomes field: string;)
+    // This should match property declarations (not methods) with initializers
+    // Property pattern: identifier : type = value;
+    // Avoid matching methods which have () in their signature
+    text = text.replace(/^(\s*)([a-zA-Z_$][\w$]*)\s*:\s*([^;=()]+?)\s*=\s*[^;]+;/gm, "$1$2: $3;");
+
+    return text;
+  }
+  /* eslint-enable no-param-reassign */
 
   private topologicalSort(): TypeDeclaration[] {
     const sorted: TypeDeclaration[] = [];

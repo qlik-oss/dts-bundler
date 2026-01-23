@@ -20,11 +20,13 @@ export class DeclarationParser {
       this.parseFile(filePath, sourceFile, isEntry);
     }
 
-    // Second pass: handle re-exports after all files are parsed
+    // Second pass: handle re-exports and resolve export = statements
     for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
       if (isEntry) {
         this.parseReExports(filePath, sourceFile);
       }
+      // Resolve export = for all files
+      this.resolveExportEquals(filePath, sourceFile);
     }
   }
 
@@ -35,12 +37,16 @@ export class DeclarationParser {
     for (const statement of sourceFile.statements) {
       if (ts.isImportDeclaration(statement)) {
         this.parseImport(statement, filePath, fileImports);
+      } else if (ts.isImportEqualsDeclaration(statement)) {
+        this.parseImportEquals(statement, filePath, fileImports);
       }
     }
 
     for (const statement of sourceFile.statements) {
       if (DeclarationParser.isDeclaration(statement)) {
         this.parseDeclaration(statement, filePath, sourceFile, isEntry);
+      } else if (ts.isExportAssignment(statement) && statement.isExportEquals) {
+        this.parseExportEquals(statement, filePath);
       }
     }
   }
@@ -56,6 +62,7 @@ export class DeclarationParser {
 
     if (this.fileCollector.shouldInline(importPath)) {
       const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      if (!resolvedPath) return;
 
       const importClause = statement.importClause;
       if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
@@ -111,6 +118,45 @@ export class DeclarationParser {
     }
   }
 
+  private parseImportEquals(
+    statement: ts.ImportEqualsDeclaration,
+    filePath: string,
+    fileImports: Map<string, ImportInfo>,
+  ): void {
+    if (!ts.isExternalModuleReference(statement.moduleReference)) {
+      return;
+    }
+
+    const expr = statement.moduleReference.expression;
+    if (!ts.isStringLiteral(expr)) {
+      return;
+    }
+
+    const importPath = expr.text;
+    const localName = statement.name.text;
+
+    if (this.fileCollector.shouldInline(importPath)) {
+      const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      if (!resolvedPath) return;
+      // For import = require(), the local name maps to the entire module
+      // We'll resolve the actual declaration later when we know what's exported
+      fileImports.set(localName, {
+        originalName: localName, // Use the local name as original for now
+        sourceFile: resolvedPath,
+        isExternal: false,
+        aliasName: null,
+      });
+    } else {
+      // Register as external import with special marker for import = require()
+      this.registry.registerExternal(importPath, `= ${localName}`, false);
+      fileImports.set(localName, {
+        originalName: `= ${localName}`,
+        sourceFile: importPath,
+        isExternal: true,
+      });
+    }
+  }
+
   private static isDeclaration(statement: ts.Statement): boolean {
     return (
       ts.isInterfaceDeclaration(statement) ||
@@ -156,6 +202,25 @@ export class DeclarationParser {
     return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
   }
 
+  private parseExportEquals(statement: ts.ExportAssignment, filePath: string): void {
+    // Handle: export = ClassName
+    if (!ts.isIdentifier(statement.expression)) {
+      return;
+    }
+
+    const exportedName = statement.expression.text;
+    const key = `${filePath}:${exportedName}`;
+    const declarationId = this.registry.nameIndex.get(key);
+
+    if (declarationId) {
+      const declaration = this.registry.getDeclaration(declarationId);
+      if (declaration) {
+        // Mark as exported since it's being exported via export =
+        declaration.wasOriginallyExported = true;
+      }
+    }
+  }
+
   private parseReExports(filePath: string, sourceFile: ts.SourceFile): void {
     // Handle export { X } from "./module" statements
     for (const statement of sourceFile.statements) {
@@ -182,6 +247,32 @@ export class DeclarationParser {
           if (declaration) {
             declaration.isExported = true;
           }
+        }
+      }
+    }
+  }
+
+  private resolveExportEquals(filePath: string, sourceFile: ts.SourceFile): void {
+    // Find export = statements in this file
+    let exportedName: string | null = null;
+
+    for (const statement of sourceFile.statements) {
+      if (ts.isExportAssignment(statement) && statement.isExportEquals) {
+        if (ts.isIdentifier(statement.expression)) {
+          exportedName = statement.expression.text;
+          break;
+        }
+      }
+    }
+
+    if (!exportedName) return;
+
+    // Update all import = require() statements that reference this file
+    for (const fileImports of this.importMap.values()) {
+      for (const importInfo of fileImports.values()) {
+        if (!importInfo.isExternal && importInfo.sourceFile === filePath) {
+          // Update the original name to point to the exported declaration
+          importInfo.originalName = exportedName;
         }
       }
     }

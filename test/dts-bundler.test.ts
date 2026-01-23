@@ -34,7 +34,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle CommonJS import = syntax", () => {
+    it("should handle CommonJS import = syntax", () => {
       const { expected, result } = runTestCase("import-eq");
       expect(result).toBe(expected);
     });
