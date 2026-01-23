@@ -21,12 +21,12 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle type-only imports from dependencies", () => {
+    it("should handle type-only imports from dependencies", () => {
       const { expected, result } = runTestCase("import-type-from-deps");
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle imports from @types packages causing reference types", () => {
+    it("should handle imports from @types packages causing reference types", () => {
       const { expected, result } = runTestCase("import-from-types-cause-reference-types");
       expect(result).toBe(expected);
     });

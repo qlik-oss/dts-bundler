@@ -2,20 +2,14 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { bundleDts } from "../src/index";
+import type { BundleDtsOptions } from "../src/types";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testDir = path.join(__dirname, "fixtures");
 
-export type RuntTestCaseOptions = {
-  exportReferencedTypes?: boolean;
-  noBanner?: boolean;
-  inlineDeclareGlobals?: boolean;
-  inlinedLibraries?: string[];
-  umdModuleName?: string;
-  sortNodes?: boolean;
-  respectPreserveConstEnum?: boolean;
-};
+// make this type partial from BundleDtsOptions without entry
+export type RunTestCaseOptions = Omit<Partial<BundleDtsOptions>, "entry">;
 
 export type ExptectedResult = {
   expected: string;
@@ -27,7 +21,7 @@ export type ExptectedResult = {
  * @param {string} testName - Name of the test case (folder in fixtures/)
  * @param {object} options - Options to pass to bundleDts
  */
-export function runTestCase(testName: string, options: RuntTestCaseOptions = {}): ExptectedResult {
+export function runTestCase(testName: string, options: RunTestCaseOptions = {}): ExptectedResult {
   const fixtureDir = path.join(testDir, testName);
 
   // Determine entry file (check multiple extensions)

@@ -2,5 +2,5 @@
 
 import { InterfaceWithFields } from "fake-package";
 
-export declare type FakePackageType = InterfaceWithFields | string;
+declare type FakePackageType = InterfaceWithFields | string;
 export type TestType = InterfaceWithFields | FakePackageType;
