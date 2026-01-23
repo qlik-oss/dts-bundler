@@ -13,5 +13,3 @@ export interface InterfaceWithFields {
   field3: InterfaceFromTypesPackage;
 }
 export type Type = number | string;
-
-export {};

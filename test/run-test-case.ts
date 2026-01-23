@@ -1,0 +1,68 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { bundleDts } from "../src/index";
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const testDir = path.join(__dirname, "fixtures");
+
+export type RuntTestCaseOptions = {
+  exportReferencedTypes?: boolean;
+  noBanner?: boolean;
+  inlineDeclareGlobals?: boolean;
+  inlinedLibraries?: string[];
+  umdModuleName?: string;
+  sortNodes?: boolean;
+  respectPreserveConstEnum?: boolean;
+};
+
+export type ExptectedResult = {
+  expected: string;
+  result: string;
+};
+
+/**
+ * Helper function to run a test case
+ * @param {string} testName - Name of the test case (folder in fixtures/)
+ * @param {object} options - Options to pass to bundleDts
+ */
+export function runTestCase(testName: string, options: RuntTestCaseOptions = {}): ExptectedResult {
+  const fixtureDir = path.join(testDir, testName);
+
+  // Determine entry file (check multiple extensions)
+  const possibleEntries = [
+    "input.ts",
+    "input.mts",
+    "input.cts",
+    "input.d.ts",
+    "index.ts",
+    "index.mts",
+    "index.cts",
+    "index.d.ts",
+  ];
+  let entryFile = null;
+
+  for (const filename of possibleEntries) {
+    const candidate = path.join(fixtureDir, filename);
+    if (fs.existsSync(candidate)) {
+      entryFile = candidate;
+      break;
+    }
+  }
+
+  if (!entryFile) {
+    throw new Error(`No entry file found in ${fixtureDir}`);
+  }
+
+  const expectedFile = path.join(fixtureDir, "expected.d.ts");
+  const result = bundleDts({ entry: entryFile, ...options });
+
+  // Auto-update expected files if UPDATE_EXPECTED env var is set
+  if (process.env.UPDATE_EXPECTED) {
+    fs.writeFileSync(expectedFile, result);
+  }
+
+  const expected = fs.readFileSync(expectedFile, "utf8");
+  return { expected, result };
+}

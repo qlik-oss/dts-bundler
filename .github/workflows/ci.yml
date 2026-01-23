@@ -25,6 +25,8 @@ jobs:
         run: pnpm install
       - name: Run tests
         run: pnpm test
+      - name: Check types
+        run: pnpm check-types
       - name: Run linter
         run: pnpm lint
       - name: Check code formatting

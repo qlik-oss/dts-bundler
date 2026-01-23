@@ -22,5 +22,3 @@ export interface ExportedInterface {
   field7: defaultImportedNamespace2.Options;
   field8: typeof starImportNameModule;
 }
-
-export {};

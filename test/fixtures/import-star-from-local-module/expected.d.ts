@@ -6,5 +6,3 @@ export declare const Lib: typeof lib;
 declare namespace lib {
   export { func };
 }
-
-export {};

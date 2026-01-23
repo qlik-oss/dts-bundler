@@ -16,5 +16,3 @@ export declare module ExportedType {
   interface Type1 extends _Type1 {}
   interface Type2 extends _Type2 {}
 }
-
-export {};

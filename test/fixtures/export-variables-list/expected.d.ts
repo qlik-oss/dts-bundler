@@ -5,5 +5,3 @@ declare const defaultExportedString = "str",
 export declare const exportedString = "str";
 
 export { defaultExportedString as default };
-
-export {};

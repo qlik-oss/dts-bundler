@@ -14,5 +14,3 @@ export declare namespace ExportedModule {
 }
 export type A = InternalModule.MType;
 export type B = InternalNamespace.NSType;
-
-export {};

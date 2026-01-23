@@ -1,4 +1,4 @@
-import type { Result, Status } from "./internal/typeAliases";
+import type { Result, Status } from "../../internal/typeAliases";
 
 export type UserStatus = Status;
 

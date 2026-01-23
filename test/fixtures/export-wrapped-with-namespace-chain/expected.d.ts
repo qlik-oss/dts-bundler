@@ -20,5 +20,3 @@ declare namespace AnotherNsButRenamed {
 }
 
 export { AnotherNsButRenamed, TopNamespaceName };
-
-export {};

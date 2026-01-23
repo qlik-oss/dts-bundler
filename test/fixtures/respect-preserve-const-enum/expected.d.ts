@@ -11,5 +11,3 @@ export declare enum DirectlyExportedConstEnum {
   SecondItem = 1,
 }
 export declare const foo = NonDirectlyExportedConstEnum.FooBar;
-
-export {};

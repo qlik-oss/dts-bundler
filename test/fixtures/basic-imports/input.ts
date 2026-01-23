@@ -1,4 +1,4 @@
-import type { Helper } from "./internal/helper";
+import type { Helper } from "../../internal/helper";
 
 export interface User {
   id: number;

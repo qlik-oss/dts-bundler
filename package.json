@@ -7,16 +7,18 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "import": "./index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "bundle-types": "./index.js"
+    "bundle-types": "./dist/index.js"
   },
   "scripts": {
+    "build": "tsdown src/index.ts --outDir dist --format esm --dts",
+    "check-types": "tsc --noEmit",
     "format:check": "prettier --check '**' --ignore-unknown",
     "format:write": "prettier --write '**' --ignore-unknown",
     "lint": "eslint .",
@@ -32,8 +34,10 @@
     "@qlik/eslint-config": "^1.4.15",
     "@qlik/prettier-config": "^0.4.32",
     "@qlik/tsconfig": "^0.3.1",
+    "@types/node": "^22.13.1",
     "eslint": "^9.39.2",
     "prettier": "^3.8.0",
+    "tsdown": "^0.20.1",
     "vitest": "^4.0.17"
   },
   "packageManager": "pnpm@10.28.1",

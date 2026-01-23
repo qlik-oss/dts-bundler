@@ -7,5 +7,3 @@ export type MyType<T> = {
 declare class NewClass implements MyInterface {}
 
 export { NewClass as default };
-
-export {};

@@ -1,5 +1,5 @@
-import type { Result as MyResult, Status as MyStatus } from "./internal/typeAliases";
-import type { Result, Status } from "./internal/typeAliases2";
+import type { Result as MyResult, Status as MyStatus } from "./type-aliases1";
+import type { Result, Status } from "./type-aliases2";
 
 export type UserStatus = MyStatus;
 

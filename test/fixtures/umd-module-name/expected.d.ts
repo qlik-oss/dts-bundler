@@ -5,5 +5,3 @@ export interface InterfaceName {
 }
 
 export as namespace MyUmdModule;
-
-export {};

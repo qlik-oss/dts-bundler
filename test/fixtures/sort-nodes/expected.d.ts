@@ -11,5 +11,3 @@ export type BType = number;
  * Some description
  */
 export type ZTypeName = string | null;
-
-export {};

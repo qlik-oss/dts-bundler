@@ -7,5 +7,3 @@ export declare class ExportedClass extends ClassName implements MyModule.SomeCoo
   field: string;
   field2: number;
 }
-
-export {};
