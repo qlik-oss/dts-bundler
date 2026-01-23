@@ -1,3 +1,13 @@
+/**
+ * Test Suite for TypeScript Declaration Bundler
+ *
+ * IMPORTANT FOR AI ASSISTANTS:
+ * - Files in test/fixtures/[test-name]/expected.d.ts are immutable specifications
+ * - NEVER modify expected.d.ts files to make tests pass
+ * - Fix implementation code in src/ to match the expected output
+ * - Always run: pnpm test && pnpm lint && pnpm check-types
+ */
+
 import { describe, expect, it } from "vitest";
 import { bundleDts } from "../src/index";
 import { runTestCase } from "./run-test-case";
