@@ -19,6 +19,13 @@ export class DeclarationParser {
     for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
       this.parseFile(filePath, sourceFile, isEntry);
     }
+
+    // Second pass: handle re-exports after all files are parsed
+    for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
+      if (isEntry) {
+        this.parseReExports(filePath, sourceFile);
+      }
+    }
   }
 
   private parseFile(filePath: string, sourceFile: ts.SourceFile, isEntry: boolean): void {
@@ -147,5 +154,36 @@ export class DeclarationParser {
   private static hasExportModifier(statement: ts.Statement): boolean {
     const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
     return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+  }
+
+  private parseReExports(filePath: string, sourceFile: ts.SourceFile): void {
+    // Handle export { X } from "./module" statements
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement)) continue;
+      if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+
+      const importPath = statement.moduleSpecifier.text;
+      if (!this.fileCollector.shouldInline(importPath)) continue;
+
+      const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      if (!resolvedPath) continue;
+
+      // Mark the re-exported declarations as exported
+      for (const element of statement.exportClause.elements) {
+        const exportedName = element.name.text;
+        const originalName = element.propertyName?.text || exportedName;
+
+        // Find the declaration in the resolved file
+        const key = `${resolvedPath}:${originalName}`;
+        const declarationId = this.registry.nameIndex.get(key);
+        if (declarationId) {
+          const declaration = this.registry.getDeclaration(declarationId);
+          if (declaration) {
+            declaration.isExported = true;
+          }
+        }
+      }
+    }
   }
 }

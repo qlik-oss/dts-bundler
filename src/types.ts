@@ -13,6 +13,18 @@ export interface BundleDtsOptions {
   inlinedLibraries?: string[];
 
   /**
+   * Array of @types library names that should be referenced via triple-slash directives
+   * @default undefined
+   */
+  allowedTypesLibraries?: string[];
+
+  /**
+   * Array of library names that should remain as regular imports
+   * @default undefined
+   */
+  importedLibraries?: string[];
+
+  /**
    * Whether to inline declare global blocks
    */
   inlineDeclareGlobals?: boolean;

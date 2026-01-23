@@ -11,6 +11,7 @@ export interface CollectedFile {
   sourceFile: ts.SourceFile;
   isEntry: boolean;
   hasEmptyExport: boolean;
+  referencedTypes: Set<string>;
 }
 
 export class FileCollector {
@@ -112,7 +113,20 @@ export class FileCollector {
         return statement.exportClause.elements.length === 0;
       });
 
-      files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport });
+      // Extract triple-slash reference directives with preserve="true" or preserve='true'
+      const referencedTypes = new Set<string>();
+      const typeRefs = (
+        sourceFile as ts.SourceFile & { typeReferenceDirectives?: Array<{ fileName: string; preserve?: boolean }> }
+      ).typeReferenceDirectives;
+      if (typeRefs) {
+        for (const ref of typeRefs) {
+          if (ref.preserve === true) {
+            referencedTypes.add(ref.fileName);
+          }
+        }
+      }
+
+      files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
 
       for (const statement of sourceFile.statements) {
         if (ts.isImportDeclaration(statement)) {

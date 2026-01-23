@@ -27,7 +27,10 @@ describe("TypeScript Declaration Bundler", () => {
     });
 
     it("should handle imports from @types packages causing reference types", () => {
-      const { expected, result } = runTestCase("import-from-types-cause-reference-types");
+      const { expected, result } = runTestCase("import-from-types-cause-reference-types", {
+        allowedTypesLibraries: ["node", "fake-types-lib-2"],
+        importedLibraries: ["events", "fake-types-lib-2.5"],
+      });
       expect(result).toBe(expected);
     });
 

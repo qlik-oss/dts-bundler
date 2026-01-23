@@ -20,6 +20,9 @@ function bundle(
     umdModuleName?: string;
     exportReferencedTypes?: boolean;
     includeEmptyExport?: boolean;
+    allowedTypesLibraries?: string[];
+    importedLibraries?: string[];
+    referencedTypes?: Set<string>;
   } = {},
 ): string {
   const entryFile = path.resolve(entry);
@@ -31,6 +34,14 @@ function bundle(
   const collector = new FileCollector({ inlinedLibraries });
   const files = collector.collectFiles(entryFile);
   const includeEmptyExport = files.get(entryFile)?.hasEmptyExport ?? false;
+
+  // Collect all referenced types from all files
+  const allReferencedTypes = new Set<string>();
+  for (const file of files.values()) {
+    for (const refType of file.referencedTypes) {
+      allReferencedTypes.add(refType);
+    }
+  }
 
   const registry = new TypeRegistry();
   const parser = new DeclarationParser(registry, collector);
@@ -50,6 +61,7 @@ function bundle(
   const generator = new OutputGenerator(registry, usedDeclarations, usedExternals, {
     ...options,
     includeEmptyExport,
+    referencedTypes: allReferencedTypes,
   });
   return generator.generate();
 }
@@ -60,7 +72,16 @@ function bundle(
  * @returns The bundled TypeScript declaration content
  */
 export function bundleDts(options: BundleDtsOptions): string {
-  const { entry, inlinedLibraries = [], noBanner, sortNodes, umdModuleName, exportReferencedTypes } = options;
+  const {
+    entry,
+    inlinedLibraries = [],
+    allowedTypesLibraries,
+    importedLibraries,
+    noBanner,
+    sortNodes,
+    umdModuleName,
+    exportReferencedTypes,
+  } = options;
 
   if (!entry) {
     throw new Error("The 'entry' option is required");
@@ -71,6 +92,8 @@ export function bundleDts(options: BundleDtsOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
+    allowedTypesLibraries,
+    importedLibraries,
   });
 }
 
