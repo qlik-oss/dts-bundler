@@ -110,19 +110,29 @@ export class OutputGenerator {
       const typePrefix = isTypeOnly ? "type " : "";
 
       const hasNamespace = esImports.some((imp) => imp.normalizedName.startsWith("* as "));
+      const defaultImports = esImports.filter((imp) => imp.normalizedName.startsWith("default as "));
+      const namedImports = esImports.filter(
+        (imp) => !imp.normalizedName.startsWith("* as ") && !imp.normalizedName.startsWith("default as "),
+      );
 
       if (hasNamespace) {
         const importList = esImports.map((imp) => imp.normalizedName).sort();
         lines.push(`import ${typePrefix}${importList.join(", ")} from "${moduleName}";`);
-      } else {
-        const importList = esImports
-          .map((imp) => imp.normalizedName)
-          .filter((name) => !name.startsWith("default as "))
-          .sort();
-
-        if (importList.length > 0) {
-          lines.push(`import ${typePrefix}{ ${importList.join(", ")} } from "${moduleName}";`);
+      } else if (defaultImports.length > 0 && namedImports.length > 0) {
+        // Both default and named imports
+        const defaultName = defaultImports[0].normalizedName.substring("default as ".length);
+        const namedList = namedImports.map((imp) => imp.normalizedName).sort();
+        lines.push(`import ${typePrefix}${defaultName}, { ${namedList.join(", ")} } from "${moduleName}";`);
+      } else if (defaultImports.length > 0) {
+        // Only default imports
+        for (const defaultImport of defaultImports) {
+          const defaultName = defaultImport.normalizedName.substring("default as ".length);
+          lines.push(`import ${typePrefix}${defaultName} from "${moduleName}";`);
         }
+      } else if (namedImports.length > 0) {
+        // Only named imports
+        const importList = namedImports.map((imp) => imp.normalizedName).sort();
+        lines.push(`import ${typePrefix}{ ${importList.join(", ")} } from "${moduleName}";`);
       }
     }
 
@@ -148,9 +158,10 @@ export class OutputGenerator {
         text = OutputGenerator.stripExportModifier(text);
       }
 
-      // Add declare keyword only to non-exported class/enum declarations
+      //Add declare keyword to class/enum/function declarations
       // Interfaces and types don't need declare keyword in .d.ts files
-      if (!declaration.isExported && !text.trim().startsWith("declare ")) {
+      // For exported declarations, only add declare if not already present
+      if (!text.trim().startsWith("declare ")) {
         text = OutputGenerator.addDeclareKeyword(text);
       }
 
@@ -225,9 +236,12 @@ export class OutputGenerator {
 
   private static addDeclareKeyword(text: string): string {
     // Only add declare to class, enum, and function (not interface, type, namespace, module)
-    const match = text.match(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(class|enum|function)(?:\s|$)/);
+    // Handle both "export class" and "class" patterns
+    const match = text.match(
+      /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)(?:export\s+)?)(class|enum|function)(?:\s|$)/,
+    );
     if (match) {
-      const prefix = match[1]; // comments
+      const prefix = match[1]; // comments and export keyword
       const declarationKeyword = match[2]; // class, enum, or function
       const rest = text.substring(match[0].length - 1); // everything after the keyword
       return `${prefix}declare ${declarationKeyword}${rest}`;

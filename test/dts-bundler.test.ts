@@ -54,7 +54,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle default imports from node_modules", () => {
+    it("should handle default imports from node_modules", () => {
       const { expected, result } = runTestCase("import-default-from-node-modules");
       expect(result).toBe(expected);
     });
