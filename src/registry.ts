@@ -6,12 +6,14 @@ export class TypeRegistry {
   public declarationsByFile: Map<string, Set<symbol>>;
   public nameIndex: Map<string, symbol>;
   public externalImports: Map<string, Map<string, ExternalImport>>;
+  public namespaceImports: Map<string, { namespaceName: string; sourceFile: string }>;
 
   constructor() {
     this.declarations = new Map();
     this.declarationsByFile = new Map();
     this.nameIndex = new Map();
     this.externalImports = new Map();
+    this.namespaceImports = new Map();
   }
 
   register(declaration: TypeDeclaration): void {

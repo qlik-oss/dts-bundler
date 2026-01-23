@@ -49,7 +49,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle import * from local modules", () => {
+    it("should handle import * from local modules", () => {
       const { expected, result } = runTestCase("import-star-from-local-module");
       expect(result).toBe(expected);
     });

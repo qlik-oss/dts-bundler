@@ -59,6 +59,7 @@ export class DependencyAnalyzer {
     sourceFile: string;
     dependencies: Set<symbol>;
     externalDependencies: Map<string, Set<string>>;
+    namespaceDependencies: Set<string>;
     id: symbol;
   }): void {
     const fileImports = this.importMap.get(declaration.sourceFile) ?? new Map();
@@ -70,7 +71,18 @@ export class DependencyAnalyzer {
       const importInfo = fileImports.get(refName);
 
       if (importInfo) {
-        if (importInfo.isExternal) {
+        // Check if this is a namespace import (import * as namespace)
+        if (!importInfo.isExternal && importInfo.originalName.startsWith("* as ")) {
+          // Track this namespace dependency
+          declaration.namespaceDependencies.add(refName);
+          // Mark the namespace as used by adding all declarations from its source file as dependencies
+          const sourceFileDecls = this.registry.declarationsByFile.get(importInfo.sourceFile);
+          if (sourceFileDecls) {
+            for (const declId of sourceFileDecls) {
+              declaration.dependencies.add(declId);
+            }
+          }
+        } else if (importInfo.isExternal) {
           const moduleName = importInfo.sourceFile ? importInfo.sourceFile.split(":")[0] : "";
           if (!declaration.externalDependencies.has(moduleName)) {
             declaration.externalDependencies.set(moduleName, new Set());
@@ -103,6 +115,21 @@ export class DependencyAnalyzer {
       } else if (ts.isQualifiedName(typeName)) {
         DependencyAnalyzer.extractQualifiedName(typeName, references);
       }
+    }
+
+    // Handle typeof expressions (e.g., typeof lib)
+    if (ts.isTypeQueryNode(node)) {
+      const exprName = node.exprName;
+      if (ts.isIdentifier(exprName)) {
+        references.add(exprName.text);
+      } else if (ts.isQualifiedName(exprName)) {
+        DependencyAnalyzer.extractQualifiedName(exprName, references);
+      }
+    }
+
+    // Handle variable declarations with initializers (e.g., const Lib = lib)
+    if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.initializer)) {
+      references.add(node.initializer.text);
     }
 
     if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.heritageClauses) {

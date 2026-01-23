@@ -50,6 +50,7 @@ export class OutputGenerator {
 
     this.buildNameMap();
     const declarations = this.generateDeclarations();
+    const namespaces = this.generateNamespaces();
 
     const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
     const emptyExport = this.options.includeEmptyExport ? ["export {};"] : [];
@@ -66,6 +67,7 @@ export class OutputGenerator {
 
     appendSection(referenceDirectives);
     appendSection(externalImports);
+    appendSection(namespaces);
     appendSection(declarations);
     appendSection(umdDeclaration);
     appendSection(emptyExport);
@@ -155,9 +157,63 @@ export class OutputGenerator {
       // Strip implementation details for declaration files
       text = OutputGenerator.stripImplementationDetails(text);
 
+      // Handle variable declarations - add type annotations for namespace references
+      if (ts.isVariableStatement(declaration.node)) {
+        text = this.transformVariableDeclaration(text, declaration);
+      }
+
       text = this.replaceRenamedReferences(text, declaration);
 
       lines.push(text);
+    }
+
+    return lines;
+  }
+
+  private generateNamespaces(): string[] {
+    const lines: string[] = [];
+    const usedNamespaces = new Map<string, { sourceFile: string; declarations: symbol[] }>();
+
+    // Find all namespace imports that are referenced in used declarations
+    for (const declId of this.usedDeclarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+
+      // Check if this declaration has namespace dependencies
+      for (const namespaceName of decl.namespaceDependencies) {
+        // Find the namespace info from the registry
+        const key = `${decl.sourceFile}:${namespaceName}`;
+        const nsInfo = this.registry.namespaceImports.get(key);
+
+        if (nsInfo && !usedNamespaces.has(namespaceName)) {
+          // Collect all declarations from the source file
+          const fileDeclarations = this.registry.declarationsByFile.get(nsInfo.sourceFile);
+          if (fileDeclarations) {
+            const usedFromFile = Array.from(fileDeclarations).filter((id) => this.usedDeclarations.has(id));
+            if (usedFromFile.length > 0) {
+              usedNamespaces.set(namespaceName, {
+                sourceFile: nsInfo.sourceFile,
+                declarations: usedFromFile,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Generate namespace blocks
+    for (const [namespaceName, info] of usedNamespaces.entries()) {
+      lines.push(`declare namespace ${namespaceName} {`);
+
+      for (const declId of info.declarations) {
+        const declaration = this.registry.getDeclaration(declId);
+        if (!declaration) continue;
+
+        // Export the declaration within the namespace using its original name
+        lines.push(`  export { ${declaration.name} };`);
+      }
+
+      lines.push(`}`);
     }
 
     return lines;
@@ -168,11 +224,11 @@ export class OutputGenerator {
   }
 
   private static addDeclareKeyword(text: string): string {
-    // Only add declare to class and enum (not interface, type, namespace, module)
-    const match = text.match(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(class|enum)(?:\s|$)/);
+    // Only add declare to class, enum, and function (not interface, type, namespace, module)
+    const match = text.match(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(class|enum|function)(?:\s|$)/);
     if (match) {
       const prefix = match[1]; // comments
-      const declarationKeyword = match[2]; // class or enum
+      const declarationKeyword = match[2]; // class, enum, or function
       const rest = text.substring(match[0].length - 1); // everything after the keyword
       return `${prefix}declare ${declarationKeyword}${rest}`;
     }
@@ -190,9 +246,40 @@ export class OutputGenerator {
     // Avoid matching methods which have () in their signature
     text = text.replace(/^(\s*)([a-zA-Z_$][\w$]*)\s*:\s*([^;=()]+?)\s*=\s*[^;]+;/gm, "$1$2: $3;");
 
+    // Strip function bodies - replace { ... } with just semicolon
+    text = text.replace(/^((?:export\s+)?(?:declare\s+)?function\s+[^{]+?)\s*\{[^}]*\}/gm, "$1;");
+
     return text;
   }
   /* eslint-enable no-param-reassign */
+
+  /* eslint-disable no-param-reassign, @typescript-eslint/class-methods-use-this */
+  private transformVariableDeclaration(text: string, declaration: TypeDeclaration): string {
+    // Check if this variable has namespace dependencies
+    if (declaration.namespaceDependencies.size > 0) {
+      // Transform: export const Lib = lib; -> export declare const Lib: typeof lib;
+      const namespaceNames = Array.from(declaration.namespaceDependencies);
+      for (const nsName of namespaceNames) {
+        // Match pattern: const VarName = nsName;
+        const pattern = new RegExp(`(const\\s+${declaration.name})\\s*=\\s*${nsName}\\s*;`, "g");
+        text = text.replace(pattern, `$1: typeof ${nsName};`);
+      }
+    }
+
+    // Add declare keyword to variable declarations if they're not exported
+    if (!declaration.isExported && !text.trim().startsWith("declare ")) {
+      text = text.replace(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(const|let|var)\s+/, "$1declare $2 ");
+    } else if (declaration.isExported) {
+      // For exported variables, add declare after export
+      text = text.replace(
+        /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)export\s+)(const|let|var)\s+/,
+        "$1declare $2 ",
+      );
+    }
+
+    return text;
+  }
+  /* eslint-enable no-param-reassign, @typescript-eslint/class-methods-use-this */
 
   private topologicalSort(): TypeDeclaration[] {
     const sorted: TypeDeclaration[] = [];

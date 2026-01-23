@@ -73,6 +73,7 @@ export class TypeDeclaration {
   public wasOriginallyExported: boolean;
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
+  public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
   private text: string | null;
 
   constructor(name: string, sourceFilePath: string, node: ts.Node, sourceFileNode: ts.SourceFile, isExported = false) {
@@ -86,6 +87,7 @@ export class TypeDeclaration {
     this.wasOriginallyExported = isExported;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
+    this.namespaceDependencies = new Set();
     this.text = null;
   }
 

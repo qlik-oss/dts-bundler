@@ -77,6 +77,23 @@ export class DeclarationParser {
           });
         }
       }
+
+      // Handle import * as namespace from local files
+      if (importClause?.namedBindings && ts.isNamespaceImport(importClause.namedBindings)) {
+        const localName = importClause.namedBindings.name.text;
+        fileImports.set(localName, {
+          originalName: `* as ${localName}`,
+          sourceFile: resolvedPath,
+          isExternal: false,
+          aliasName: null,
+        });
+        // Register the namespace import in the registry
+        const key = `${filePath}:${localName}`;
+        this.registry.namespaceImports.set(key, {
+          namespaceName: localName,
+          sourceFile: resolvedPath,
+        });
+      }
     } else {
       const importClause = statement.importClause;
       if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
@@ -163,7 +180,9 @@ export class DeclarationParser {
       ts.isTypeAliasDeclaration(statement) ||
       ts.isClassDeclaration(statement) ||
       ts.isEnumDeclaration(statement) ||
-      ts.isModuleDeclaration(statement)
+      ts.isModuleDeclaration(statement) ||
+      ts.isVariableStatement(statement) ||
+      ts.isFunctionDeclaration(statement)
     );
   }
 
@@ -190,10 +209,20 @@ export class DeclarationParser {
       ts.isTypeAliasDeclaration(statement) ||
       ts.isClassDeclaration(statement) ||
       ts.isEnumDeclaration(statement) ||
-      ts.isModuleDeclaration(statement)
+      ts.isModuleDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement)
     ) {
       return statement.name?.text ?? null;
     }
+
+    if (ts.isVariableStatement(statement)) {
+      // Get the first variable declaration name
+      const declaration = statement.declarationList.declarations[0];
+      if (ts.isIdentifier(declaration.name)) {
+        return declaration.name.text;
+      }
+    }
+
     return null;
   }
 
