@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { findTsConfig, getCompilerOptions } from "./helpers/typescript-config.js";
 import { getLibraryName } from "./helpers/node-modules.js";
+import { findTsConfig, getCompilerOptions } from "./helpers/typescript-config.js";
 
 interface FileCollectorOptions {
   inlinedLibraries?: string[];
@@ -28,7 +28,7 @@ export class FileCollector {
     this.inlinedLibraries = options.inlinedLibraries ?? [];
     this.program = this.createProgram();
     this.typeChecker = this.program.getTypeChecker();
-    
+
     // Compute transitive closure of inlined libraries
     this.inlinedLibrariesSet = this.computeInlinedLibrariesSet();
   }
@@ -51,105 +51,9 @@ export class FileCollector {
    * then library B should also be inlined (unless it's external).
    */
   private computeInlinedLibrariesSet(): Set<string> {
-    const inlined = new Set<string>(this.inlinedLibraries);
-    const toProcess = [...this.inlinedLibraries];
-    const processed = new Set<string>();
-
-    while (toProcess.length > 0) {
-      const libName = toProcess.shift();
-      if (!libName || processed.has(libName)) {
-        continue;
-      }
-      processed.add(libName);
-
-      // Find all source files from this library
-      const sourceFiles = this.program.getSourceFiles();
-      for (const sourceFile of sourceFiles) {
-        const fileLibName = getLibraryName(sourceFile.fileName);
-        
-        // Check if this file belongs to the library we're processing
-        // OR if it contains ambient module declarations for this library
-        let shouldProcessFile = fileLibName === libName;
-        
-        if (!shouldProcessFile) {
-          // Check for ambient module declarations
-          for (const statement of sourceFile.statements) {
-            if (ts.isModuleDeclaration(statement)) {
-              const moduleName = statement.name.text;
-              if (moduleName === libName) {
-                shouldProcessFile = true;
-                break;
-              }
-            }
-          }
-        }
-        
-        if (!shouldProcessFile) {
-          continue;
-        }
-
-        // Check all imports in this file and in ambient modules
-        for (const statement of sourceFile.statements) {
-          let importPath: string | null = null;
-
-          // Handle ambient module declarations
-          if (ts.isModuleDeclaration(statement) && statement.body && ts.isModuleBlock(statement.body)) {
-            // Check imports inside the ambient module
-            for (const moduleStatement of statement.body.statements) {
-              if (ts.isImportDeclaration(moduleStatement)) {
-                const moduleSpecifier = moduleStatement.moduleSpecifier;
-                if (ts.isStringLiteral(moduleSpecifier)) {
-                  const nestedImport = moduleSpecifier.text;
-                  if (!nestedImport.startsWith(".")) {
-                    const importedLib = nestedImport.split("/")[0];
-                    const importedLibName = importedLib.startsWith("@")
-                      ? `${importedLib}/${nestedImport.split("/")[1]}`
-                      : importedLib;
-                    if (!inlined.has(importedLibName)) {
-                      inlined.add(importedLibName);
-                      toProcess.push(importedLibName);
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          if (ts.isImportDeclaration(statement)) {
-            const moduleSpecifier = statement.moduleSpecifier;
-            if (ts.isStringLiteral(moduleSpecifier)) {
-              importPath = moduleSpecifier.text;
-            }
-          } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
-            if (ts.isStringLiteral(statement.moduleSpecifier)) {
-              importPath = statement.moduleSpecifier.text;
-            }
-          } else if (ts.isImportEqualsDeclaration(statement)) {
-            if (ts.isExternalModuleReference(statement.moduleReference)) {
-              const expr = statement.moduleReference.expression;
-              if (ts.isStringLiteral(expr)) {
-                importPath = expr.text;
-              }
-            }
-          }
-
-          // If this is an import from another library (not relative)
-          if (importPath && !importPath.startsWith(".")) {
-            // Extract the library name from the import path
-            const importedLib = importPath.split("/")[0];
-            const importedLibName = importedLib.startsWith("@") ? `${importedLib}/${importPath.split("/")[1]}` : importedLib;
-
-            // If we haven't already marked this library for inlining, add it
-            if (!inlined.has(importedLibName)) {
-              inlined.add(importedLibName);
-              toProcess.push(importedLibName);
-            }
-          }
-        }
-      }
-    }
-
-    return inlined;
+    // Simply return the explicitly configured inlined libraries
+    // Do not compute transitive dependencies - only inline what's explicitly requested
+    return new Set<string>(this.inlinedLibraries);
   }
 
   shouldInline(importPath: string): boolean {
@@ -174,7 +78,7 @@ export class FileCollector {
 
     // Check if file is from node_modules
     const libraryName = getLibraryName(fileName);
-    
+
     if (libraryName === null) {
       // Not from node_modules - it's a local file, include it
       return true;
@@ -208,6 +112,14 @@ export class FileCollector {
   }
 
   /**
+   * Check if a given file path belongs to an inlined library
+   */
+  isFromInlinedLibrary(filePath: string): boolean {
+    const libraryName = getLibraryName(filePath);
+    return libraryName !== null && this.inlinedLibrariesSet.has(libraryName);
+  }
+
+  /**
    * Resolve an import path from a given source file
    * Uses the TypeScript Program's module resolution
    */
@@ -216,6 +128,18 @@ export class FileCollector {
     if (importPath.startsWith(".")) {
       const dir = path.dirname(fromFile);
       const resolved = path.resolve(dir, importPath);
+
+      // Handle .mjs, .cjs, .js extensions mapping to TypeScript equivalents
+      const basePaths = [resolved];
+      if (importPath.endsWith(".mjs")) {
+        basePaths.push(resolved.slice(0, -4));
+      }
+      if (importPath.endsWith(".cjs")) {
+        basePaths.push(resolved.slice(0, -4));
+      }
+      if (importPath.endsWith(".js")) {
+        basePaths.push(resolved.slice(0, -3));
+      }
 
       const extensions = [
         "",
@@ -235,10 +159,12 @@ export class FileCollector {
         "/index.d.cts",
       ];
 
-      for (const ext of extensions) {
-        const fullPath = resolved + ext;
-        if (fs.existsSync(fullPath)) {
-          return fullPath;
+      for (const base of basePaths) {
+        for (const ext of extensions) {
+          const fullPath = base + ext;
+          if (fs.existsSync(fullPath)) {
+            return fullPath;
+          }
         }
       }
 
@@ -251,7 +177,7 @@ export class FileCollector {
     for (const sourceFile of sourceFiles) {
       // Check if this source file is from the imported module
       const fileName = sourceFile.fileName;
-      
+
       // Handle node_modules imports
       if (fileName.includes("node_modules")) {
         const libName = getLibraryName(fileName);
@@ -267,7 +193,9 @@ export class FileCollector {
   collectFiles(): Map<string, CollectedFile> {
     const files = new Map<string, CollectedFile>();
     const sourceFiles = this.program.getSourceFiles();
+    const processedPaths = new Set<string>();
 
+    // First, collect files that TypeScript's Program resolved
     for (const sourceFile of sourceFiles) {
       // Skip files we shouldn't inline
       if (!this.shouldInlineFile(sourceFile)) {
@@ -275,6 +203,7 @@ export class FileCollector {
       }
 
       const filePath = sourceFile.fileName;
+      processedPaths.add(filePath);
       const isEntry = filePath === this.entryFile;
 
       // Read file content
@@ -306,6 +235,89 @@ export class FileCollector {
       }
 
       files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
+    }
+
+    // Second pass: manually collect relative imports that TypeScript might have missed
+    // This handles cases like ./file.mjs importing file.mts
+    const toProcess: Array<{ file: string; isEntry: boolean }> = [{ file: this.entryFile, isEntry: true }];
+
+    while (toProcess.length > 0) {
+      const next = toProcess.shift();
+      if (!next) break;
+      const { file: filePath, isEntry } = next;
+
+      // Skip if already processed
+      if (processedPaths.has(filePath)) {
+        continue;
+      }
+
+      if (!fs.existsSync(filePath)) {
+        continue;
+      }
+
+      processedPaths.add(filePath);
+
+      const content = fs.readFileSync(filePath, "utf-8");
+      const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+      const hasEmptyExport = sourceFile.statements.some((statement) => {
+        if (!ts.isExportDeclaration(statement)) return false;
+        if (statement.moduleSpecifier) return false;
+        if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) return false;
+        return statement.exportClause.elements.length === 0;
+      });
+
+      const referencedTypes = new Set<string>();
+      const typeRefs = (
+        sourceFile as ts.SourceFile & { typeReferenceDirectives: Array<{ fileName: string; preserve?: boolean }> }
+      ).typeReferenceDirectives;
+      for (const ref of typeRefs) {
+        if (ref.preserve === true) {
+          referencedTypes.add(ref.fileName);
+        }
+      }
+
+      files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
+
+      // Collect relative imports
+      for (const statement of sourceFile.statements) {
+        if (ts.isImportDeclaration(statement)) {
+          const moduleSpecifier = statement.moduleSpecifier;
+          if (ts.isStringLiteral(moduleSpecifier)) {
+            const importPath = moduleSpecifier.text;
+            if (this.shouldInline(importPath)) {
+              const resolved = this.resolveImport(filePath, importPath);
+              if (resolved && !processedPaths.has(resolved)) {
+                toProcess.push({ file: resolved, isEntry: false });
+              }
+            }
+          }
+        } else if (ts.isImportEqualsDeclaration(statement)) {
+          if (ts.isExternalModuleReference(statement.moduleReference)) {
+            const expr = statement.moduleReference.expression;
+            if (ts.isStringLiteral(expr)) {
+              const importPath = expr.text;
+              if (this.shouldInline(importPath)) {
+                const resolved = this.resolveImport(filePath, importPath);
+                if (resolved && !processedPaths.has(resolved)) {
+                  toProcess.push({ file: resolved, isEntry: false });
+                }
+              }
+            }
+          }
+        } else if (ts.isExportDeclaration(statement)) {
+          const moduleSpecifier = statement.moduleSpecifier;
+          if (moduleSpecifier && ts.isStringLiteral(moduleSpecifier)) {
+            const exportPath = moduleSpecifier.text;
+            if (this.shouldInline(exportPath)) {
+              const resolved = this.resolveImport(filePath, exportPath);
+              if (resolved && !processedPaths.has(resolved)) {
+                toProcess.push({ file: resolved, isEntry: false });
+              }
+            }
+          }
+        }
+      }
     }
 
     return files;

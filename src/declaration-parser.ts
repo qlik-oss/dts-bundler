@@ -44,8 +44,13 @@ export class DeclarationParser {
 
     for (const statement of sourceFile.statements) {
       if (DeclarationParser.isDeclaration(statement)) {
-        // Handle ambient module declarations specially
-        if (ts.isModuleDeclaration(statement) && statement.body && ts.isModuleBlock(statement.body)) {
+        // Handle ambient module declarations specially (those with string literal names like 'fake-fs')
+        if (
+          ts.isModuleDeclaration(statement) &&
+          ts.isStringLiteral(statement.name) &&
+          statement.body &&
+          ts.isModuleBlock(statement.body)
+        ) {
           this.parseAmbientModule(statement, filePath, sourceFile);
         } else {
           this.parseDeclaration(statement, filePath, sourceFile, isEntry);
@@ -56,12 +61,14 @@ export class DeclarationParser {
     }
   }
 
-  private parseAmbientModule(
-    moduleDecl: ts.ModuleDeclaration,
-    filePath: string,
-    sourceFile: ts.SourceFile,
-  ): void {
+  private parseAmbientModule(moduleDecl: ts.ModuleDeclaration, filePath: string, sourceFile: ts.SourceFile): void {
     if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) {
+      return;
+    }
+
+    // Only parse ambient modules that should be inlined
+    const moduleName = moduleDecl.name.text;
+    if (!this.fileCollector.shouldInline(moduleName)) {
       return;
     }
 
@@ -84,7 +91,7 @@ export class DeclarationParser {
 
         // Check if this declaration has the export keyword
         const hasExport = DeclarationParser.hasExportModifier(statement);
-        
+
         // In ambient modules, exported declarations should be treated as exports
         const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, hasExport);
         this.registry.register(declaration);
@@ -239,7 +246,10 @@ export class DeclarationParser {
     const hasExport = DeclarationParser.hasExportModifier(statement);
     const isExported = isEntry ? hasExport : false;
 
-    const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported);
+    // For declarations from inlined libraries, preserve their original export status
+    const wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+
+    const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, wasOriginallyExported);
 
     this.registry.register(declaration);
   }

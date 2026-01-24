@@ -154,7 +154,10 @@ export class OutputGenerator {
     for (const declaration of ordered) {
       let text = declaration.getText();
 
-      if (!declaration.isExported && text.includes("export ")) {
+      // Keep export keyword if the declaration was originally exported or is marked as exported
+      const shouldHaveExport = declaration.isExported || declaration.wasOriginallyExported;
+
+      if (!shouldHaveExport && text.includes("export ")) {
         text = OutputGenerator.stripExportModifier(text);
       }
 

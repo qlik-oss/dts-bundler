@@ -17,7 +17,7 @@ var TypeDeclaration = class {
 	externalDependencies;
 	namespaceDependencies;
 	text;
-	constructor(name, sourceFilePath, node, sourceFileNode, isExported = false) {
+	constructor(name, sourceFilePath, node, sourceFileNode, isExported = false, wasOriginallyExported = isExported) {
 		this.id = Symbol(name);
 		this.name = name;
 		this.normalizedName = name;
@@ -25,7 +25,7 @@ var TypeDeclaration = class {
 		this.node = node;
 		this.sourceFileNode = sourceFileNode;
 		this.isExported = isExported;
-		this.wasOriginallyExported = isExported;
+		this.wasOriginallyExported = wasOriginallyExported;
 		this.dependencies = /* @__PURE__ */ new Set();
 		this.externalDependencies = /* @__PURE__ */ new Map();
 		this.namespaceDependencies = /* @__PURE__ */ new Set();
@@ -33,7 +33,23 @@ var TypeDeclaration = class {
 	}
 	getText() {
 		if (this.text) return this.text;
-		this.text = this.node.getFullText(this.sourceFileNode).trim();
+		let text = this.node.getFullText(this.sourceFileNode);
+		const lines = text.split("\n");
+		if (lines.length > 0) {
+			let minIndent = Infinity;
+			for (const line of lines) {
+				if (line.trim().length === 0) continue;
+				const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+				if (indent < minIndent) minIndent = indent;
+			}
+			if (minIndent > 0 && minIndent !== Infinity) text = lines.map((line) => {
+				if (line.trim().length === 0) return "";
+				return line.substring(minIndent);
+			}).join("\n").trim();
+			else text = text.trim();
+		} else text = text.trim();
+		text = text.replace(/\t/g, "  ");
+		this.text = text;
 		return this.text;
 	}
 };
@@ -73,12 +89,14 @@ var DeclarationParser = class DeclarationParser {
 		this.importMap.set(filePath, fileImports);
 		for (const statement of sourceFile.statements) if (ts.isImportDeclaration(statement)) this.parseImport(statement, filePath, fileImports);
 		else if (ts.isImportEqualsDeclaration(statement)) this.parseImportEquals(statement, filePath, fileImports);
-		for (const statement of sourceFile.statements) if (DeclarationParser.isDeclaration(statement)) if (ts.isModuleDeclaration(statement) && statement.body && ts.isModuleBlock(statement.body)) this.parseAmbientModule(statement, filePath, sourceFile);
+		for (const statement of sourceFile.statements) if (DeclarationParser.isDeclaration(statement)) if (ts.isModuleDeclaration(statement) && ts.isStringLiteral(statement.name) && statement.body && ts.isModuleBlock(statement.body)) this.parseAmbientModule(statement, filePath, sourceFile);
 		else this.parseDeclaration(statement, filePath, sourceFile, isEntry);
 		else if (ts.isExportAssignment(statement) && statement.isExportEquals) this.parseExportEquals(statement, filePath);
 	}
 	parseAmbientModule(moduleDecl, filePath, sourceFile) {
 		if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) return;
+		const moduleName = moduleDecl.name.text;
+		if (!this.fileCollector.shouldInline(moduleName)) return;
 		const fileImports = this.importMap.get(filePath);
 		if (fileImports) {
 			for (const statement of moduleDecl.body.statements) if (ts.isImportDeclaration(statement)) this.parseImport(statement, filePath, fileImports);
@@ -189,7 +207,8 @@ var DeclarationParser = class DeclarationParser {
 		const name = DeclarationParser.getDeclarationName(statement);
 		if (!name) return;
 		const hasExport = DeclarationParser.hasExportModifier(statement);
-		const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isEntry ? hasExport : false);
+		const isExported = isEntry ? hasExport : false;
+		const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported);
 		this.registry.register(declaration);
 	}
 	static getDeclarationName(statement) {
@@ -427,66 +446,7 @@ var FileCollector = class {
 	* then library B should also be inlined (unless it's external).
 	*/
 	computeInlinedLibrariesSet() {
-		const inlined = new Set(this.inlinedLibraries);
-		const toProcess = [...this.inlinedLibraries];
-		const processed = /* @__PURE__ */ new Set();
-		while (toProcess.length > 0) {
-			const libName = toProcess.shift();
-			if (!libName || processed.has(libName)) continue;
-			processed.add(libName);
-			const sourceFiles = this.program.getSourceFiles();
-			for (const sourceFile of sourceFiles) {
-				let shouldProcessFile = getLibraryName(sourceFile.fileName) === libName;
-				if (!shouldProcessFile) {
-					for (const statement of sourceFile.statements) if (ts.isModuleDeclaration(statement)) {
-						if (statement.name.text === libName) {
-							shouldProcessFile = true;
-							break;
-						}
-					}
-				}
-				if (!shouldProcessFile) continue;
-				for (const statement of sourceFile.statements) {
-					let importPath = null;
-					if (ts.isModuleDeclaration(statement) && statement.body && ts.isModuleBlock(statement.body)) {
-						for (const moduleStatement of statement.body.statements) if (ts.isImportDeclaration(moduleStatement)) {
-							const moduleSpecifier = moduleStatement.moduleSpecifier;
-							if (ts.isStringLiteral(moduleSpecifier)) {
-								const nestedImport = moduleSpecifier.text;
-								if (!nestedImport.startsWith(".")) {
-									const importedLib = nestedImport.split("/")[0];
-									const importedLibName = importedLib.startsWith("@") ? `${importedLib}/${nestedImport.split("/")[1]}` : importedLib;
-									if (!inlined.has(importedLibName)) {
-										inlined.add(importedLibName);
-										toProcess.push(importedLibName);
-									}
-								}
-							}
-						}
-					}
-					if (ts.isImportDeclaration(statement)) {
-						const moduleSpecifier = statement.moduleSpecifier;
-						if (ts.isStringLiteral(moduleSpecifier)) importPath = moduleSpecifier.text;
-					} else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
-						if (ts.isStringLiteral(statement.moduleSpecifier)) importPath = statement.moduleSpecifier.text;
-					} else if (ts.isImportEqualsDeclaration(statement)) {
-						if (ts.isExternalModuleReference(statement.moduleReference)) {
-							const expr = statement.moduleReference.expression;
-							if (ts.isStringLiteral(expr)) importPath = expr.text;
-						}
-					}
-					if (importPath && !importPath.startsWith(".")) {
-						const importedLib = importPath.split("/")[0];
-						const importedLibName = importedLib.startsWith("@") ? `${importedLib}/${importPath.split("/")[1]}` : importedLib;
-						if (!inlined.has(importedLibName)) {
-							inlined.add(importedLibName);
-							toProcess.push(importedLibName);
-						}
-					}
-				}
-			}
-		}
-		return inlined;
+		return new Set(this.inlinedLibraries);
 	}
 	shouldInline(importPath) {
 		if (importPath.startsWith(".")) return true;
@@ -512,6 +472,13 @@ var FileCollector = class {
 		return this.typeChecker;
 	}
 	/**
+	* Check if a given file path belongs to an inlined library
+	*/
+	isFromInlinedLibrary(filePath) {
+		const libraryName = getLibraryName(filePath);
+		return libraryName !== null && this.inlinedLibrariesSet.has(libraryName);
+	}
+	/**
 	* Resolve an import path from a given source file
 	* Uses the TypeScript Program's module resolution
 	*/
@@ -519,7 +486,11 @@ var FileCollector = class {
 		if (importPath.startsWith(".")) {
 			const dir = path.dirname(fromFile);
 			const resolved = path.resolve(dir, importPath);
-			for (const ext of [
+			const basePaths = [resolved];
+			if (importPath.endsWith(".mjs")) basePaths.push(resolved.slice(0, -4));
+			if (importPath.endsWith(".cjs")) basePaths.push(resolved.slice(0, -4));
+			if (importPath.endsWith(".js")) basePaths.push(resolved.slice(0, -3));
+			const extensions = [
 				"",
 				".ts",
 				".tsx",
@@ -535,8 +506,9 @@ var FileCollector = class {
 				"/index.d.mts",
 				"/index.cts",
 				"/index.d.cts"
-			]) {
-				const fullPath = resolved + ext;
+			];
+			for (const base of basePaths) for (const ext of extensions) {
+				const fullPath = base + ext;
 				if (fs.existsSync(fullPath)) return fullPath;
 			}
 			return null;
@@ -553,9 +525,11 @@ var FileCollector = class {
 	collectFiles() {
 		const files = /* @__PURE__ */ new Map();
 		const sourceFiles = this.program.getSourceFiles();
+		const processedPaths = /* @__PURE__ */ new Set();
 		for (const sourceFile of sourceFiles) {
 			if (!this.shouldInlineFile(sourceFile)) continue;
 			const filePath = sourceFile.fileName;
+			processedPaths.add(filePath);
 			const isEntry = filePath === this.entryFile;
 			let content;
 			if (fs.existsSync(filePath)) content = fs.readFileSync(filePath, "utf-8");
@@ -576,6 +550,75 @@ var FileCollector = class {
 				hasEmptyExport,
 				referencedTypes
 			});
+		}
+		const toProcess = [{
+			file: this.entryFile,
+			isEntry: true
+		}];
+		while (toProcess.length > 0) {
+			const next = toProcess.shift();
+			if (!next) break;
+			const { file: filePath, isEntry } = next;
+			if (processedPaths.has(filePath)) continue;
+			if (!fs.existsSync(filePath)) continue;
+			processedPaths.add(filePath);
+			const content = fs.readFileSync(filePath, "utf-8");
+			const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+			const hasEmptyExport = sourceFile.statements.some((statement) => {
+				if (!ts.isExportDeclaration(statement)) return false;
+				if (statement.moduleSpecifier) return false;
+				if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) return false;
+				return statement.exportClause.elements.length === 0;
+			});
+			const referencedTypes = /* @__PURE__ */ new Set();
+			const typeRefs = sourceFile.typeReferenceDirectives;
+			for (const ref of typeRefs) if (ref.preserve === true) referencedTypes.add(ref.fileName);
+			files.set(filePath, {
+				content,
+				sourceFile,
+				isEntry,
+				hasEmptyExport,
+				referencedTypes
+			});
+			for (const statement of sourceFile.statements) if (ts.isImportDeclaration(statement)) {
+				const moduleSpecifier = statement.moduleSpecifier;
+				if (ts.isStringLiteral(moduleSpecifier)) {
+					const importPath = moduleSpecifier.text;
+					if (this.shouldInline(importPath)) {
+						const resolved = this.resolveImport(filePath, importPath);
+						if (resolved && !processedPaths.has(resolved)) toProcess.push({
+							file: resolved,
+							isEntry: false
+						});
+					}
+				}
+			} else if (ts.isImportEqualsDeclaration(statement)) {
+				if (ts.isExternalModuleReference(statement.moduleReference)) {
+					const expr = statement.moduleReference.expression;
+					if (ts.isStringLiteral(expr)) {
+						const importPath = expr.text;
+						if (this.shouldInline(importPath)) {
+							const resolved = this.resolveImport(filePath, importPath);
+							if (resolved && !processedPaths.has(resolved)) toProcess.push({
+								file: resolved,
+								isEntry: false
+							});
+						}
+					}
+				}
+			} else if (ts.isExportDeclaration(statement)) {
+				const moduleSpecifier = statement.moduleSpecifier;
+				if (moduleSpecifier && ts.isStringLiteral(moduleSpecifier)) {
+					const exportPath = moduleSpecifier.text;
+					if (this.shouldInline(exportPath)) {
+						const resolved = this.resolveImport(filePath, exportPath);
+						if (resolved && !processedPaths.has(resolved)) toProcess.push({
+							file: resolved,
+							isEntry: false
+						});
+					}
+				}
+			}
 		}
 		return files;
 	}
@@ -767,7 +810,7 @@ var OutputGenerator = class OutputGenerator {
 		}) : sorted;
 		for (const declaration of ordered) {
 			let text = declaration.getText();
-			if (!declaration.isExported && text.includes("export ")) text = OutputGenerator.stripExportModifier(text);
+			if (!(declaration.isExported || declaration.wasOriginallyExported) && text.includes("export ")) text = OutputGenerator.stripExportModifier(text);
 			if (!text.trim().startsWith("declare ")) text = OutputGenerator.addDeclareKeyword(text);
 			text = OutputGenerator.stripImplementationDetails(text);
 			if (ts.isVariableStatement(declaration.node)) text = this.transformVariableDeclaration(text, declaration);

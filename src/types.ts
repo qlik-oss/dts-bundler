@@ -76,7 +76,14 @@ export class TypeDeclaration {
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
   private text: string | null;
 
-  constructor(name: string, sourceFilePath: string, node: ts.Node, sourceFileNode: ts.SourceFile, isExported = false) {
+  constructor(
+    name: string,
+    sourceFilePath: string,
+    node: ts.Node,
+    sourceFileNode: ts.SourceFile,
+    isExported = false,
+    wasOriginallyExported = isExported,
+  ) {
     this.id = Symbol(name);
     this.name = name;
     this.normalizedName = name;
@@ -84,7 +91,7 @@ export class TypeDeclaration {
     this.node = node;
     this.sourceFileNode = sourceFileNode;
     this.isExported = isExported;
-    this.wasOriginallyExported = isExported;
+    this.wasOriginallyExported = wasOriginallyExported;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();
@@ -94,7 +101,42 @@ export class TypeDeclaration {
   getText(): string {
     if (this.text) return this.text;
 
-    this.text = this.node.getFullText(this.sourceFileNode).trim();
+    let text = this.node.getFullText(this.sourceFileNode);
+
+    // Normalize indentation for declarations from ambient modules
+    // Split into lines and find common leading whitespace
+    const lines = text.split("\n");
+    if (lines.length > 0) {
+      // Find the minimum indentation across all non-empty lines
+      let minIndent = Infinity;
+      for (const line of lines) {
+        if (line.trim().length === 0) continue;
+        const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+        if (indent < minIndent) {
+          minIndent = indent;
+        }
+      }
+
+      // Remove the common indentation from all lines
+      if (minIndent > 0 && minIndent !== Infinity) {
+        text = lines
+          .map((line) => {
+            if (line.trim().length === 0) return "";
+            return line.substring(minIndent);
+          })
+          .join("\n")
+          .trim();
+      } else {
+        text = text.trim();
+      }
+    } else {
+      text = text.trim();
+    }
+
+    // Convert tabs to spaces (2 spaces per tab) for consistent output
+    text = text.replace(/\t/g, "  ");
+
+    this.text = text;
     return this.text;
   }
 }
