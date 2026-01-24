@@ -111,7 +111,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle exports with object destructuring", () => {
+    it("should handle exports with object destructuring", () => {
       const { expected, result } = runTestCase("export-object-with-destructuring");
       expect(result).toBe(expected);
     });

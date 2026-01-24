@@ -343,6 +343,10 @@ export class DeclarationParser {
       if (ts.isIdentifier(declaration.name)) {
         return declaration.name.text;
       }
+
+      if (ts.isObjectBindingPattern(declaration.name) || ts.isArrayBindingPattern(declaration.name)) {
+        return `__binding_${statement.pos}`;
+      }
     }
 
     return null;
@@ -359,6 +363,7 @@ export class DeclarationParser {
   }
 
   private static isDeclareGlobal(statement: ts.Statement): statement is ts.ModuleDeclaration {
+    // eslint-disable-next-line no-bitwise
     return ts.isModuleDeclaration(statement) && (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
   }
 

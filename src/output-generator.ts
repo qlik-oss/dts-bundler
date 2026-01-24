@@ -21,6 +21,7 @@ export class OutputGenerator {
     entryExportEquals?: ts.ExportAssignment | null;
     entryExportDefault?: ts.ExportAssignment | null;
     entryExportDefaultName?: string | null;
+    typeChecker?: ts.TypeChecker;
   };
 
   constructor(
@@ -38,6 +39,7 @@ export class OutputGenerator {
       entryExportEquals?: ts.ExportAssignment | null;
       entryExportDefault?: ts.ExportAssignment | null;
       entryExportDefaultName?: string | null;
+      typeChecker?: ts.TypeChecker;
     } = {},
   ) {
     this.registry = registry;
@@ -198,6 +200,7 @@ export class OutputGenerator {
       }
 
       const isModuleDeclaration = ts.isModuleDeclaration(declaration.node);
+      // eslint-disable-next-line no-bitwise
       const isDeclareGlobal = isModuleDeclaration && (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
 
       // For namespace/module declarations, normalize "module" keyword to "namespace"
@@ -411,8 +414,18 @@ export class OutputGenerator {
   }
   /* eslint-enable no-param-reassign */
 
-  /* eslint-disable no-param-reassign, @typescript-eslint/class-methods-use-this */
+  /* eslint-disable no-param-reassign */
   private transformVariableDeclaration(text: string, declaration: TypeDeclaration): string {
+    const statement = declaration.node;
+    if (!ts.isVariableStatement(statement)) {
+      return text;
+    }
+
+    const leadingTriviaMatch = text.match(/^(\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)/);
+    const leadingTrivia = leadingTriviaMatch?.[1] ?? "";
+    const textAfterTrivia = text.slice(leadingTrivia.length).trimStart();
+    const hasExport = textAfterTrivia.startsWith("export ");
+
     // Check if this variable has namespace dependencies
     if (declaration.namespaceDependencies.size > 0) {
       // Transform: export const Lib = lib; -> export declare const Lib: typeof lib;
@@ -421,6 +434,29 @@ export class OutputGenerator {
         // Match pattern: const VarName = nsName;
         const pattern = new RegExp(`(const\\s+${declaration.name})\\s*=\\s*${nsName}\\s*;`, "g");
         text = text.replace(pattern, `$1: typeof ${nsName};`);
+      }
+    }
+
+    const checker = this.options.typeChecker;
+    if (checker) {
+      const bindingPatternText = OutputGenerator.transformBindingPatternVariableStatement(
+        statement,
+        checker,
+        hasExport,
+        leadingTrivia,
+      );
+      if (bindingPatternText) {
+        return bindingPatternText;
+      }
+
+      const initializerTransformedText = OutputGenerator.transformVariableInitializers(
+        statement,
+        checker,
+        hasExport,
+        leadingTrivia,
+      );
+      if (initializerTransformedText) {
+        return initializerTransformedText;
       }
     }
 
@@ -437,7 +473,178 @@ export class OutputGenerator {
 
     return text;
   }
-  /* eslint-enable no-param-reassign, @typescript-eslint/class-methods-use-this */
+  /* eslint-enable no-param-reassign */
+
+  private static transformBindingPatternVariableStatement(
+    statement: ts.VariableStatement,
+    checker: ts.TypeChecker,
+    hasExport: boolean,
+    leadingTrivia: string,
+  ): string | null {
+    const declarations = statement.declarationList.declarations;
+    const hasBindingPattern = declarations.some(
+      (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
+    );
+
+    if (!hasBindingPattern) {
+      return null;
+    }
+
+    const allBindingPatterns = declarations.every(
+      (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
+    );
+
+    if (!allBindingPatterns) {
+      return null;
+    }
+
+    const identifiers: ts.Identifier[] = [];
+    for (const decl of declarations) {
+      OutputGenerator.collectBindingIdentifiers(decl.name, identifiers);
+    }
+
+    if (identifiers.length === 0) {
+      return null;
+    }
+
+    const declarationsText = identifiers
+      .map((identifier) => {
+        const type = checker.getTypeAtLocation(identifier);
+        const typeText = checker.typeToString(type, identifier, ts.TypeFormatFlags.NoTruncation);
+        return `${identifier.text}: ${typeText}`;
+      })
+      .join(", ");
+
+    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
+    const prefix = hasExport ? "export declare " : "declare ";
+    return `${leadingTrivia}${prefix}${keyword} ${declarationsText};`;
+  }
+
+  private static transformVariableInitializers(
+    statement: ts.VariableStatement,
+    checker: ts.TypeChecker,
+    hasExport: boolean,
+    leadingTrivia: string,
+  ): string | null {
+    const declarations = statement.declarationList.declarations;
+    if (!declarations.every((decl) => ts.isIdentifier(decl.name))) {
+      return null;
+    }
+
+    let needsRewrite = false;
+    const declarationTexts: string[] = [];
+
+    for (const decl of declarations) {
+      if (!ts.isIdentifier(decl.name)) {
+        return null;
+      }
+
+      const name = decl.name.text;
+      const initializer = decl.initializer;
+      const explicitType = decl.type?.getText(statement.getSourceFile()) ?? null;
+
+      let keepInitializer = false;
+      let initializerText: string | null = null;
+      let typeText: string | null = null;
+
+      if (initializer) {
+        keepInitializer = OutputGenerator.shouldKeepInitializer(decl, checker);
+        if (keepInitializer) {
+          initializerText = initializer.getText(statement.getSourceFile());
+        } else {
+          needsRewrite = true;
+        }
+      }
+
+      if (!keepInitializer) {
+        if (explicitType) {
+          typeText = explicitType;
+        } else {
+          const type = checker.getTypeAtLocation(decl.name);
+          typeText = checker.typeToString(type, decl.name, ts.TypeFormatFlags.NoTruncation);
+          needsRewrite = needsRewrite || initializer !== undefined;
+        }
+      }
+
+      let declarationText = name;
+      if (keepInitializer && initializerText) {
+        declarationText = `${declarationText} = ${initializerText}`;
+      } else if (typeText) {
+        declarationText = `${declarationText}: ${typeText}`;
+      }
+
+      declarationTexts.push(declarationText);
+    }
+
+    if (!needsRewrite) {
+      return null;
+    }
+
+    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
+    const prefix = hasExport ? "export declare " : "declare ";
+    return `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(", ")};`;
+  }
+
+  private static shouldKeepInitializer(decl: ts.VariableDeclaration, checker: ts.TypeChecker): boolean {
+    if (!decl.initializer) {
+      return false;
+    }
+
+    if (decl.type) {
+      return false;
+    }
+
+    const type = checker.getTypeAtLocation(decl.initializer);
+
+    if (type.isLiteral()) {
+      return true;
+    }
+
+    if (type.isUnion()) {
+      return type.types.every((member) => member.isLiteral());
+    }
+
+    return false;
+  }
+
+  private static collectBindingIdentifiers(name: ts.BindingName, identifiers: ts.Identifier[]): void {
+    if (ts.isIdentifier(name)) {
+      identifiers.push(name);
+      return;
+    }
+
+    if (ts.isObjectBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (ts.isBindingElement(element)) {
+          OutputGenerator.collectBindingIdentifiers(element.name, identifiers);
+        }
+      }
+      return;
+    }
+
+    if (ts.isArrayBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (ts.isOmittedExpression(element)) {
+          continue;
+        }
+        if (ts.isBindingElement(element)) {
+          OutputGenerator.collectBindingIdentifiers(element.name, identifiers);
+        }
+      }
+    }
+  }
+
+  private static getVariableDeclarationKeyword(list: ts.VariableDeclarationList): string {
+    // eslint-disable-next-line no-bitwise
+    if (list.flags & ts.NodeFlags.Const) {
+      return "const";
+    }
+    // eslint-disable-next-line no-bitwise
+    if (list.flags & ts.NodeFlags.Let) {
+      return "let";
+    }
+    return "var";
+  }
 
   private topologicalSort(): TypeDeclaration[] {
     const sorted: TypeDeclaration[] = [];
