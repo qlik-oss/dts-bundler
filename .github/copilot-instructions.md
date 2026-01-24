@@ -6,7 +6,10 @@ When implementing test cases in this repository, follow these strict rules:
 
 ### Process
 
-1. **Analyze First**: Read and understand both `test/fixtures/[test-name]/input.ts` and `test/fixtures/[test-name]/expected.d.ts` before writing any code
+1. **Analyze First**: Read and understand both `test/fixtures/[test-name]/input.ts` and `test/fixtures/[test-name]/expected.d.ts` before writing any code. Your analysis should include understanding:
+   - The TypeScript features used in the input file
+   - The bundler configuration options applied to the test
+   - The TypeScript compiler settings in the fixture's tsconfig.json
 2. **Expected Output is Sacred**: You are FORBIDDEN from modifying `expected.d.ts` files to make tests pass
 3. **Implementation Must Match Spec**: If tests fail, fix the implementation code in `src/`, never the test expectations
 4. **Validation Required**: After implementation, always run:
