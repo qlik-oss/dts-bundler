@@ -116,7 +116,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle multiple variable exports in a list", () => {
+    it("should handle multiple variable exports in a list", () => {
       const { expected, result } = runTestCase("export-variables-list");
       expect(result).toBe(expected);
     });

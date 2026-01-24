@@ -73,9 +73,11 @@ export class TypeDeclaration {
   public wasOriginallyExported: boolean;
   public isExportEquals: boolean; // True if exported via export = statement
   public isExportedAsDefault: boolean; // True if exported via export default statement
+  public isExportedAsDefaultOnly: boolean; // True if exported only via export default statement
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
+  public variableDeclaration?: ts.VariableDeclaration;
   private text: string | null;
 
   constructor(
@@ -96,6 +98,7 @@ export class TypeDeclaration {
     this.wasOriginallyExported = wasOriginallyExported;
     this.isExportEquals = false;
     this.isExportedAsDefault = false;
+    this.isExportedAsDefaultOnly = false;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();

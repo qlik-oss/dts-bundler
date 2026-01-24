@@ -94,6 +94,7 @@ export class DeclarationParser {
                 wasOriginallyExported,
               );
               declaration.isExportedAsDefault = true;
+              declaration.isExportedAsDefaultOnly = !wasOriginallyExported;
 
               this.registry.register(declaration);
             }
@@ -105,8 +106,10 @@ export class DeclarationParser {
             if (declarationId) {
               const declaration = this.registry.getDeclaration(declarationId);
               if (declaration) {
+                const wasExported = declaration.isExported || declaration.wasOriginallyExported;
                 declaration.isExportedAsDefault = true;
                 declaration.isExported = true;
+                declaration.isExportedAsDefaultOnly = !wasExported;
               }
             }
           }
@@ -298,6 +301,11 @@ export class DeclarationParser {
       return;
     }
 
+    if (ts.isVariableStatement(statement)) {
+      this.parseVariableStatement(statement, filePath, sourceFile, isEntry);
+      return;
+    }
+
     const name = DeclarationParser.getDeclarationName(statement);
     if (!name) return;
 
@@ -323,6 +331,55 @@ export class DeclarationParser {
     }
 
     this.registry.register(declaration);
+  }
+
+  private parseVariableStatement(
+    statement: ts.VariableStatement,
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    isEntry: boolean,
+  ): void {
+    const declarations = statement.declarationList.declarations;
+    const hasBindingPattern = declarations.some(
+      (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
+    );
+
+    const hasExport = DeclarationParser.hasExportModifier(statement);
+    const isDeclareGlobal = DeclarationParser.isDeclareGlobal(statement);
+
+    if (hasBindingPattern) {
+      const name = `__binding_${statement.pos}`;
+      let isExported = isEntry ? hasExport : false;
+      let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+
+      if (isDeclareGlobal && this.options.inlineDeclareGlobals) {
+        isExported = true;
+        wasOriginallyExported = true;
+      }
+
+      const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, wasOriginallyExported);
+      this.registry.register(declaration);
+      return;
+    }
+
+    for (const varDecl of declarations) {
+      if (!ts.isIdentifier(varDecl.name)) {
+        continue;
+      }
+
+      const name = varDecl.name.text;
+      let isExported = isEntry ? hasExport : false;
+      let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+
+      if (isDeclareGlobal && this.options.inlineDeclareGlobals) {
+        isExported = true;
+        wasOriginallyExported = true;
+      }
+
+      const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, wasOriginallyExported);
+      declaration.variableDeclaration = varDecl;
+      this.registry.register(declaration);
+    }
   }
 
   private static getDeclarationName(statement: ts.Statement): string | null {
@@ -438,6 +495,7 @@ export class DeclarationParser {
             const declaration = this.registry.getDeclaration(declarationId);
             if (declaration) {
               declaration.isExported = true;
+              declaration.isExportedAsDefaultOnly = false;
             }
           }
         }
@@ -462,6 +520,7 @@ export class DeclarationParser {
             const declaration = this.registry.getDeclaration(declarationId);
             if (declaration) {
               declaration.isExported = true;
+              declaration.isExportedAsDefaultOnly = false;
             }
           }
         }

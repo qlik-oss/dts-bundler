@@ -10,6 +10,7 @@ export class OutputGenerator {
   private usedDeclarations: Set<symbol>;
   private usedExternals: Map<string, Set<ExternalImport>>;
   private nameMap: Map<string, string>;
+  private extraDefaultExports: Set<string>;
   private options: {
     noBanner?: boolean;
     sortNodes?: boolean;
@@ -46,6 +47,7 @@ export class OutputGenerator {
     this.usedDeclarations = usedDeclarations;
     this.usedExternals = usedExternals;
     this.nameMap = new Map();
+    this.extraDefaultExports = new Set();
     this.options = options;
   }
 
@@ -173,8 +175,44 @@ export class OutputGenerator {
         })
       : sorted;
 
+    const variableStatementGroups = new Map<
+      string,
+      { statement: ts.VariableStatement; declarations: TypeDeclaration[] }
+    >();
+    for (const declaration of ordered) {
+      if (ts.isVariableStatement(declaration.node) && declaration.variableDeclaration) {
+        const statement = declaration.node;
+        const key = OutputGenerator.getVariableStatementKey(declaration.sourceFile, statement);
+        const group = variableStatementGroups.get(key);
+        if (group) {
+          group.declarations.push(declaration);
+        } else {
+          variableStatementGroups.set(key, { statement, declarations: [declaration] });
+        }
+      }
+    }
+
+    const processedVariableStatements = new Set<string>();
+
     for (const declaration of ordered) {
       let text = declaration.getText();
+
+      if (ts.isVariableStatement(declaration.node) && declaration.variableDeclaration) {
+        const statement = declaration.node;
+        const key = OutputGenerator.getVariableStatementKey(declaration.sourceFile, statement);
+        if (processedVariableStatements.has(key)) {
+          continue;
+        }
+        processedVariableStatements.add(key);
+        const group = variableStatementGroups.get(key);
+        if (group) {
+          const groupLines = this.generateVariableStatementLines(group.statement, group.declarations);
+          if (groupLines.length > 0) {
+            lines.push(...groupLines);
+            continue;
+          }
+        }
+      }
 
       // Keep export keyword if the declaration was originally exported or is marked as exported
       // But suppress export if this declaration is exported via export = or export default statement
@@ -186,7 +224,8 @@ export class OutputGenerator {
       const shouldHaveExport =
         !declaration.isExportEquals &&
         !suppressExportForDefault &&
-        (declaration.isExported || declaration.wasOriginallyExported);
+        (declaration.isExported || declaration.wasOriginallyExported) &&
+        !declaration.isExportedAsDefaultOnly;
 
       if (!shouldHaveExport) {
         text = OutputGenerator.stripExportModifier(text);
@@ -298,9 +337,7 @@ export class OutputGenerator {
 
   private generateExportDefault(): string[] {
     if (this.options.entryExportDefaultName) {
-      const normalizedName =
-        this.nameMap.get(this.options.entryExportDefaultName) || this.options.entryExportDefaultName;
-      return [`export { ${normalizedName} as default };`];
+      return [this.buildDefaultExportLine(this.options.entryExportDefaultName)];
     }
 
     if (!this.options.entryExportDefault) {
@@ -315,7 +352,10 @@ export class OutputGenerator {
     if (ts.isIdentifier(expression)) {
       // export default SomeIdentifier
       exportedName = expression.text;
-    } else if (
+      return [this.buildDefaultExportLine(exportedName)];
+    }
+
+    if (
       (ts.isClassDeclaration(expression) ||
         ts.isFunctionDeclaration(expression) ||
         ts.isInterfaceDeclaration(expression) ||
@@ -332,6 +372,13 @@ export class OutputGenerator {
     const normalizedName = this.nameMap.get(exportedName) || exportedName;
 
     return [`export { ${normalizedName} as default };`];
+  }
+
+  private buildDefaultExportLine(exportedName: string): string {
+    const normalizedName = this.nameMap.get(exportedName) || exportedName;
+    const extraExports = Array.from(this.extraDefaultExports).filter((name) => name !== normalizedName);
+    const exportItems = [`${normalizedName} as default`, ...extraExports];
+    return `export { ${exportItems.join(", ")} };`;
   }
 
   /* eslint-disable no-param-reassign */
@@ -474,6 +521,128 @@ export class OutputGenerator {
     return text;
   }
   /* eslint-enable no-param-reassign */
+
+  private generateVariableStatementLines(statement: ts.VariableStatement, declarations: TypeDeclaration[]): string[] {
+    const checker = this.options.typeChecker;
+    if (!checker) {
+      return [];
+    }
+
+    let leadingTrivia = "";
+
+    const orderedDeclarations = [...declarations].sort((a, b) => {
+      const aPos = a.variableDeclaration?.pos ?? 0;
+      const bPos = b.variableDeclaration?.pos ?? 0;
+      return aPos - bPos;
+    });
+
+    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
+    const separator = OutputGenerator.getVariableDeclarationSeparator(statement);
+
+    const hasDefaultOnly = orderedDeclarations.some((decl) => decl.isExportedAsDefaultOnly);
+    if (hasDefaultOnly) {
+      const declarationTexts: string[] = [];
+      for (const decl of orderedDeclarations) {
+        const declText = OutputGenerator.buildVariableDeclarationText(statement, decl, checker);
+        if (declText) {
+          declarationTexts.push(declText);
+        }
+
+        const shouldExport =
+          !decl.isExportEquals && (decl.isExported || decl.wasOriginallyExported) && !decl.isExportedAsDefaultOnly;
+        if (shouldExport) {
+          this.extraDefaultExports.add(decl.normalizedName);
+        }
+      }
+
+      if (declarationTexts.length === 0) {
+        return [];
+      }
+
+      const prefix = "declare ";
+      let line = `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(separator)};`;
+      for (const decl of orderedDeclarations) {
+        line = this.replaceRenamedReferences(line, decl);
+      }
+      return [line];
+    }
+
+    const groups = new Map<boolean, TypeDeclaration[]>();
+    for (const decl of orderedDeclarations) {
+      const shouldExport =
+        !decl.isExportEquals && (decl.isExported || decl.wasOriginallyExported) && !decl.isExportedAsDefaultOnly;
+
+      const group = groups.get(shouldExport);
+      if (group) {
+        group.push(decl);
+      } else {
+        groups.set(shouldExport, [decl]);
+      }
+    }
+
+    const lines: string[] = [];
+
+    for (const shouldExport of [false, true]) {
+      const group = groups.get(shouldExport);
+      if (!group || group.length === 0) {
+        continue;
+      }
+
+      const declarationTexts: string[] = [];
+      for (const decl of group) {
+        const declText = OutputGenerator.buildVariableDeclarationText(statement, decl, checker);
+        if (declText) {
+          declarationTexts.push(declText);
+        }
+      }
+
+      if (declarationTexts.length === 0) {
+        continue;
+      }
+
+      const prefix = shouldExport ? "export declare " : "declare ";
+      let line = `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(separator)};`;
+      for (const decl of group) {
+        line = this.replaceRenamedReferences(line, decl);
+      }
+
+      lines.push(line);
+      leadingTrivia = "";
+    }
+
+    return lines;
+  }
+
+  private static buildVariableDeclarationText(
+    statement: ts.VariableStatement,
+    declaration: TypeDeclaration,
+    checker: ts.TypeChecker,
+  ): string | null {
+    const varDecl = declaration.variableDeclaration;
+    if (!varDecl || !ts.isIdentifier(varDecl.name)) {
+      return null;
+    }
+
+    const name = declaration.normalizedName;
+    const initializer = varDecl.initializer;
+
+    if (initializer && ts.isIdentifier(initializer) && declaration.namespaceDependencies.has(initializer.text)) {
+      return `${name}: typeof ${initializer.text}`;
+    }
+
+    const explicitType = varDecl.type?.getText(statement.getSourceFile()) ?? null;
+    if (explicitType) {
+      return `${name}: ${explicitType}`;
+    }
+
+    if (initializer && OutputGenerator.shouldKeepInitializer(varDecl, checker)) {
+      return `${name} = ${initializer.getText(statement.getSourceFile())}`;
+    }
+
+    const type = checker.getTypeAtLocation(varDecl.name);
+    const typeText = checker.typeToString(type, varDecl.name, ts.TypeFormatFlags.NoTruncation);
+    return `${name}: ${typeText}`;
+  }
 
   private static transformBindingPatternVariableStatement(
     statement: ts.VariableStatement,
@@ -644,6 +813,19 @@ export class OutputGenerator {
       return "let";
     }
     return "var";
+  }
+
+  private static getVariableDeclarationSeparator(statement: ts.VariableStatement): string {
+    const text = statement.getText(statement.getSourceFile());
+    const match = text.match(/,\s*\n(\s*)\S/);
+    if (match) {
+      return `,\n${match[1]}`;
+    }
+    return ", ";
+  }
+
+  private static getVariableStatementKey(sourceFile: string, statement: ts.VariableStatement): string {
+    return `${sourceFile}:${statement.pos}:${statement.end}`;
   }
 
   private topologicalSort(): TypeDeclaration[] {
