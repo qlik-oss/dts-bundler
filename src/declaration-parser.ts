@@ -11,11 +11,13 @@ export class DeclarationParser {
   public entryExportDefault: ts.ExportAssignment | null = null;
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
+  private options: { inlineDeclareGlobals: boolean };
 
-  constructor(registry: TypeRegistry, fileCollector: FileCollector) {
+  constructor(registry: TypeRegistry, fileCollector: FileCollector, options?: { inlineDeclareGlobals?: boolean }) {
     this.registry = registry;
     this.fileCollector = fileCollector;
     this.importMap = new Map();
+    this.options = { inlineDeclareGlobals: options?.inlineDeclareGlobals ?? false };
   }
 
   parseFiles(files: Map<string, { sourceFile: ts.SourceFile; isEntry: boolean }>): void {
@@ -292,15 +294,25 @@ export class DeclarationParser {
     sourceFile: ts.SourceFile,
     isEntry: boolean,
   ): void {
+    if (DeclarationParser.isDeclareGlobal(statement) && !this.options.inlineDeclareGlobals) {
+      return;
+    }
+
     const name = DeclarationParser.getDeclarationName(statement);
     if (!name) return;
 
     const hasExport = DeclarationParser.hasExportModifier(statement);
     const hasDefaultExport = DeclarationParser.hasDefaultModifier(statement);
-    const isExported = isEntry ? hasExport : false;
+    const isDeclareGlobal = DeclarationParser.isDeclareGlobal(statement);
+    let isExported = isEntry ? hasExport : false;
 
     // For declarations from inlined libraries, preserve their original export status
-    const wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+    let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+
+    if (isDeclareGlobal && this.options.inlineDeclareGlobals) {
+      isExported = true;
+      wasOriginallyExported = true;
+    }
 
     const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, wasOriginallyExported);
 
@@ -344,6 +356,10 @@ export class DeclarationParser {
   private static hasDefaultModifier(statement: ts.Statement): boolean {
     const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
     return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+  }
+
+  private static isDeclareGlobal(statement: ts.Statement): statement is ts.ModuleDeclaration {
+    return ts.isModuleDeclaration(statement) && (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
   }
 
   private parseExportEquals(statement: ts.ExportAssignment, filePath: string, isEntry: boolean): void {

@@ -197,8 +197,11 @@ export class OutputGenerator {
         text = OutputGenerator.addDeclareKeyword(text);
       }
 
+      const isModuleDeclaration = ts.isModuleDeclaration(declaration.node);
+      const isDeclareGlobal = isModuleDeclaration && (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+
       // For namespace/module declarations, normalize "module" keyword to "namespace"
-      if (ts.isModuleDeclaration(declaration.node)) {
+      if (isModuleDeclaration && !isDeclareGlobal) {
         text = text.replace(/\b((?:export\s+)?declare\s+)module\b/, "$1namespace");
       }
 
@@ -206,8 +209,10 @@ export class OutputGenerator {
       text = OutputGenerator.stripImplementationDetails(text);
 
       // For namespace/module declarations, remove export modifiers from members
-      if (ts.isModuleDeclaration(declaration.node)) {
-        text = OutputGenerator.stripNamespaceMemberExports(text);
+      if (isModuleDeclaration) {
+        text = isDeclareGlobal
+          ? OutputGenerator.stripDeclareGlobalMemberExports(text)
+          : OutputGenerator.stripNamespaceMemberExports(text);
       }
 
       // Handle variable declarations - add type annotations for namespace references
@@ -363,6 +368,25 @@ export class OutputGenerator {
 
     const cleanedBody = body.replace(
       /(^|\n)(\s*)export\s+(?=(?:declare\s+)?(?:namespace|module|interface|type|class|enum|const|let|var|function)\b)/g,
+      "$1$2",
+    );
+
+    return `${prefix}${cleanedBody}${suffix}`;
+  }
+
+  private static stripDeclareGlobalMemberExports(text: string): string {
+    const openBraceIndex = text.indexOf("{");
+    const closeBraceIndex = text.lastIndexOf("}");
+    if (openBraceIndex === -1 || closeBraceIndex === -1 || closeBraceIndex <= openBraceIndex) {
+      return text;
+    }
+
+    const prefix = text.slice(0, openBraceIndex + 1);
+    const body = text.slice(openBraceIndex + 1, closeBraceIndex);
+    const suffix = text.slice(closeBraceIndex);
+
+    const cleanedBody = body.replace(
+      /(^|\n)(\s*)export\s+(?=(?:declare\s+)?(?:interface|type|class|enum|const|let|var|function)\b)/g,
       "$1$2",
     );
 

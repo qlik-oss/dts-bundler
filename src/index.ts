@@ -23,6 +23,7 @@ function bundle(
     allowedTypesLibraries?: string[];
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
+    inlineDeclareGlobals?: boolean;
   } = {},
 ): string {
   const entryFile = path.resolve(entry);
@@ -44,7 +45,9 @@ function bundle(
   }
 
   const registry = new TypeRegistry();
-  const parser = new DeclarationParser(registry, collector);
+  const parser = new DeclarationParser(registry, collector, {
+    inlineDeclareGlobals: options.inlineDeclareGlobals ?? false,
+  });
   parser.parseFiles(files);
 
   const analyzer = new DependencyAnalyzer(registry, parser.importMap);
@@ -84,6 +87,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
+    inlineDeclareGlobals,
   } = options;
 
   if (!entry) {
@@ -97,6 +101,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     exportReferencedTypes,
     allowedTypesLibraries,
     importedLibraries,
+    inlineDeclareGlobals,
   });
 }
 

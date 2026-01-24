@@ -106,7 +106,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle exports via global declarations", () => {
+    it("should handle exports via global declarations", () => {
       const { expected, result } = runTestCase("export-via-global-declaration", { inlineDeclareGlobals: true });
       expect(result).toBe(expected);
     });

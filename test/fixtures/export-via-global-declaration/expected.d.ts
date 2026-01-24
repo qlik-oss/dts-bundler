@@ -2,8 +2,8 @@
 
 import { Interface } from "fake-package";
 
-export interface SubOptions {}
-export interface FooOptions {
+interface SubOptions {}
+interface FooOptions {
   field: SubOptions;
 }
 declare global {
