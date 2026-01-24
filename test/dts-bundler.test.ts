@@ -101,7 +101,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle namespace exports", () => {
+    it("should handle namespace exports", () => {
       const { expected, result } = runTestCase("export-namespaces");
       expect(result).toBe(expected);
     });

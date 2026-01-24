@@ -197,6 +197,11 @@ export class OutputGenerator {
         text = OutputGenerator.addDeclareKeyword(text);
       }
 
+      // For namespace/module declarations, normalize "module" keyword to "namespace"
+      if (ts.isModuleDeclaration(declaration.node)) {
+        text = text.replace(/\b((?:export\s+)?declare\s+)module\b/, "$1namespace");
+      }
+
       // Strip implementation details for declaration files
       text = OutputGenerator.stripImplementationDetails(text);
 
