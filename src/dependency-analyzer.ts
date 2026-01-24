@@ -153,9 +153,6 @@ export class DependencyAnalyzer {
   private static extractQualifiedName(qualifiedName: ts.QualifiedName, references: Set<string>): void {
     let current: ts.EntityName = qualifiedName;
     while (ts.isQualifiedName(current)) {
-      if (ts.isIdentifier(current.right)) {
-        references.add(current.right.text);
-      }
       current = current.left;
     }
     if (ts.isIdentifier(current)) {
@@ -164,12 +161,9 @@ export class DependencyAnalyzer {
   }
 
   private static extractPropertyAccess(propAccess: ts.PropertyAccessExpression, references: Set<string>): void {
-    // Extract all parts of a property access chain like MyModule.SomeCoolInterface
+    // Extract only the leftmost identifier for a property access chain like MyModule.SomeCoolInterface
     let current: ts.Expression = propAccess;
     while (ts.isPropertyAccessExpression(current)) {
-      if (ts.isIdentifier(current.name)) {
-        references.add(current.name.text);
-      }
       current = current.expression;
     }
     if (ts.isIdentifier(current)) {

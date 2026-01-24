@@ -96,7 +96,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle existing class exported as default", () => {
+    it("should handle existing class exported as default", () => {
       const { expected, result } = runTestCase("export-default-exist-class");
       expect(result).toBe(expected);
     });

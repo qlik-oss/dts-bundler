@@ -393,30 +393,55 @@ export class DeclarationParser {
   }
 
   private parseReExports(filePath: string, sourceFile: ts.SourceFile): void {
-    // Handle export { X } from "./module" statements
+    // Handle export { X } from "./module" statements and local export lists
     for (const statement of sourceFile.statements) {
       if (!ts.isExportDeclaration(statement)) continue;
-      if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
       if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
 
-      const importPath = statement.moduleSpecifier.text;
-      if (!this.fileCollector.shouldInline(importPath)) continue;
+      if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+        const importPath = statement.moduleSpecifier.text;
+        if (!this.fileCollector.shouldInline(importPath)) continue;
 
-      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
-      if (!resolvedPath) continue;
+        const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+        if (!resolvedPath) continue;
 
-      // Mark the re-exported declarations as exported
-      for (const element of statement.exportClause.elements) {
-        const exportedName = element.name.text;
-        const originalName = element.propertyName?.text || exportedName;
+        // Mark the re-exported declarations as exported
+        for (const element of statement.exportClause.elements) {
+          const exportedName = element.name.text;
+          const originalName = element.propertyName?.text || exportedName;
 
-        // Find the declaration in the resolved file
-        const key = `${resolvedPath}:${originalName}`;
-        const declarationId = this.registry.nameIndex.get(key);
-        if (declarationId) {
-          const declaration = this.registry.getDeclaration(declarationId);
-          if (declaration) {
-            declaration.isExported = true;
+          // Find the declaration in the resolved file
+          const key = `${resolvedPath}:${originalName}`;
+          const declarationId = this.registry.nameIndex.get(key);
+          if (declarationId) {
+            const declaration = this.registry.getDeclaration(declarationId);
+            if (declaration) {
+              declaration.isExported = true;
+            }
+          }
+        }
+      } else {
+        // export { X } (local export list) - resolve through imports if needed
+        const fileImports = this.importMap.get(filePath);
+
+        for (const element of statement.exportClause.elements) {
+          const exportedName = element.name.text;
+          const originalName = element.propertyName?.text || exportedName;
+
+          const importInfo = fileImports?.get(originalName);
+          let key: string;
+          if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
+            key = `${importInfo.sourceFile}:${importInfo.originalName}`;
+          } else {
+            key = `${filePath}:${originalName}`;
+          }
+
+          const declarationId = this.registry.nameIndex.get(key);
+          if (declarationId) {
+            const declaration = this.registry.getDeclaration(declarationId);
+            if (declaration) {
+              declaration.isExported = true;
+            }
           }
         }
       }

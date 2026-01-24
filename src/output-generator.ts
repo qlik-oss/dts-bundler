@@ -176,9 +176,14 @@ export class OutputGenerator {
 
       // Keep export keyword if the declaration was originally exported or is marked as exported
       // But suppress export if this declaration is exported via export = or export default statement
+      const hasDefaultModifier =
+        ts.canHaveModifiers(declaration.node) &&
+        (ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false);
+      const suppressExportForDefault = declaration.isExportedAsDefault && hasDefaultModifier;
+
       const shouldHaveExport =
         !declaration.isExportEquals &&
-        !declaration.isExportedAsDefault &&
+        !suppressExportForDefault &&
         (declaration.isExported || declaration.wasOriginallyExported);
 
       if (!shouldHaveExport) {
@@ -194,6 +199,11 @@ export class OutputGenerator {
 
       // Strip implementation details for declaration files
       text = OutputGenerator.stripImplementationDetails(text);
+
+      // For namespace/module declarations, remove export modifiers from members
+      if (ts.isModuleDeclaration(declaration.node)) {
+        text = OutputGenerator.stripNamespaceMemberExports(text);
+      }
 
       // Handle variable declarations - add type annotations for namespace references
       if (ts.isVariableStatement(declaration.node)) {
@@ -321,10 +331,10 @@ export class OutputGenerator {
   /* eslint-enable no-param-reassign */
 
   private static addDeclareKeyword(text: string): string {
-    // Only add declare to class, enum, and function (not interface, type, namespace, module)
+    // Only add declare to class, enum, function, namespace, and module (not interface or type)
     // Handle both "export class" and "class" patterns
     const match = text.match(
-      /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)(?:export\s+)?)(class|enum|function)(?:\s|$)/,
+      /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)(?:export\s+)?)(class|enum|function|namespace|module)(?:\s|$)/,
     );
     if (match) {
       const prefix = match[1]; // comments and export keyword
@@ -333,6 +343,25 @@ export class OutputGenerator {
       return `${prefix}declare ${declarationKeyword}${rest}`;
     }
     return text;
+  }
+
+  private static stripNamespaceMemberExports(text: string): string {
+    const openBraceIndex = text.indexOf("{");
+    const closeBraceIndex = text.lastIndexOf("}");
+    if (openBraceIndex === -1 || closeBraceIndex === -1 || closeBraceIndex <= openBraceIndex) {
+      return text;
+    }
+
+    const prefix = text.slice(0, openBraceIndex + 1);
+    const body = text.slice(openBraceIndex + 1, closeBraceIndex);
+    const suffix = text.slice(closeBraceIndex);
+
+    const cleanedBody = body.replace(
+      /(^|\n)(\s*)export\s+(?=(?:declare\s+)?(?:namespace|module|interface|type|class|enum|const|let|var|function)\b)/g,
+      "$1$2",
+    );
+
+    return `${prefix}${cleanedBody}${suffix}`;
   }
 
   /* eslint-disable no-param-reassign */
