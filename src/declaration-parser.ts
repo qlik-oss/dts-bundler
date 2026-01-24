@@ -7,6 +7,8 @@ import { TypeDeclaration } from "./types.js";
 export class DeclarationParser {
   public importMap: Map<string, Map<string, ImportInfo>>;
   public entryExportEquals: ts.ExportAssignment | null = null;
+  public entryExportDefaultName: string | null = null;
+  public entryExportDefault: ts.ExportAssignment | null = null;
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
 
@@ -62,6 +64,51 @@ export class DeclarationParser {
           this.entryExportEquals = statement;
         }
         this.parseExportEquals(statement, filePath, isEntry);
+      } else if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+        // Handle export default
+        if (isEntry) {
+          this.entryExportDefault = statement;
+          // If the export default has an embedded declaration, parse it
+          const expression = statement.expression;
+          if (
+            ts.isClassDeclaration(expression) ||
+            ts.isFunctionDeclaration(expression) ||
+            ts.isInterfaceDeclaration(expression) ||
+            ts.isEnumDeclaration(expression)
+          ) {
+            // Parse the embedded declaration
+            const name = expression.name?.text;
+            if (name) {
+              const hasExport = DeclarationParser.hasExportModifier(expression);
+              const isExported = true; // Always mark as exported since it's in entry file
+              const wasOriginallyExported = hasExport;
+
+              const declaration = new TypeDeclaration(
+                name,
+                filePath,
+                expression,
+                sourceFile,
+                isExported,
+                wasOriginallyExported,
+              );
+              declaration.isExportedAsDefault = true;
+
+              this.registry.register(declaration);
+            }
+          } else if (ts.isIdentifier(expression)) {
+            // Reference to an existing declaration
+            const exportedName = expression.text;
+            const key = `${filePath}:${exportedName}`;
+            const declarationId = this.registry.nameIndex.get(key);
+            if (declarationId) {
+              const declaration = this.registry.getDeclaration(declarationId);
+              if (declaration) {
+                declaration.isExportedAsDefault = true;
+                declaration.isExported = true;
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -249,12 +296,19 @@ export class DeclarationParser {
     if (!name) return;
 
     const hasExport = DeclarationParser.hasExportModifier(statement);
+    const hasDefaultExport = DeclarationParser.hasDefaultModifier(statement);
     const isExported = isEntry ? hasExport : false;
 
     // For declarations from inlined libraries, preserve their original export status
     const wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
 
     const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, isExported, wasOriginallyExported);
+
+    if (isEntry && hasDefaultExport) {
+      declaration.isExportedAsDefault = true;
+      declaration.isExported = true;
+      this.entryExportDefaultName = name;
+    }
 
     this.registry.register(declaration);
   }
@@ -285,6 +339,11 @@ export class DeclarationParser {
   private static hasExportModifier(statement: ts.Statement): boolean {
     const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
     return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+  }
+
+  private static hasDefaultModifier(statement: ts.Statement): boolean {
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
   }
 
   private parseExportEquals(statement: ts.ExportAssignment, filePath: string, isEntry: boolean): void {

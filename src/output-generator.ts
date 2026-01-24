@@ -19,6 +19,8 @@ export class OutputGenerator {
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
     entryExportEquals?: ts.ExportAssignment | null;
+    entryExportDefault?: ts.ExportAssignment | null;
+    entryExportDefaultName?: string | null;
   };
 
   constructor(
@@ -34,6 +36,8 @@ export class OutputGenerator {
       importedLibraries?: string[];
       referencedTypes?: Set<string>;
       entryExportEquals?: ts.ExportAssignment | null;
+      entryExportDefault?: ts.ExportAssignment | null;
+      entryExportDefaultName?: string | null;
     } = {},
   ) {
     this.registry = registry;
@@ -54,6 +58,7 @@ export class OutputGenerator {
     const declarations = this.generateDeclarations();
     const namespaces = this.generateNamespaces();
     const exportEquals = this.generateExportEquals();
+    const exportDefault = this.generateExportDefault();
 
     const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
     const emptyExport = this.options.includeEmptyExport ? ["export {};"] : [];
@@ -76,6 +81,12 @@ export class OutputGenerator {
     // export = should appear immediately after declarations without blank line
     if (exportEquals.length > 0) {
       lines.push(...exportEquals);
+    }
+
+    // export default should appear after declarations
+    if (exportDefault.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push(...exportDefault);
     }
 
     appendSection(umdDeclaration);
@@ -164,11 +175,13 @@ export class OutputGenerator {
       let text = declaration.getText();
 
       // Keep export keyword if the declaration was originally exported or is marked as exported
-      // But suppress export if this declaration is exported via export = statement
+      // But suppress export if this declaration is exported via export = or export default statement
       const shouldHaveExport =
-        !declaration.isExportEquals && (declaration.isExported || declaration.wasOriginallyExported);
+        !declaration.isExportEquals &&
+        !declaration.isExportedAsDefault &&
+        (declaration.isExported || declaration.wasOriginallyExported);
 
-      if (!shouldHaveExport && text.includes("export ")) {
+      if (!shouldHaveExport) {
         text = OutputGenerator.stripExportModifier(text);
       }
 
@@ -260,9 +273,52 @@ export class OutputGenerator {
     return [`export = ${normalizedName};`];
   }
 
-  private static stripExportModifier(text: string): string {
-    return text.replace(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))export\s+/, "$1");
+  private generateExportDefault(): string[] {
+    if (this.options.entryExportDefaultName) {
+      const normalizedName =
+        this.nameMap.get(this.options.entryExportDefaultName) || this.options.entryExportDefaultName;
+      return [`export { ${normalizedName} as default };`];
+    }
+
+    if (!this.options.entryExportDefault) {
+      return [];
+    }
+
+    const statement = this.options.entryExportDefault;
+    const expression = statement.expression;
+
+    let exportedName: string;
+
+    if (ts.isIdentifier(expression)) {
+      // export default SomeIdentifier
+      exportedName = expression.text;
+    } else if (
+      (ts.isClassDeclaration(expression) ||
+        ts.isFunctionDeclaration(expression) ||
+        ts.isInterfaceDeclaration(expression) ||
+        ts.isEnumDeclaration(expression)) &&
+      expression.name
+    ) {
+      // export default class/function/etc with a name
+      exportedName = expression.name.text;
+    } else {
+      // export default <expression without name>
+      return [];
+    }
+
+    const normalizedName = this.nameMap.get(exportedName) || exportedName;
+
+    return [`export { ${normalizedName} as default };`];
   }
+
+  /* eslint-disable no-param-reassign */
+  private static stripExportModifier(text: string): string {
+    // Strip both "export default" and "export", handling leading whitespace
+    text = text.replace(/export\s+default\s+/, "");
+    text = text.replace(/export\s+/, "");
+    return text;
+  }
+  /* eslint-enable no-param-reassign */
 
   private static addDeclareKeyword(text: string): string {
     // Only add declare to class, enum, and function (not interface, type, namespace, module)

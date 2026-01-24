@@ -63,6 +63,8 @@ function bundle(
     includeEmptyExport,
     referencedTypes: allReferencedTypes,
     entryExportEquals: parser.entryExportEquals,
+    entryExportDefault: parser.entryExportDefault,
+    entryExportDefaultName: parser.entryExportDefaultName,
   });
   return generator.generate();
 }
