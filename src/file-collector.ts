@@ -22,6 +22,9 @@ export class FileCollector {
   private typeChecker: ts.TypeChecker;
   private entryFile: string;
   private inlinedLibrariesSet: Set<string>;
+  private modulePathCache: Map<string, string>;
+  private moduleFilesByLibrary: Map<string, string[]>;
+  private moduleResolveCache: Map<string, string | null>;
 
   constructor(entryFile: string, options: FileCollectorOptions = {}) {
     this.entryFile = path.resolve(entryFile);
@@ -31,6 +34,11 @@ export class FileCollector {
 
     // Compute transitive closure of inlined libraries
     this.inlinedLibrariesSet = this.computeInlinedLibrariesSet();
+
+    this.modulePathCache = new Map();
+    this.moduleFilesByLibrary = new Map();
+    this.moduleResolveCache = new Map();
+    this.buildModuleCaches();
   }
 
   private createProgram(): ts.Program {
@@ -40,6 +48,10 @@ export class FileCollector {
 
     // Ensure declaration is enabled
     compilerOptions.declaration = true;
+
+    // Performance: skip type checking of libs
+    compilerOptions.skipLibCheck = true;
+    compilerOptions.skipDefaultLibCheck = true;
 
     // Create program with the entry file
     return ts.createProgram([this.entryFile], compilerOptions);
@@ -54,6 +66,41 @@ export class FileCollector {
     // Simply return the explicitly configured inlined libraries
     // Do not compute transitive dependencies - only inline what's explicitly requested
     return new Set<string>(this.inlinedLibraries);
+  }
+
+  private buildModuleCaches(): void {
+    for (const sourceFile of this.program.getSourceFiles()) {
+      const fileName = sourceFile.fileName;
+
+      if (!fileName.includes("node_modules")) {
+        continue;
+      }
+
+      const libName = getLibraryName(fileName);
+      if (!libName) {
+        continue;
+      }
+
+      if (!this.modulePathCache.has(libName)) {
+        this.modulePathCache.set(libName, fileName);
+      }
+
+      const list = this.moduleFilesByLibrary.get(libName);
+      if (list) {
+        list.push(fileName);
+      } else {
+        this.moduleFilesByLibrary.set(libName, [fileName]);
+      }
+    }
+  }
+
+  private static getLibraryNameFromImportPath(importPath: string): string {
+    if (importPath.startsWith("@")) {
+      const parts = importPath.split("/");
+      return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : importPath;
+    }
+    const [first] = importPath.split("/");
+    return first;
   }
 
   shouldInline(importPath: string): boolean {
@@ -171,29 +218,40 @@ export class FileCollector {
       return null;
     }
 
-    // For non-relative imports, find the source file in the program
-    // TypeScript has already resolved these for us
-    const sourceFiles = this.program.getSourceFiles();
-    for (const sourceFile of sourceFiles) {
-      // Check if this source file is from the imported module
-      const fileName = sourceFile.fileName;
+    const cached = this.moduleResolveCache.get(importPath);
+    if (cached !== undefined) {
+      return cached;
+    }
 
-      // Handle node_modules imports
-      if (fileName.includes("node_modules")) {
-        const libName = getLibraryName(fileName);
-        if (libName === importPath || fileName.includes(`/${importPath}/`)) {
-          return fileName;
-        }
+    const direct = this.modulePathCache.get(importPath);
+    if (direct) {
+      this.moduleResolveCache.set(importPath, direct);
+      return direct;
+    }
+
+    const libraryName = FileCollector.getLibraryNameFromImportPath(importPath);
+    const list = this.moduleFilesByLibrary.get(libraryName);
+
+    if (list) {
+      const match = list.find(
+        (fileName) =>
+          fileName.includes(`/${importPath}/`) ||
+          fileName.includes(`/${importPath}.`) ||
+          fileName.endsWith(`/${importPath}`),
+      );
+      if (match) {
+        this.moduleResolveCache.set(importPath, match);
+        return match;
       }
     }
 
+    this.moduleResolveCache.set(importPath, null);
     return null;
   }
 
   collectFiles(): Map<string, CollectedFile> {
     const files = new Map<string, CollectedFile>();
     const sourceFiles = this.program.getSourceFiles();
-    const processedPaths = new Set<string>();
 
     // First, collect files that TypeScript's Program resolved
     for (const sourceFile of sourceFiles) {
@@ -203,7 +261,6 @@ export class FileCollector {
       }
 
       const filePath = sourceFile.fileName;
-      processedPaths.add(filePath);
       const isEntry = filePath === this.entryFile;
 
       // Read file content
@@ -235,89 +292,6 @@ export class FileCollector {
       }
 
       files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
-    }
-
-    // Second pass: manually collect relative imports that TypeScript might have missed
-    // This handles cases like ./file.mjs importing file.mts
-    const toProcess: Array<{ file: string; isEntry: boolean }> = [{ file: this.entryFile, isEntry: true }];
-
-    while (toProcess.length > 0) {
-      const next = toProcess.shift();
-      if (!next) break;
-      const { file: filePath, isEntry } = next;
-
-      // Skip if already processed
-      if (processedPaths.has(filePath)) {
-        continue;
-      }
-
-      if (!fs.existsSync(filePath)) {
-        continue;
-      }
-
-      processedPaths.add(filePath);
-
-      const content = fs.readFileSync(filePath, "utf-8");
-      const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
-
-      const hasEmptyExport = sourceFile.statements.some((statement) => {
-        if (!ts.isExportDeclaration(statement)) return false;
-        if (statement.moduleSpecifier) return false;
-        if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) return false;
-        return statement.exportClause.elements.length === 0;
-      });
-
-      const referencedTypes = new Set<string>();
-      const typeRefs = (
-        sourceFile as ts.SourceFile & { typeReferenceDirectives: Array<{ fileName: string; preserve?: boolean }> }
-      ).typeReferenceDirectives;
-      for (const ref of typeRefs) {
-        if (ref.preserve === true) {
-          referencedTypes.add(ref.fileName);
-        }
-      }
-
-      files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
-
-      // Collect relative imports
-      for (const statement of sourceFile.statements) {
-        if (ts.isImportDeclaration(statement)) {
-          const moduleSpecifier = statement.moduleSpecifier;
-          if (ts.isStringLiteral(moduleSpecifier)) {
-            const importPath = moduleSpecifier.text;
-            if (this.shouldInline(importPath)) {
-              const resolved = this.resolveImport(filePath, importPath);
-              if (resolved && !processedPaths.has(resolved)) {
-                toProcess.push({ file: resolved, isEntry: false });
-              }
-            }
-          }
-        } else if (ts.isImportEqualsDeclaration(statement)) {
-          if (ts.isExternalModuleReference(statement.moduleReference)) {
-            const expr = statement.moduleReference.expression;
-            if (ts.isStringLiteral(expr)) {
-              const importPath = expr.text;
-              if (this.shouldInline(importPath)) {
-                const resolved = this.resolveImport(filePath, importPath);
-                if (resolved && !processedPaths.has(resolved)) {
-                  toProcess.push({ file: resolved, isEntry: false });
-                }
-              }
-            }
-          }
-        } else if (ts.isExportDeclaration(statement)) {
-          const moduleSpecifier = statement.moduleSpecifier;
-          if (moduleSpecifier && ts.isStringLiteral(moduleSpecifier)) {
-            const exportPath = moduleSpecifier.text;
-            if (this.shouldInline(exportPath)) {
-              const resolved = this.resolveImport(filePath, exportPath);
-              if (resolved && !processedPaths.has(resolved)) {
-                toProcess.push({ file: resolved, isEntry: false });
-              }
-            }
-          }
-        }
-      }
     }
 
     return files;
