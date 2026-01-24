@@ -18,6 +18,7 @@ export class OutputGenerator {
     allowedTypesLibraries?: string[];
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
+    entryExportEquals?: ts.ExportAssignment | null;
   };
 
   constructor(
@@ -32,6 +33,7 @@ export class OutputGenerator {
       allowedTypesLibraries?: string[];
       importedLibraries?: string[];
       referencedTypes?: Set<string>;
+      entryExportEquals?: ts.ExportAssignment | null;
     } = {},
   ) {
     this.registry = registry;
@@ -51,6 +53,7 @@ export class OutputGenerator {
     this.buildNameMap();
     const declarations = this.generateDeclarations();
     const namespaces = this.generateNamespaces();
+    const exportEquals = this.generateExportEquals();
 
     const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
     const emptyExport = this.options.includeEmptyExport ? ["export {};"] : [];
@@ -69,6 +72,12 @@ export class OutputGenerator {
     appendSection(externalImports);
     appendSection(namespaces);
     appendSection(declarations);
+
+    // export = should appear immediately after declarations without blank line
+    if (exportEquals.length > 0) {
+      lines.push(...exportEquals);
+    }
+
     appendSection(umdDeclaration);
     appendSection(emptyExport);
 
@@ -155,7 +164,9 @@ export class OutputGenerator {
       let text = declaration.getText();
 
       // Keep export keyword if the declaration was originally exported or is marked as exported
-      const shouldHaveExport = declaration.isExported || declaration.wasOriginallyExported;
+      // But suppress export if this declaration is exported via export = statement
+      const shouldHaveExport =
+        !declaration.isExportEquals && (declaration.isExported || declaration.wasOriginallyExported);
 
       if (!shouldHaveExport && text.includes("export ")) {
         text = OutputGenerator.stripExportModifier(text);
@@ -231,6 +242,22 @@ export class OutputGenerator {
     }
 
     return lines;
+  }
+
+  private generateExportEquals(): string[] {
+    if (!this.options.entryExportEquals) {
+      return [];
+    }
+
+    const statement = this.options.entryExportEquals;
+    if (!ts.isIdentifier(statement.expression)) {
+      return [];
+    }
+
+    const exportedName = statement.expression.text;
+    const normalizedName = this.nameMap.get(exportedName) || exportedName;
+
+    return [`export = ${normalizedName};`];
   }
 
   private static stripExportModifier(text: string): string {

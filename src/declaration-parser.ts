@@ -6,6 +6,7 @@ import { TypeDeclaration } from "./types.js";
 
 export class DeclarationParser {
   public importMap: Map<string, Map<string, ImportInfo>>;
+  public entryExportEquals: ts.ExportAssignment | null = null;
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
 
@@ -26,7 +27,7 @@ export class DeclarationParser {
         this.parseReExports(filePath, sourceFile);
       }
       // Resolve export = for all files
-      this.resolveExportEquals(filePath, sourceFile);
+      this.resolveExportEquals(filePath, sourceFile, isEntry);
     }
   }
 
@@ -56,7 +57,11 @@ export class DeclarationParser {
           this.parseDeclaration(statement, filePath, sourceFile, isEntry);
         }
       } else if (ts.isExportAssignment(statement) && statement.isExportEquals) {
-        this.parseExportEquals(statement, filePath);
+        // Store export = from entry file
+        if (isEntry) {
+          this.entryExportEquals = statement;
+        }
+        this.parseExportEquals(statement, filePath, isEntry);
       }
     }
   }
@@ -282,21 +287,48 @@ export class DeclarationParser {
     return modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
   }
 
-  private parseExportEquals(statement: ts.ExportAssignment, filePath: string): void {
+  private parseExportEquals(statement: ts.ExportAssignment, filePath: string, isEntry: boolean): void {
     // Handle: export = ClassName
     if (!ts.isIdentifier(statement.expression)) {
       return;
     }
 
     const exportedName = statement.expression.text;
-    const key = `${filePath}:${exportedName}`;
+
+    // First, check if this is an imported name
+    const fileImports = this.importMap.get(filePath);
+    const importInfo = fileImports?.get(exportedName);
+
+    let key: string;
+    let targetFilePath: string;
+    let targetName: string;
+
+    if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
+      // It's an import, resolve to the actual declaration
+      targetFilePath = importInfo.sourceFile;
+      targetName = importInfo.originalName;
+      key = `${targetFilePath}:${targetName}`;
+    } else {
+      // It's a local declaration
+      targetFilePath = filePath;
+      targetName = exportedName;
+      key = `${filePath}:${exportedName}`;
+    }
+
     const declarationId = this.registry.nameIndex.get(key);
 
     if (declarationId) {
       const declaration = this.registry.getDeclaration(declarationId);
       if (declaration) {
-        // Mark as exported since it's being exported via export =
-        declaration.wasOriginallyExported = true;
+        // When exported via export = from entry, mark it so we know to suppress export keyword
+        // but keep isExported=true so tree shaker includes it
+        if (isEntry) {
+          declaration.isExported = true;
+          declaration.isExportEquals = true;
+        } else {
+          // For non-entry files, mark as exported since it's being exported via export =
+          declaration.wasOriginallyExported = true;
+        }
       }
     }
   }
@@ -332,7 +364,12 @@ export class DeclarationParser {
     }
   }
 
-  private resolveExportEquals(filePath: string, sourceFile: ts.SourceFile): void {
+  private resolveExportEquals(
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    isEntry: boolean,
+  ): void {
     // Find export = statements in this file
     let exportedName: string | null = null;
 

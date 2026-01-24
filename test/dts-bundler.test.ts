@@ -86,7 +86,7 @@ describe("TypeScript Declaration Bundler", () => {
   });
 
   describe("Export Patterns", () => {
-    it.skip("should handle CommonJS export = from entry", () => {
+    it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);
     });

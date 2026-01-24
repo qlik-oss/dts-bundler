@@ -13,6 +13,7 @@ var TypeDeclaration = class {
 	sourceFileNode;
 	isExported;
 	wasOriginallyExported;
+	isExportEquals;
 	dependencies;
 	externalDependencies;
 	namespaceDependencies;
@@ -26,6 +27,7 @@ var TypeDeclaration = class {
 		this.sourceFileNode = sourceFileNode;
 		this.isExported = isExported;
 		this.wasOriginallyExported = wasOriginallyExported;
+		this.isExportEquals = false;
 		this.dependencies = /* @__PURE__ */ new Set();
 		this.externalDependencies = /* @__PURE__ */ new Map();
 		this.namespaceDependencies = /* @__PURE__ */ new Set();
@@ -70,6 +72,7 @@ var ExternalImport = class {
 //#region src/declaration-parser.ts
 var DeclarationParser = class DeclarationParser {
 	importMap;
+	entryExportEquals = null;
 	registry;
 	fileCollector;
 	constructor(registry, fileCollector) {
@@ -81,7 +84,7 @@ var DeclarationParser = class DeclarationParser {
 		for (const [filePath, { sourceFile, isEntry }] of files.entries()) this.parseFile(filePath, sourceFile, isEntry);
 		for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
 			if (isEntry) this.parseReExports(filePath, sourceFile);
-			this.resolveExportEquals(filePath, sourceFile);
+			this.resolveExportEquals(filePath, sourceFile, isEntry);
 		}
 	}
 	parseFile(filePath, sourceFile, isEntry) {
@@ -91,7 +94,10 @@ var DeclarationParser = class DeclarationParser {
 		else if (ts.isImportEqualsDeclaration(statement)) this.parseImportEquals(statement, filePath, fileImports);
 		for (const statement of sourceFile.statements) if (DeclarationParser.isDeclaration(statement)) if (ts.isModuleDeclaration(statement) && ts.isStringLiteral(statement.name) && statement.body && ts.isModuleBlock(statement.body)) this.parseAmbientModule(statement, filePath, sourceFile);
 		else this.parseDeclaration(statement, filePath, sourceFile, isEntry);
-		else if (ts.isExportAssignment(statement) && statement.isExportEquals) this.parseExportEquals(statement, filePath);
+		else if (ts.isExportAssignment(statement) && statement.isExportEquals) {
+			if (isEntry) this.entryExportEquals = statement;
+			this.parseExportEquals(statement, filePath, isEntry);
+		}
 	}
 	parseAmbientModule(moduleDecl, filePath, sourceFile) {
 		if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) return;
@@ -222,13 +228,29 @@ var DeclarationParser = class DeclarationParser {
 	static hasExportModifier(statement) {
 		return (ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : void 0)?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
 	}
-	parseExportEquals(statement, filePath) {
+	parseExportEquals(statement, filePath, isEntry) {
 		if (!ts.isIdentifier(statement.expression)) return;
-		const key = `${filePath}:${statement.expression.text}`;
+		const exportedName = statement.expression.text;
+		const importInfo = this.importMap.get(filePath)?.get(exportedName);
+		let key;
+		let targetFilePath;
+		let targetName;
+		if (importInfo && !importInfo.isExternal) {
+			targetFilePath = importInfo.sourceFile;
+			targetName = importInfo.originalName;
+			key = `${targetFilePath}:${targetName}`;
+		} else {
+			targetFilePath = filePath;
+			targetName = exportedName;
+			key = `${filePath}:${exportedName}`;
+		}
 		const declarationId = this.registry.nameIndex.get(key);
 		if (declarationId) {
 			const declaration = this.registry.getDeclaration(declarationId);
-			if (declaration) declaration.wasOriginallyExported = true;
+			if (declaration) if (isEntry) {
+				declaration.isExported = true;
+				declaration.isExportEquals = true;
+			} else declaration.wasOriginallyExported = true;
 		}
 	}
 	parseReExports(filePath, sourceFile) {
@@ -251,7 +273,7 @@ var DeclarationParser = class DeclarationParser {
 			}
 		}
 	}
-	resolveExportEquals(filePath, sourceFile) {
+	resolveExportEquals(filePath, sourceFile, isEntry) {
 		let exportedName = null;
 		for (const statement of sourceFile.statements) if (ts.isExportAssignment(statement) && statement.isExportEquals) {
 			if (ts.isIdentifier(statement.expression)) {
@@ -360,6 +382,27 @@ var DependencyAnalyzer = class DependencyAnalyzer {
 };
 
 //#endregion
+//#region src/helpers/node-modules.ts
+/**
+* Helper functions for working with node_modules paths and library names
+* Ported from dts-bundle-generator
+*/
+const nodeModulesFolderName = "node_modules/";
+const libraryNameRegex = /node_modules\/((?:(?=@)[^/]+\/[^/]+|[^/]+))\//;
+/**
+* Extract library name from a file path that contains node_modules
+* @param fileName - File path that may contain node_modules
+* @returns Library name (e.g., "typescript", "@types/node") or null if not in node_modules
+*/
+function getLibraryName(fileName) {
+	const lastNodeModulesIndex = fileName.lastIndexOf(nodeModulesFolderName);
+	if (lastNodeModulesIndex === -1) return null;
+	const match = libraryNameRegex.exec(fileName.slice(lastNodeModulesIndex));
+	if (match === null) return null;
+	return match[1];
+}
+
+//#endregion
 //#region src/helpers/typescript-config.ts
 const parseConfigHost = {
 	useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
@@ -397,27 +440,6 @@ function getCompilerOptions(configPath) {
 		if (errors) throw new Error(`Error parsing tsconfig.json: ${errors}`);
 	}
 	return parsedConfig.options;
-}
-
-//#endregion
-//#region src/helpers/node-modules.ts
-/**
-* Helper functions for working with node_modules paths and library names
-* Ported from dts-bundle-generator
-*/
-const nodeModulesFolderName = "node_modules/";
-const libraryNameRegex = /node_modules\/((?:(?=@)[^/]+\/[^/]+|[^/]+))\//;
-/**
-* Extract library name from a file path that contains node_modules
-* @param fileName - File path that may contain node_modules
-* @returns Library name (e.g., "typescript", "@types/node") or null if not in node_modules
-*/
-function getLibraryName(fileName) {
-	const lastNodeModulesIndex = fileName.lastIndexOf(nodeModulesFolderName);
-	if (lastNodeModulesIndex === -1) return null;
-	const match = libraryNameRegex.exec(fileName.slice(lastNodeModulesIndex));
-	if (match === null) return null;
-	return match[1];
 }
 
 //#endregion
@@ -740,6 +762,7 @@ var OutputGenerator = class OutputGenerator {
 		this.buildNameMap();
 		const declarations = this.generateDeclarations();
 		const namespaces = this.generateNamespaces();
+		const exportEquals = this.generateExportEquals();
 		const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
 		const emptyExport = this.options.includeEmptyExport ? ["export {};"] : [];
 		const appendSection = (section) => {
@@ -752,6 +775,7 @@ var OutputGenerator = class OutputGenerator {
 		appendSection(externalImports);
 		appendSection(namespaces);
 		appendSection(declarations);
+		if (exportEquals.length > 0) lines.push(...exportEquals);
 		appendSection(umdDeclaration);
 		appendSection(emptyExport);
 		return `${lines.join("\n")}\n`;
@@ -810,7 +834,7 @@ var OutputGenerator = class OutputGenerator {
 		}) : sorted;
 		for (const declaration of ordered) {
 			let text = declaration.getText();
-			if (!(declaration.isExported || declaration.wasOriginallyExported) && text.includes("export ")) text = OutputGenerator.stripExportModifier(text);
+			if (!(!declaration.isExportEquals && (declaration.isExported || declaration.wasOriginallyExported)) && text.includes("export ")) text = OutputGenerator.stripExportModifier(text);
 			if (!text.trim().startsWith("declare ")) text = OutputGenerator.addDeclareKeyword(text);
 			text = OutputGenerator.stripImplementationDetails(text);
 			if (ts.isVariableStatement(declaration.node)) text = this.transformVariableDeclaration(text, declaration);
@@ -850,6 +874,13 @@ var OutputGenerator = class OutputGenerator {
 			lines.push(`}`);
 		}
 		return lines;
+	}
+	generateExportEquals() {
+		if (!this.options.entryExportEquals) return [];
+		const statement = this.options.entryExportEquals;
+		if (!ts.isIdentifier(statement.expression)) return [];
+		const exportedName = statement.expression.text;
+		return [`export = ${this.nameMap.get(exportedName) || exportedName};`];
 	}
 	static stripExportModifier(text) {
 		return text.replace(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))export\s+/, "$1");
@@ -1065,7 +1096,8 @@ function bundle(entry, inlinedLibraries = [], options = {}) {
 	return new OutputGenerator(registry, usedDeclarations, usedExternals, {
 		...options,
 		includeEmptyExport,
-		referencedTypes: allReferencedTypes
+		referencedTypes: allReferencedTypes,
+		entryExportEquals: parser.entryExportEquals
 	}).generate();
 }
 /**

@@ -62,6 +62,7 @@ function bundle(
     ...options,
     includeEmptyExport,
     referencedTypes: allReferencedTypes,
+    entryExportEquals: parser.entryExportEquals,
   });
   return generator.generate();
 }
