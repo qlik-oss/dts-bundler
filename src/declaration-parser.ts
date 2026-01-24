@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { FileCollector } from "./file-collector.js";
+import type { FileCollector } from "./file-collector.js";
 import type { TypeRegistry } from "./registry.js";
 import type { ImportInfo } from "./types.js";
 import { TypeDeclaration } from "./types.js";
@@ -44,9 +44,50 @@ export class DeclarationParser {
 
     for (const statement of sourceFile.statements) {
       if (DeclarationParser.isDeclaration(statement)) {
-        this.parseDeclaration(statement, filePath, sourceFile, isEntry);
+        // Handle ambient module declarations specially
+        if (ts.isModuleDeclaration(statement) && statement.body && ts.isModuleBlock(statement.body)) {
+          this.parseAmbientModule(statement, filePath, sourceFile);
+        } else {
+          this.parseDeclaration(statement, filePath, sourceFile, isEntry);
+        }
       } else if (ts.isExportAssignment(statement) && statement.isExportEquals) {
         this.parseExportEquals(statement, filePath);
+      }
+    }
+  }
+
+  private parseAmbientModule(
+    moduleDecl: ts.ModuleDeclaration,
+    filePath: string,
+    sourceFile: ts.SourceFile,
+  ): void {
+    if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) {
+      return;
+    }
+
+    // Parse imports inside the ambient module
+    const fileImports = this.importMap.get(filePath);
+    if (fileImports) {
+      for (const statement of moduleDecl.body.statements) {
+        if (ts.isImportDeclaration(statement)) {
+          this.parseImport(statement, filePath, fileImports);
+        }
+      }
+    }
+
+    // Parse all declarations inside the ambient module
+    // Treat them as if they're top-level with exports
+    for (const statement of moduleDecl.body.statements) {
+      if (DeclarationParser.isDeclaration(statement)) {
+        const name = DeclarationParser.getDeclarationName(statement);
+        if (!name) continue;
+
+        // Check if this declaration has the export keyword
+        const hasExport = DeclarationParser.hasExportModifier(statement);
+        
+        // In ambient modules, exported declarations should be treated as exports
+        const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, hasExport);
+        this.registry.register(declaration);
       }
     }
   }
@@ -61,7 +102,7 @@ export class DeclarationParser {
     const isTypeOnly = statement.importClause?.isTypeOnly ?? false;
 
     if (this.fileCollector.shouldInline(importPath)) {
-      const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
 
       const importClause = statement.importClause;
@@ -153,7 +194,7 @@ export class DeclarationParser {
     const localName = statement.name.text;
 
     if (this.fileCollector.shouldInline(importPath)) {
-      const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
       // For import = require(), the local name maps to the entire module
       // We'll resolve the actual declaration later when we know what's exported
@@ -260,7 +301,7 @@ export class DeclarationParser {
       const importPath = statement.moduleSpecifier.text;
       if (!this.fileCollector.shouldInline(importPath)) continue;
 
-      const resolvedPath = FileCollector.resolveImport(filePath, importPath);
+      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) continue;
 
       // Mark the re-exported declarations as exported

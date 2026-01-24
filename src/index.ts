@@ -31,8 +31,8 @@ function bundle(
     throw new Error(`Entry file ${entryFile} does not exist`);
   }
 
-  const collector = new FileCollector({ inlinedLibraries });
-  const files = collector.collectFiles(entryFile);
+  const collector = new FileCollector(entryFile, { inlinedLibraries });
+  const files = collector.collectFiles();
   const includeEmptyExport = files.get(entryFile)?.hasEmptyExport ?? false;
 
   // Collect all referenced types from all files
