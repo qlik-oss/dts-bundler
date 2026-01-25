@@ -36,8 +36,8 @@ export class ExportResolver {
 
       if (isEntry) {
         onEntryExportDefault(statement);
-        this.parseExportDefault(statement, filePath);
       }
+      this.parseExportDefault(statement, filePath);
     }
   }
 

@@ -9,6 +9,7 @@ A tool for bundling TypeScript files (`.ts` and/or `.d.ts`) by inlining local im
 - 🔄 **External import consolidation**: Keeps external imports at the top of the bundled file
 - 🎨 **Type-only import handling**: Properly handles `import type` statements
 - 🔁 **Export re-export resolution**: Resolves `export * from` statements
+- 🧩 **Ambient module inlining**: Optionally inline `declare module "..."` blocks for external modules
 - 🛠️ **Dual usage**: Use as CLI tool or import as a library
 - ✨ **TypeScript support**: Full TypeScript type definitions included
 
@@ -42,6 +43,7 @@ fs.writeFileSync("./dist/bundle.d.ts", bundledContent);
 const bundledWithLibs = bundleDts({
   entry: "./src/types.ts",
   inlinedLibraries: ["@my-org/types", "some-package"],
+  inlineDeclareExternals: true,
 });
 
 fs.writeFileSync("./dist/bundle.d.ts", bundledWithLibs);
@@ -232,6 +234,8 @@ Bundle TypeScript declaration files.
 - `options` (Object):
   - `entry` (string, required): Entry TypeScript file path
   - `inlinedLibraries` (string[], optional): Array of library names to inline
+  - `inlineDeclareExternals` (boolean, optional): Inline `declare module "..."` blocks even when the module is external
+  - `inlineDeclareGlobals` (boolean, optional): Inline `declare global` blocks into the bundle
 
 #### Returns
 
@@ -251,6 +255,7 @@ import fs from "fs";
 const bundled = bundleDts({
   entry: "./src/types.ts",
   inlinedLibraries: ["@my-org/types"],
+  inlineDeclareExternals: true,
 });
 
 fs.writeFileSync("./dist/bundle.d.ts", bundled);

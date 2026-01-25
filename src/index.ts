@@ -24,6 +24,7 @@ function bundle(
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
     inlineDeclareGlobals?: boolean;
+    inlineDeclareExternals?: boolean;
   } = {},
 ): string {
   const entryFile = path.resolve(entry);
@@ -47,6 +48,7 @@ function bundle(
   const registry = new TypeRegistry();
   const parser = new DeclarationParser(registry, collector, {
     inlineDeclareGlobals: options.inlineDeclareGlobals ?? false,
+    inlineDeclareExternals: options.inlineDeclareExternals ?? false,
   });
   parser.parseFiles(files);
 
@@ -89,6 +91,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     umdModuleName,
     exportReferencedTypes,
     inlineDeclareGlobals,
+    inlineDeclareExternals,
   } = options;
 
   if (!entry) {
@@ -103,6 +106,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     allowedTypesLibraries,
     importedLibraries,
     inlineDeclareGlobals,
+    inlineDeclareExternals,
   });
 }
 

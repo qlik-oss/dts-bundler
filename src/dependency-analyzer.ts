@@ -93,7 +93,15 @@ export class DependencyAnalyzer {
           const importName = importInfo.originalName;
           declaration.externalDependencies.get(moduleName)?.add(importName);
         } else if (importInfo.sourceFile) {
-          const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
+          let originalName = importInfo.originalName;
+          if (originalName === "default") {
+            const defaultName = this.getDefaultExportName(importInfo.sourceFile);
+            if (defaultName) {
+              originalName = defaultName;
+            }
+          }
+
+          const key = `${importInfo.sourceFile}:${originalName}`;
           const depId = this.registry.nameIndex.get(key);
           if (depId) {
             declaration.dependencies.add(depId);
@@ -107,6 +115,21 @@ export class DependencyAnalyzer {
         }
       }
     }
+  }
+
+  private getDefaultExportName(sourceFile: string): string | null {
+    const declarations = this.registry.declarationsByFile.get(sourceFile);
+    if (!declarations) return null;
+
+    for (const declId of declarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+        return decl.name;
+      }
+    }
+
+    return null;
   }
 
   private extractTypeReferences(node: ts.Node, references: Set<string>): void {

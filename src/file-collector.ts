@@ -196,6 +196,19 @@ export class FileCollector {
         basePaths.push(resolved.slice(0, -3));
       }
 
+      // Handle arbitrary extensions (TypeScript 5.0+)
+      // For imports like './hello.json', look for './hello.d.json.ts'
+      const lastDotIndex = importPath.lastIndexOf(".");
+      if (lastDotIndex > 0 && lastDotIndex > importPath.lastIndexOf("/")) {
+        const ext = importPath.substring(lastDotIndex);
+        if (![".ts", ".tsx", ".js", ".mjs", ".cjs", ".mts", ".cts"].includes(ext)) {
+          const arbitraryDeclPath = `${resolved}.d${ext}.ts`;
+          if (fs.existsSync(arbitraryDeclPath)) {
+            return arbitraryDeclPath;
+          }
+        }
+      }
+
       const extensions = [
         "",
         ".ts",
@@ -261,26 +274,16 @@ export class FileCollector {
     const files = new Map<string, CollectedFile>();
     const sourceFiles = this.program.getSourceFiles();
 
-    // First, collect files that TypeScript's Program resolved
-    for (const sourceFile of sourceFiles) {
-      // Skip files we shouldn't inline
-      if (!this.shouldInlineFile(sourceFile)) {
-        continue;
-      }
-
+    const createCollectedFile = (sourceFile: ts.SourceFile, isEntry: boolean): CollectedFile => {
       const filePath = sourceFile.fileName;
-      const isEntry = filePath === this.entryFile;
 
-      // Read file content
       let content: string;
       if (fs.existsSync(filePath)) {
         content = fs.readFileSync(filePath, "utf-8");
       } else {
-        // For ambient modules, use the source file text
         content = sourceFile.text;
       }
 
-      // Check for empty export
       const hasEmptyExport = sourceFile.statements.some((statement) => {
         if (!ts.isExportDeclaration(statement)) return false;
         if (statement.moduleSpecifier) return false;
@@ -288,7 +291,6 @@ export class FileCollector {
         return statement.exportClause.elements.length === 0;
       });
 
-      // Extract triple-slash reference directives with preserve="true" or preserve='true'
       const referencedTypes = new Set<string>();
       const typeRefs = (
         sourceFile as ts.SourceFile & { typeReferenceDirectives: Array<{ fileName: string; preserve?: boolean }> }
@@ -299,7 +301,53 @@ export class FileCollector {
         }
       }
 
-      files.set(filePath, { content, sourceFile, isEntry, hasEmptyExport, referencedTypes });
+      return { content, sourceFile, isEntry, hasEmptyExport, referencedTypes };
+    };
+
+    // First, collect files that TypeScript's Program resolved
+    for (const sourceFile of sourceFiles) {
+      // Skip files we shouldn't inline
+      if (!this.shouldInlineFile(sourceFile)) {
+        continue;
+      }
+
+      const filePath = sourceFile.fileName;
+      const isEntry = filePath === this.entryFile;
+      files.set(filePath, createCollectedFile(sourceFile, isEntry));
+    }
+
+    const queue = Array.from(files.keys());
+    while (queue.length > 0) {
+      const currentPath = queue.shift();
+      if (!currentPath) continue;
+      const current = files.get(currentPath);
+      if (!current) continue;
+
+      for (const statement of current.sourceFile.statements) {
+        let moduleSpecifier: ts.Expression | undefined;
+        if (ts.isImportDeclaration(statement)) {
+          moduleSpecifier = statement.moduleSpecifier;
+        } else if (ts.isExportDeclaration(statement)) {
+          moduleSpecifier = statement.moduleSpecifier;
+        } else if (ts.isImportEqualsDeclaration(statement)) {
+          if (ts.isExternalModuleReference(statement.moduleReference)) {
+            moduleSpecifier = statement.moduleReference.expression;
+          }
+        }
+
+        if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) continue;
+
+        const importPath = moduleSpecifier.text;
+        const resolvedPath = this.resolveImport(currentPath, importPath);
+        if (!resolvedPath || files.has(resolvedPath)) continue;
+
+        if (!fs.existsSync(resolvedPath)) continue;
+        const content = fs.readFileSync(resolvedPath, "utf-8");
+        const sourceFile = ts.createSourceFile(resolvedPath, content, ts.ScriptTarget.Latest, true);
+        if (!this.shouldInlineFile(sourceFile)) continue;
+        files.set(resolvedPath, createCollectedFile(sourceFile, false));
+        queue.push(resolvedPath);
+      }
     }
 
     return files;

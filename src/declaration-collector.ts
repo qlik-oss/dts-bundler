@@ -13,9 +13,13 @@ import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
 export class DeclarationCollector {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
-  private options: { inlineDeclareGlobals: boolean };
+  private options: { inlineDeclareGlobals: boolean; inlineDeclareExternals: boolean };
 
-  constructor(registry: TypeRegistry, fileCollector: FileCollector, options: { inlineDeclareGlobals: boolean }) {
+  constructor(
+    registry: TypeRegistry,
+    fileCollector: FileCollector,
+    options: { inlineDeclareGlobals: boolean; inlineDeclareExternals: boolean },
+  ) {
     this.registry = registry;
     this.fileCollector = fileCollector;
     this.options = options;
@@ -52,7 +56,25 @@ export class DeclarationCollector {
     }
 
     const moduleName = moduleDecl.name.text;
-    if (!this.fileCollector.shouldInline(moduleName)) {
+    const shouldInline = this.fileCollector.shouldInline(moduleName);
+
+    if (!shouldInline) {
+      if (!this.options.inlineDeclareExternals) {
+        return;
+      }
+
+      const name = getDeclarationName(moduleDecl);
+      if (!name) {
+        return;
+      }
+
+      const exportInfo: ExportInfo = {
+        kind: ExportKind.Named,
+        wasOriginallyExported: true,
+      };
+
+      const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+      this.registry.register(declaration);
       return;
     }
 

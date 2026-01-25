@@ -6,10 +6,12 @@ import type { ImportInfo } from "./types.js";
 export class ImportParser {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
+  private options: { inlineDeclareExternals: boolean };
 
-  constructor(registry: TypeRegistry, fileCollector: FileCollector) {
+  constructor(registry: TypeRegistry, fileCollector: FileCollector, options?: { inlineDeclareExternals?: boolean }) {
     this.registry = registry;
     this.fileCollector = fileCollector;
+    this.options = { inlineDeclareExternals: options?.inlineDeclareExternals ?? false };
   }
 
   parseImports(filePath: string, sourceFile: ts.SourceFile): Map<string, ImportInfo> {
@@ -31,7 +33,9 @@ export class ImportParser {
         ts.isModuleBlock(statement.body)
       ) {
         const moduleName = statement.name.text;
-        if (!this.fileCollector.shouldInline(moduleName)) {
+        const shouldParseModuleImports =
+          this.fileCollector.shouldInline(moduleName) || this.options.inlineDeclareExternals;
+        if (!shouldParseModuleImports) {
           continue;
         }
 

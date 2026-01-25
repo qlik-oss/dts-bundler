@@ -87,6 +87,7 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
   }
 
   if (ts.isModuleDeclaration(node)) {
+    result = result.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
     result = collapseEmptyBlocks(result);
   }
 

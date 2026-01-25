@@ -162,19 +162,19 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("allow arbitrary extensions (.json)", () => {
+    it("allow arbitrary extensions (.json)", () => {
       const { expected, result } = runTestCase("allow-arbitrary-extensions");
       expect(result).toBe(expected);
     });
   });
 
   describe("Declaration Patterns", () => {
-    it.skip("should handle declare module and imports", () => {
-      const { expected, result } = runTestCase("declare-module-and-imports");
+    it("should handle declare module and imports", () => {
+      const { expected, result } = runTestCase("declare-module-and-imports", { inlineDeclareExternals: true });
       expect(result).toBe(expected);
     });
 
-    it.skip("should not inline declare global when disabled", () => {
+    it("should not inline declare global when disabled", () => {
       const { expected, result } = runTestCase("dont-inline-declare-global", { inlineDeclareGlobals: false });
       expect(result).toBe(expected);
     });

@@ -13,17 +13,26 @@ export class DeclarationParser {
   public entryExportDefault: ts.ExportAssignment | null = null;
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
-  private options: { inlineDeclareGlobals: boolean };
+  private options: { inlineDeclareGlobals: boolean; inlineDeclareExternals: boolean };
   private importParser: ImportParser;
   private declarationCollector: DeclarationCollector;
   private exportResolver: ExportResolver;
 
-  constructor(registry: TypeRegistry, fileCollector: FileCollector, options?: { inlineDeclareGlobals?: boolean }) {
+  constructor(
+    registry: TypeRegistry,
+    fileCollector: FileCollector,
+    options?: { inlineDeclareGlobals?: boolean; inlineDeclareExternals?: boolean },
+  ) {
     this.registry = registry;
     this.fileCollector = fileCollector;
     this.importMap = new Map();
-    this.options = { inlineDeclareGlobals: options?.inlineDeclareGlobals ?? false };
-    this.importParser = new ImportParser(registry, fileCollector);
+    this.options = {
+      inlineDeclareGlobals: options?.inlineDeclareGlobals ?? false,
+      inlineDeclareExternals: options?.inlineDeclareExternals ?? false,
+    };
+    this.importParser = new ImportParser(registry, fileCollector, {
+      inlineDeclareExternals: this.options.inlineDeclareExternals,
+    });
     this.declarationCollector = new DeclarationCollector(registry, fileCollector, this.options);
     this.exportResolver = new ExportResolver(registry, fileCollector);
   }

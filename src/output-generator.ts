@@ -804,11 +804,14 @@ export class OutputGenerator {
         if (ts.isModuleDeclaration(node)) {
           // eslint-disable-next-line no-bitwise
           const isDeclareGlobal = (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+          const isExternalModule = ts.isStringLiteral(node.name) || ts.isNoSubstitutionTemplateLiteral(node.name);
           let body = node.body;
           if (body && ts.isModuleBlock(body)) {
-            const statements = body.statements.map((statement) =>
-              OutputGenerator.stripExportFromStatement(statement, isDeclareGlobal),
-            );
+            const statements = isExternalModule
+              ? body.statements
+              : body.statements.map((statement) =>
+                  OutputGenerator.stripExportFromStatement(statement, isDeclareGlobal),
+                );
             body = ts.factory.updateModuleBlock(body, statements);
           }
 
@@ -907,10 +910,19 @@ export class OutputGenerator {
       return false;
     }
 
+    const isExternalModule = ts.isStringLiteral(moduleDecl.name) || ts.isNoSubstitutionTemplateLiteral(moduleDecl.name);
+    if (isExternalModule) {
+      return false;
+    }
+
     return !ts.isModuleDeclaration(node);
   }
 
   private static shouldAddDeclareKeyword(statement: ts.Statement): boolean {
+    if (statement.getSourceFile().isDeclarationFile) {
+      return false;
+    }
+
     if (
       ts.isClassDeclaration(statement) ||
       ts.isEnumDeclaration(statement) ||
