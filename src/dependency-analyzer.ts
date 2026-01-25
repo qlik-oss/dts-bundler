@@ -1,3 +1,4 @@
+import path from "node:path";
 import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind } from "./types.js";
@@ -133,22 +134,37 @@ export class DependencyAnalyzer {
       references.add(node.initializer.text);
     }
 
-    if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.heritageClauses) {
-      for (const clause of node.heritageClauses) {
-        for (const type of clause.types) {
-          if (ts.isIdentifier(type.expression)) {
-            references.add(type.expression.text);
-          } else if (ts.isPropertyAccessExpression(type.expression)) {
-            // Handle qualified names like MyModule.SomeCoolInterface
-            DependencyAnalyzer.extractPropertyAccess(type.expression, references);
+    const isCtsFile = (() => {
+      const ext = path.extname(node.getSourceFile().fileName).toLowerCase();
+      return ext === ".cts" || ext === ".d.cts";
+    })();
+
+    const processHeritageClauses = (): void => {
+      if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.heritageClauses) {
+        for (const clause of node.heritageClauses) {
+          for (const type of clause.types) {
+            if (ts.isIdentifier(type.expression)) {
+              references.add(type.expression.text);
+            } else if (ts.isPropertyAccessExpression(type.expression)) {
+              // Handle qualified names like MyModule.SomeCoolInterface
+              DependencyAnalyzer.extractPropertyAccess(type.expression, references);
+            }
           }
         }
       }
+    };
+
+    if (!isCtsFile) {
+      processHeritageClauses();
     }
 
     node.forEachChild((child) => {
       this.extractTypeReferences(child, references);
     });
+
+    if (isCtsFile) {
+      processHeritageClauses();
+    }
   }
 
   private static extractQualifiedName(qualifiedName: ts.QualifiedName, references: Set<string>): void {

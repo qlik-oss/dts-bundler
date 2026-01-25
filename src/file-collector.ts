@@ -46,6 +46,14 @@ export class FileCollector {
     const configPath = findTsConfig(this.entryFile);
     const compilerOptions = getCompilerOptions(configPath);
 
+    const entryExt = path.extname(this.entryFile).toLowerCase();
+    if (entryExt === ".cts" || entryExt === ".mts" || entryExt === ".cjs" || entryExt === ".mjs") {
+      compilerOptions.moduleResolution = ts.ModuleResolutionKind.NodeNext;
+      if (compilerOptions.module === undefined) {
+        compilerOptions.module = ts.ModuleKind.NodeNext;
+      }
+    }
+
     // Ensure declaration is enabled
     compilerOptions.declaration = true;
 

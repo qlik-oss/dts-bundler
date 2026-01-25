@@ -157,7 +157,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle .cts extension (CommonJS modules)", () => {
+    it("should handle .cts extension (CommonJS modules)", () => {
       const { expected, result } = runTestCase("cts-extension");
       expect(result).toBe(expected);
     });
