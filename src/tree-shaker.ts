@@ -21,6 +21,8 @@ export class TreeShaker {
       this.markUsed(declaration.id);
     }
 
+    this.markNamespaceExportsUsed();
+
     return {
       declarations: this.used,
       externalImports: this.collectUsedExternalImports(),
@@ -66,5 +68,87 @@ export class TreeShaker {
     }
 
     return result;
+  }
+
+  private markNamespaceExportsUsed(): void {
+    if (this.registry.entryNamespaceExports.length === 0) return;
+    const visitedFiles = new Set<string>();
+
+    const depthCache = new Map<string, number>();
+    const entryExports = this.registry.entryNamespaceExports.map((entry) => ({
+      entry,
+      depth: this.getNamespaceExportDepth(entry, depthCache),
+    }));
+
+    entryExports.sort((a, b) => b.depth - a.depth);
+
+    for (const { entry } of entryExports) {
+      const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+      if (!info) continue;
+
+      if (info.targetFile) {
+        this.markModuleExportsUsed(info.targetFile, visitedFiles);
+      } else if (info.externalModule && info.externalImportName) {
+        this.usedExternals.add(`${info.externalModule}:${info.externalImportName}`);
+      }
+    }
+  }
+
+  private getNamespaceExportDepth(
+    entry: { name: string; sourceFile: string },
+    depthCache: Map<string, number>,
+  ): number {
+    const key = `${entry.sourceFile}:${entry.name}`;
+    if (depthCache.has(key)) return depthCache.get(key) as number;
+
+    const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+    if (!info || !info.targetFile) {
+      depthCache.set(key, 1);
+      return 1;
+    }
+
+    const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+    let maxChild = 0;
+    for (const exported of exportedNames) {
+      const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+      if (childInfo && childInfo.targetFile) {
+        const childDepth = this.getNamespaceExportDepth(
+          { name: exported.name, sourceFile: info.targetFile },
+          depthCache,
+        );
+        if (childDepth > maxChild) {
+          maxChild = childDepth;
+        }
+      }
+    }
+
+    const depth = 1 + maxChild;
+    depthCache.set(key, depth);
+    return depth;
+  }
+
+  private markModuleExportsUsed(filePath: string, visitedFiles: Set<string>): void {
+    if (visitedFiles.has(filePath)) return;
+    visitedFiles.add(filePath);
+
+    const exportedNames = this.registry.exportedNamesByFile.get(filePath) ?? [];
+
+    for (const exported of exportedNames) {
+      if (exported.externalModule && exported.externalImportName) {
+        this.usedExternals.add(`${exported.externalModule}:${exported.externalImportName}`);
+      }
+
+      const declId = this.registry.nameIndex.get(`${filePath}:${exported.name}`);
+      if (declId) {
+        this.markUsed(declId);
+      }
+
+      const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
+      if (namespaceInfo?.targetFile) {
+        this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles);
+      } else if (namespaceInfo?.externalModule && namespaceInfo.externalImportName) {
+        this.usedExternals.add(`${namespaceInfo.externalModule}:${namespaceInfo.externalImportName}`);
+      }
+    }
   }
 }

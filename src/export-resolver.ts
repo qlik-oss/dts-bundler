@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { getDeclarationName, hasDefaultModifier, hasExportModifier } from "./declaration-utils.js";
+import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils.js";
 import type { FileCollector } from "./file-collector.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
@@ -37,6 +37,181 @@ export class ExportResolver {
       if (isEntry) {
         onEntryExportDefault(statement);
         this.parseExportDefault(statement, filePath);
+      }
+    }
+  }
+
+  collectDirectNamespaceExports(filePath: string, sourceFile: ts.SourceFile): void {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement)) continue;
+      if (!statement.exportClause || !ts.isNamespaceExport(statement.exportClause)) continue;
+      if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+
+      const exportName = statement.exportClause.name.text;
+      const importPath = statement.moduleSpecifier.text;
+
+      if (this.fileCollector.shouldInline(importPath)) {
+        const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+        if (!resolvedPath) continue;
+        this.registry.registerNamespaceExport(
+          filePath,
+          {
+            name: exportName,
+            targetFile: resolvedPath,
+          },
+          false,
+        );
+      } else {
+        const importName = `* as ${exportName}`;
+        this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+        this.registry.registerNamespaceExport(
+          filePath,
+          {
+            name: exportName,
+            externalModule: importPath,
+            externalImportName: importName,
+          },
+          false,
+        );
+      }
+    }
+  }
+
+  collectFileExports(
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    importMap: Map<
+      string,
+      Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+    >,
+    isEntry: boolean,
+  ): void {
+    const fileImports = importMap.get(filePath);
+
+    for (const statement of sourceFile.statements) {
+      if (isDeclaration(statement) && hasExportModifier(statement)) {
+        if (ts.isVariableStatement(statement)) {
+          for (const declaration of statement.declarationList.declarations) {
+            if (ts.isIdentifier(declaration.name)) {
+              this.registry.registerExportedName(filePath, { name: declaration.name.text });
+            }
+          }
+          continue;
+        }
+
+        const name = getDeclarationName(statement);
+        if (name) {
+          this.registry.registerExportedName(filePath, { name });
+        }
+        continue;
+      }
+
+      if (!ts.isExportDeclaration(statement)) continue;
+      if (!statement.exportClause) continue;
+
+      if (ts.isNamespaceExport(statement.exportClause)) {
+        const exportName = statement.exportClause.name.text;
+        const existingNamespaceInfo = this.registry.getNamespaceExportInfo(filePath, exportName);
+        if (!existingNamespaceInfo) {
+          if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+            const importPath = statement.moduleSpecifier.text;
+            if (this.fileCollector.shouldInline(importPath)) {
+              const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+              if (resolvedPath) {
+                this.registry.registerNamespaceExport(filePath, { name: exportName, targetFile: resolvedPath });
+              }
+            } else {
+              const importName = `* as ${exportName}`;
+              this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+              this.registry.registerNamespaceExport(filePath, {
+                name: exportName,
+                externalModule: importPath,
+                externalImportName: importName,
+              });
+            }
+          } else {
+            this.registry.registerExportedName(filePath, { name: exportName });
+          }
+        } else {
+          this.registry.registerExportedName(filePath, {
+            name: exportName,
+            externalModule: existingNamespaceInfo.externalModule,
+            externalImportName: existingNamespaceInfo.externalImportName,
+          });
+        }
+
+        if (isEntry) {
+          this.registry.registerEntryNamespaceExport(filePath, exportName);
+        }
+        continue;
+      }
+
+      if (!ts.isNamedExports(statement.exportClause)) continue;
+
+      if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+        const importPath = statement.moduleSpecifier.text;
+        const isInline = this.fileCollector.shouldInline(importPath);
+        const resolvedPath = isInline ? this.fileCollector.resolveImport(filePath, importPath) : null;
+
+        for (const element of statement.exportClause.elements) {
+          const exportedName = element.name.text;
+          const originalName = element.propertyName?.text || exportedName;
+
+          if (isInline && resolvedPath) {
+            const namespaceInfo = this.registry.getNamespaceExportInfo(resolvedPath, originalName);
+            if (namespaceInfo) {
+              this.registry.registerNamespaceExport(filePath, {
+                name: exportedName,
+                targetFile: namespaceInfo.targetFile,
+                externalModule: namespaceInfo.externalModule,
+                externalImportName: namespaceInfo.externalImportName,
+              });
+              if (isEntry) {
+                this.registry.registerEntryNamespaceExport(filePath, exportedName);
+              }
+            } else {
+              this.registry.registerExportedName(filePath, { name: exportedName });
+            }
+          } else if (!isInline) {
+            const importName = originalName === exportedName ? originalName : `${originalName} as ${exportedName}`;
+            this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+            this.registry.registerExportedName(filePath, {
+              name: exportedName,
+              externalModule: importPath,
+              externalImportName: importName,
+            });
+          }
+        }
+        continue;
+      }
+
+      for (const element of statement.exportClause.elements) {
+        const exportedName = element.name.text;
+        const originalName = element.propertyName?.text || exportedName;
+        const importInfo = fileImports?.get(originalName);
+
+        if (importInfo && importInfo.isExternal && importInfo.sourceFile) {
+          this.registry.registerExportedName(filePath, {
+            name: exportedName,
+            externalModule: importInfo.sourceFile,
+            externalImportName: importInfo.originalName,
+          });
+        } else {
+          this.registry.registerExportedName(filePath, { name: exportedName });
+        }
+
+        const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, originalName);
+        if (namespaceInfo && exportedName !== originalName) {
+          this.registry.registerNamespaceExport(filePath, {
+            name: exportedName,
+            targetFile: namespaceInfo.targetFile,
+            externalModule: namespaceInfo.externalModule,
+            externalImportName: namespaceInfo.externalImportName,
+          });
+          if (isEntry) {
+            this.registry.registerEntryNamespaceExport(filePath, exportedName);
+          }
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-import type { TypeDeclaration } from "./types.js";
+import type { EntryNamespaceExport, ExportedNameInfo, NamespaceExportInfo, TypeDeclaration } from "./types.js";
 import { ExportKind, ExternalImport } from "./types.js";
 
 export class TypeRegistry {
@@ -7,6 +7,9 @@ export class TypeRegistry {
   public nameIndex: Map<string, symbol>;
   public externalImports: Map<string, Map<string, ExternalImport>>;
   public namespaceImports: Map<string, { namespaceName: string; sourceFile: string }>;
+  public exportedNamesByFile: Map<string, ExportedNameInfo[]>;
+  public namespaceExportsByFile: Map<string, Map<string, NamespaceExportInfo>>;
+  public entryNamespaceExports: EntryNamespaceExport[];
 
   constructor() {
     this.declarations = new Map();
@@ -14,6 +17,9 @@ export class TypeRegistry {
     this.nameIndex = new Map();
     this.externalImports = new Map();
     this.namespaceImports = new Map();
+    this.exportedNamesByFile = new Map();
+    this.namespaceExportsByFile = new Map();
+    this.entryNamespaceExports = [];
   }
 
   register(declaration: TypeDeclaration): void {
@@ -39,6 +45,53 @@ export class TypeRegistry {
     }
 
     return moduleImports.get(importName) as ExternalImport;
+  }
+
+  registerExportedName(filePath: string, info: ExportedNameInfo): void {
+    const list = this.exportedNamesByFile.get(filePath) ?? [];
+    const existing = list.find((item) => item.name === info.name);
+    if (!existing) {
+      list.push(info);
+      this.exportedNamesByFile.set(filePath, list);
+      return;
+    }
+
+    if (!existing.externalModule && info.externalModule) {
+      existing.externalModule = info.externalModule;
+    }
+    if (!existing.externalImportName && info.externalImportName) {
+      existing.externalImportName = info.externalImportName;
+    }
+  }
+
+  registerNamespaceExport(filePath: string, info: NamespaceExportInfo, registerExportedName = true): void {
+    if (!this.namespaceExportsByFile.has(filePath)) {
+      this.namespaceExportsByFile.set(filePath, new Map());
+    }
+    const fileMap = this.namespaceExportsByFile.get(filePath) as Map<string, NamespaceExportInfo>;
+    if (!fileMap.has(info.name)) {
+      fileMap.set(info.name, info);
+    }
+    if (registerExportedName) {
+      this.registerExportedName(filePath, {
+        name: info.name,
+        externalModule: info.externalModule,
+        externalImportName: info.externalImportName,
+      });
+    }
+  }
+
+  getNamespaceExportInfo(filePath: string, name: string): NamespaceExportInfo | null {
+    const fileMap = this.namespaceExportsByFile.get(filePath);
+    if (!fileMap) return null;
+    return fileMap.get(name) ?? null;
+  }
+
+  registerEntryNamespaceExport(filePath: string, name: string): void {
+    const exists = this.entryNamespaceExports.some((entry) => entry.name === name && entry.sourceFile === filePath);
+    if (!exists) {
+      this.entryNamespaceExports.push({ name, sourceFile: filePath });
+    }
   }
 
   lookup(name: string, fromFile: string): TypeDeclaration | null {

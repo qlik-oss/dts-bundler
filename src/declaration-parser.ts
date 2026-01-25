@@ -34,6 +34,14 @@ export class DeclarationParser {
       this.importMap.set(filePath, fileImports);
     }
 
+    for (const [filePath, { sourceFile }] of files.entries()) {
+      this.exportResolver.collectDirectNamespaceExports(filePath, sourceFile);
+    }
+
+    for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
+      this.exportResolver.collectFileExports(filePath, sourceFile, this.importMap, isEntry);
+    }
+
     for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
       this.declarationCollector.collectDeclarations(filePath, sourceFile, isEntry, (name: string) => {
         this.entryExportDefaultName = name;

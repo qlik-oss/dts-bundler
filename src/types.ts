@@ -75,6 +75,24 @@ export interface ExportInfo {
   wasOriginallyExported: boolean;
 }
 
+export interface ExportedNameInfo {
+  name: string;
+  externalModule?: string;
+  externalImportName?: string;
+}
+
+export interface NamespaceExportInfo {
+  name: string;
+  targetFile?: string;
+  externalModule?: string;
+  externalImportName?: string;
+}
+
+export interface EntryNamespaceExport {
+  name: string;
+  sourceFile: string;
+}
+
 export class TypeDeclaration {
   public readonly id: symbol;
   public name: string;

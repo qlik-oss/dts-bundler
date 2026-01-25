@@ -1,5 +1,11 @@
 **/__snapshots__
 pnpm-lock.yaml
 
+# built outputs
+dist/
+
+# only a reference
+dts-bundle-generator/
+
 # special case
 test/fixtures/import-type-from-deps/module-with-import-type.d.ts

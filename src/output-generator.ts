@@ -77,6 +77,7 @@ export class OutputGenerator {
     const declarations = this.generateDeclarations();
     const namespaces = this.generateNamespaces();
     const exportEquals = this.generateExportEquals();
+    const namespaceExports = this.generateNamespaceExports();
     const exportDefault = this.generateExportDefault();
 
     const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
@@ -100,6 +101,12 @@ export class OutputGenerator {
     // export = should appear immediately after declarations without blank line
     if (exportEquals.length > 0) {
       lines.push(...exportEquals);
+    }
+
+    appendSection(namespaceExports.blocks);
+    if (namespaceExports.exportList.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push(...namespaceExports.exportList);
     }
 
     // export default should appear after declarations
@@ -365,6 +372,102 @@ export class OutputGenerator {
     const extraExports = Array.from(this.extraDefaultExports).filter((name) => name !== normalizedName);
     const exportItems = [`${normalizedName} as default`, ...extraExports];
     return `export { ${exportItems.join(", ")} };`;
+  }
+
+  private generateNamespaceExports(): { blocks: string[]; exportList: string[] } {
+    const blocks: string[] = [];
+    const exportNames: string[] = [];
+
+    if (this.registry.entryNamespaceExports.length === 0) {
+      return { blocks, exportList: [] };
+    }
+
+    const depthCache = new Map<string, number>();
+    const entryExports = this.registry.entryNamespaceExports.map((entry) => ({
+      entry,
+      depth: this.getNamespaceExportDepth(entry, depthCache),
+    }));
+
+    entryExports.sort((a, b) => b.depth - a.depth);
+
+    const visited = new Set<string>();
+    for (const { entry } of entryExports) {
+      const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+      if (!info) continue;
+      this.buildNamespaceBlocks(entry.sourceFile, entry.name, info, visited, blocks);
+    }
+
+    for (const entry of this.registry.entryNamespaceExports) {
+      exportNames.push(entry.name);
+    }
+
+    const exportList = exportNames.length > 0 ? [`export { ${exportNames.join(", ")} };`] : [];
+    return { blocks, exportList };
+  }
+
+  private buildNamespaceBlocks(
+    sourceFile: string,
+    namespaceName: string,
+    info: { targetFile?: string; externalModule?: string; externalImportName?: string },
+    visited: Set<string>,
+    blocks: string[],
+  ): void {
+    const key = `${sourceFile}:${namespaceName}`;
+    if (visited.has(key)) return;
+    visited.add(key);
+
+    if (!info.targetFile) {
+      return;
+    }
+
+    const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+
+    for (const exported of exportedNames) {
+      const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+      if (childInfo && childInfo.targetFile) {
+        this.buildNamespaceBlocks(info.targetFile, exported.name, childInfo, visited, blocks);
+      }
+    }
+
+    const exportList = exportedNames.map((item) => item.name);
+    blocks.push(`declare namespace ${namespaceName} {`);
+    if (exportList.length > 0) {
+      blocks.push(`  export { ${exportList.join(", ")} };`);
+    }
+    blocks.push(`}`);
+  }
+
+  private getNamespaceExportDepth(
+    entry: { name: string; sourceFile: string },
+    depthCache: Map<string, number>,
+  ): number {
+    const key = `${entry.sourceFile}:${entry.name}`;
+    if (depthCache.has(key)) return depthCache.get(key) as number;
+
+    const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+    if (!info || !info.targetFile) {
+      depthCache.set(key, 1);
+      return 1;
+    }
+
+    const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+    let maxChild = 0;
+    for (const exported of exportedNames) {
+      const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+      if (childInfo && childInfo.targetFile) {
+        const childDepth = this.getNamespaceExportDepth(
+          { name: exported.name, sourceFile: info.targetFile },
+          depthCache,
+        );
+        if (childDepth > maxChild) {
+          maxChild = childDepth;
+        }
+      }
+    }
+
+    const depth = 1 + maxChild;
+    depthCache.set(key, depth);
+    return depth;
   }
 
   /* eslint-disable no-param-reassign */

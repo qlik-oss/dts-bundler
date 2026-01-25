@@ -126,8 +126,8 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle exports wrapped with namespace chain", () => {
-      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain");
+    it("should handle exports wrapped with namespace chain", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain", { exportReferencedTypes: true });
       expect(result).toBe(expected);
     });
 
