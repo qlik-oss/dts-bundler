@@ -1,4 +1,11 @@
-import type { EntryNamespaceExport, ExportedNameInfo, NamespaceExportInfo, TypeDeclaration } from "./types.js";
+import type {
+  EntryNamespaceExport,
+  EntryStarExport,
+  ExportedNameInfo,
+  NamespaceExportInfo,
+  StarExportInfo,
+  TypeDeclaration,
+} from "./types.js";
 import { ExportKind, ExternalImport } from "./types.js";
 
 export class TypeRegistry {
@@ -10,6 +17,8 @@ export class TypeRegistry {
   public exportedNamesByFile: Map<string, ExportedNameInfo[]>;
   public namespaceExportsByFile: Map<string, Map<string, NamespaceExportInfo>>;
   public entryNamespaceExports: EntryNamespaceExport[];
+  public starExportsByFile: Map<string, StarExportInfo[]>;
+  public entryStarExports: EntryStarExport[];
 
   constructor() {
     this.declarations = new Map();
@@ -20,6 +29,8 @@ export class TypeRegistry {
     this.exportedNamesByFile = new Map();
     this.namespaceExportsByFile = new Map();
     this.entryNamespaceExports = [];
+    this.starExportsByFile = new Map();
+    this.entryStarExports = [];
   }
 
   register(declaration: TypeDeclaration): void {
@@ -92,6 +103,20 @@ export class TypeRegistry {
     if (!exists) {
       this.entryNamespaceExports.push({ name, sourceFile: filePath });
     }
+  }
+
+  registerStarExport(filePath: string, info: StarExportInfo, isEntry: boolean): void {
+    const list = this.starExportsByFile.get(filePath) ?? [];
+    list.push(info);
+    this.starExportsByFile.set(filePath, list);
+
+    if (isEntry) {
+      this.entryStarExports.push({ sourceFile: filePath, info });
+    }
+  }
+
+  getStarExports(filePath: string): StarExportInfo[] {
+    return this.starExportsByFile.get(filePath) ?? [];
   }
 
   lookup(name: string, fromFile: string): TypeDeclaration | null {

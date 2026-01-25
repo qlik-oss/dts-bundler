@@ -77,6 +77,7 @@ export class OutputGenerator {
     const declarations = this.generateDeclarations();
     const namespaces = this.generateNamespaces();
     const exportEquals = this.generateExportEquals();
+    const starExports = this.generateStarExports();
     const namespaceExports = this.generateNamespaceExports();
     const exportDefault = this.generateExportDefault();
 
@@ -102,6 +103,8 @@ export class OutputGenerator {
     if (exportEquals.length > 0) {
       lines.push(...exportEquals);
     }
+
+    appendSection(starExports);
 
     appendSection(namespaceExports.blocks);
     if (namespaceExports.exportList.length > 0) {
@@ -372,6 +375,45 @@ export class OutputGenerator {
     const extraExports = Array.from(this.extraDefaultExports).filter((name) => name !== normalizedName);
     const exportItems = [`${normalizedName} as default`, ...extraExports];
     return `export { ${exportItems.join(", ")} };`;
+  }
+
+  private generateStarExports(): string[] {
+    const lines: string[] = [];
+    if (this.registry.entryStarExports.length === 0) return lines;
+
+    const seen = new Set<string>();
+    const visitedFiles = new Set<string>();
+
+    const pushExternal = (moduleName: string, isTypeOnly = false): void => {
+      const key = `${moduleName}:${isTypeOnly ? "type" : "value"}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const typePrefix = isTypeOnly ? "type " : "";
+      lines.push(`export ${typePrefix}* from "${moduleName}";`);
+    };
+
+    const collectFromFile = (filePath: string): void => {
+      if (visitedFiles.has(filePath)) return;
+      visitedFiles.add(filePath);
+
+      for (const starExport of this.registry.getStarExports(filePath)) {
+        if (starExport.externalModule) {
+          pushExternal(starExport.externalModule, starExport.isTypeOnly ?? false);
+        } else if (starExport.targetFile) {
+          collectFromFile(starExport.targetFile);
+        }
+      }
+    };
+
+    for (const entry of this.registry.entryStarExports) {
+      if (entry.info.externalModule) {
+        pushExternal(entry.info.externalModule, entry.info.isTypeOnly ?? false);
+      } else if (entry.info.targetFile) {
+        collectFromFile(entry.info.targetFile);
+      }
+    }
+
+    return lines;
   }
 
   private generateNamespaceExports(): { blocks: string[]; exportList: string[] } {

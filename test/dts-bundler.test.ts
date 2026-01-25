@@ -131,7 +131,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should not export referenced types when disabled", () => {
+    it("should not export referenced types when disabled", () => {
       const { expected, result } = runTestCase("export-default-no-export-referenced-types", {
         exportReferencedTypes: false,
       });
@@ -140,12 +140,12 @@ describe("TypeScript Declaration Bundler", () => {
   });
 
   describe("Re-export Patterns", () => {
-    it.skip("should handle export * from (re-export star)", () => {
+    it("should handle export * from (re-export star)", () => {
       const { expected, result } = runTestCase("re-export-star");
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle re-export as namespace", () => {
+    it("should handle re-export as namespace", () => {
       const { expected, result } = runTestCase("re-export-as-namespace");
       expect(result).toBe(expected);
     });

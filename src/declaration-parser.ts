@@ -71,5 +71,7 @@ export class DeclarationParser {
       }
       ExportResolver.resolveExportEquals(filePath, sourceFile, this.importMap);
     }
+
+    this.exportResolver.applyStarExports();
   }
 }

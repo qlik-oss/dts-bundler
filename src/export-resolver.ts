@@ -107,7 +107,26 @@ export class ExportResolver {
       }
 
       if (!ts.isExportDeclaration(statement)) continue;
-      if (!statement.exportClause) continue;
+      if (!statement.exportClause) {
+        if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+        const importPath = statement.moduleSpecifier.text;
+        if (this.fileCollector.shouldInline(importPath)) {
+          const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+          if (resolvedPath) {
+            this.registry.registerStarExport(filePath, { targetFile: resolvedPath }, isEntry);
+          }
+        } else {
+          this.registry.registerStarExport(
+            filePath,
+            {
+              externalModule: importPath,
+              isTypeOnly: statement.isTypeOnly,
+            },
+            isEntry,
+          );
+        }
+        continue;
+      }
 
       if (ts.isNamespaceExport(statement.exportClause)) {
         const exportName = statement.exportClause.name.text;
@@ -289,6 +308,51 @@ export class ExportResolver {
             }
           }
         }
+      }
+    }
+  }
+
+  applyStarExports(): void {
+    if (this.registry.entryStarExports.length === 0) return;
+    const visitedFiles = new Set<string>();
+
+    for (const entry of this.registry.entryStarExports) {
+      if (entry.info.targetFile) {
+        this.markStarExportedDeclarations(entry.info.targetFile, visitedFiles);
+      }
+    }
+  }
+
+  private markStarExportedDeclarations(filePath: string, visitedFiles: Set<string>): void {
+    if (visitedFiles.has(filePath)) return;
+    visitedFiles.add(filePath);
+
+    const fileDeclarations = this.registry.declarationsByFile.get(filePath);
+    if (fileDeclarations) {
+      for (const declId of fileDeclarations) {
+        const declaration = this.registry.getDeclaration(declId);
+        if (!declaration) continue;
+        if (!ts.isStatement(declaration.node)) continue;
+        if (!hasExportModifier(declaration.node)) continue;
+        if (hasDefaultModifier(declaration.node)) continue;
+        if (declaration.exportInfo.kind === ExportKind.Equals) continue;
+        if (
+          declaration.exportInfo.kind === ExportKind.Default ||
+          declaration.exportInfo.kind === ExportKind.DefaultOnly
+        ) {
+          continue;
+        }
+
+        declaration.exportInfo = {
+          kind: ExportKind.Named,
+          wasOriginallyExported: true,
+        };
+      }
+    }
+
+    for (const starExport of this.registry.getStarExports(filePath)) {
+      if (starExport.targetFile) {
+        this.markStarExportedDeclarations(starExport.targetFile, visitedFiles);
       }
     }
   }

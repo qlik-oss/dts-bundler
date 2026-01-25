@@ -93,6 +93,17 @@ export interface EntryNamespaceExport {
   sourceFile: string;
 }
 
+export interface StarExportInfo {
+  targetFile?: string;
+  externalModule?: string;
+  isTypeOnly?: boolean;
+}
+
+export interface EntryStarExport {
+  sourceFile: string;
+  info: StarExportInfo;
+}
+
 export class TypeDeclaration {
   public readonly id: symbol;
   public name: string;
