@@ -1,5 +1,5 @@
 import type { TypeDeclaration } from "./types.js";
-import { ExternalImport } from "./types.js";
+import { ExportKind, ExternalImport } from "./types.js";
 
 export class TypeRegistry {
   public declarations: Map<symbol, TypeDeclaration>;
@@ -55,6 +55,6 @@ export class TypeRegistry {
   }
 
   getAllExported(): TypeDeclaration[] {
-    return Array.from(this.declarations.values()).filter((d) => d.isExported);
+    return Array.from(this.declarations.values()).filter((d) => d.exportInfo.kind !== ExportKind.NotExported);
   }
 }

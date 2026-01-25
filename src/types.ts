@@ -62,6 +62,19 @@ export interface ImportInfo {
   aliasName?: string | null;
 }
 
+export enum ExportKind {
+  NotExported = "NOT_EXPORTED",
+  Named = "NAMED",
+  Default = "DEFAULT",
+  DefaultOnly = "DEFAULT_ONLY",
+  Equals = "EQUALS",
+}
+
+export interface ExportInfo {
+  kind: ExportKind;
+  wasOriginallyExported: boolean;
+}
+
 export class TypeDeclaration {
   public readonly id: symbol;
   public name: string;
@@ -69,11 +82,7 @@ export class TypeDeclaration {
   public sourceFile: string;
   public node: ts.Node;
   public sourceFileNode: ts.SourceFile;
-  public isExported: boolean;
-  public wasOriginallyExported: boolean;
-  public isExportEquals: boolean; // True if exported via export = statement
-  public isExportedAsDefault: boolean; // True if exported via export default statement
-  public isExportedAsDefaultOnly: boolean; // True if exported only via export default statement
+  public exportInfo: ExportInfo;
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
@@ -85,8 +94,7 @@ export class TypeDeclaration {
     sourceFilePath: string,
     node: ts.Node,
     sourceFileNode: ts.SourceFile,
-    isExported = false,
-    wasOriginallyExported = isExported,
+    exportInfo: ExportInfo,
   ) {
     this.id = Symbol(name);
     this.name = name;
@@ -94,11 +102,7 @@ export class TypeDeclaration {
     this.sourceFile = sourceFilePath;
     this.node = node;
     this.sourceFileNode = sourceFileNode;
-    this.isExported = isExported;
-    this.wasOriginallyExported = wasOriginallyExported;
-    this.isExportEquals = false;
-    this.isExportedAsDefault = false;
-    this.isExportedAsDefaultOnly = false;
+    this.exportInfo = exportInfo;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();

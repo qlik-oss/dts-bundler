@@ -1,7 +1,11 @@
 import ts from "typescript";
 import pkg from "../package.json" assert { type: "json" };
+import { AstPrinter } from "./ast-printer.js";
+import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer.js";
+import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
 import type { TypeRegistry } from "./registry.js";
-import type { ExternalImport, TypeDeclaration } from "./types.js";
+import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
+import { VariableDeclarationEmitter } from "./variable-declaration-emitter.js";
 
 const version = (pkg as { version?: string }).version ?? "development";
 
@@ -11,6 +15,8 @@ export class OutputGenerator {
   private usedExternals: Map<string, Set<ExternalImport>>;
   private nameMap: Map<string, string>;
   private extraDefaultExports: Set<string>;
+  private variableDeclarationEmitter: VariableDeclarationEmitter | null;
+  private astPrinter: AstPrinter;
   private options: {
     noBanner?: boolean;
     sortNodes?: boolean;
@@ -48,6 +54,15 @@ export class OutputGenerator {
     this.usedExternals = usedExternals;
     this.nameMap = new Map();
     this.extraDefaultExports = new Set();
+    this.astPrinter = new AstPrinter();
+    this.variableDeclarationEmitter = options.typeChecker
+      ? new VariableDeclarationEmitter(
+          options.typeChecker,
+          (name) => this.extraDefaultExports.add(name),
+          this.astPrinter,
+          (declarations) => this.buildRenameMapForDeclarations(declarations),
+        )
+      : null;
     this.options = options;
   }
 
@@ -180,7 +195,7 @@ export class OutputGenerator {
       { statement: ts.VariableStatement; declarations: TypeDeclaration[] }
     >();
     for (const declaration of ordered) {
-      if (ts.isVariableStatement(declaration.node) && declaration.variableDeclaration) {
+      if (ts.isVariableStatement(declaration.node)) {
         const statement = declaration.node;
         const key = OutputGenerator.getVariableStatementKey(declaration.sourceFile, statement);
         const group = variableStatementGroups.get(key);
@@ -195,9 +210,7 @@ export class OutputGenerator {
     const processedVariableStatements = new Set<string>();
 
     for (const declaration of ordered) {
-      let text = declaration.getText();
-
-      if (ts.isVariableStatement(declaration.node) && declaration.variableDeclaration) {
+      if (ts.isVariableStatement(declaration.node)) {
         const statement = declaration.node;
         const key = OutputGenerator.getVariableStatementKey(declaration.sourceFile, statement);
         if (processedVariableStatements.has(key)) {
@@ -205,8 +218,11 @@ export class OutputGenerator {
         }
         processedVariableStatements.add(key);
         const group = variableStatementGroups.get(key);
-        if (group) {
-          const groupLines = this.generateVariableStatementLines(group.statement, group.declarations);
+        if (group && this.variableDeclarationEmitter) {
+          const groupLines = this.variableDeclarationEmitter.generateVariableStatementLines(
+            group.statement,
+            group.declarations,
+          );
           if (groupLines.length > 0) {
             lines.push(...groupLines);
             continue;
@@ -219,52 +235,22 @@ export class OutputGenerator {
       const hasDefaultModifier =
         ts.canHaveModifiers(declaration.node) &&
         (ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false);
-      const suppressExportForDefault = declaration.isExportedAsDefault && hasDefaultModifier;
+      const suppressExportForDefault = declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier;
 
       const shouldHaveExport =
-        !declaration.isExportEquals &&
+        declaration.exportInfo.kind !== ExportKind.Equals &&
         !suppressExportForDefault &&
-        (declaration.isExported || declaration.wasOriginallyExported) &&
-        !declaration.isExportedAsDefaultOnly;
+        declaration.exportInfo.kind !== ExportKind.DefaultOnly &&
+        (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
 
-      if (!shouldHaveExport) {
-        text = OutputGenerator.stripExportModifier(text);
-      }
-
-      //Add declare keyword to class/enum/function declarations
-      // Interfaces and types don't need declare keyword in .d.ts files
-      // For exported declarations, only add declare if not already present
-      if (!text.trim().startsWith("declare ")) {
-        text = OutputGenerator.addDeclareKeyword(text);
-      }
-
-      const isModuleDeclaration = ts.isModuleDeclaration(declaration.node);
-      // eslint-disable-next-line no-bitwise
-      const isDeclareGlobal = isModuleDeclaration && (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
-
-      // For namespace/module declarations, normalize "module" keyword to "namespace"
-      if (isModuleDeclaration && !isDeclareGlobal) {
-        text = text.replace(/\b((?:export\s+)?declare\s+)module\b/, "$1namespace");
-      }
-
-      // Strip implementation details for declaration files
-      text = OutputGenerator.stripImplementationDetails(text);
-
-      // For namespace/module declarations, remove export modifiers from members
-      if (isModuleDeclaration) {
-        text = isDeclareGlobal
-          ? OutputGenerator.stripDeclareGlobalMemberExports(text)
-          : OutputGenerator.stripNamespaceMemberExports(text);
-      }
-
-      // Handle variable declarations - add type annotations for namespace references
-      if (ts.isVariableStatement(declaration.node)) {
-        text = this.transformVariableDeclaration(text, declaration);
-      }
-
-      text = this.replaceRenamedReferences(text, declaration);
-
-      lines.push(text);
+      const transformedStatement = OutputGenerator.transformStatementForOutput(
+        declaration,
+        shouldHaveExport,
+        suppressExportForDefault,
+      );
+      const renameMap = this.buildRenameMap(declaration);
+      const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, { renameMap });
+      lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText()));
     }
 
     return lines;
@@ -461,369 +447,6 @@ export class OutputGenerator {
   }
   /* eslint-enable no-param-reassign */
 
-  /* eslint-disable no-param-reassign */
-  private transformVariableDeclaration(text: string, declaration: TypeDeclaration): string {
-    const statement = declaration.node;
-    if (!ts.isVariableStatement(statement)) {
-      return text;
-    }
-
-    const leadingTriviaMatch = text.match(/^(\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)/);
-    const leadingTrivia = leadingTriviaMatch?.[1] ?? "";
-    const textAfterTrivia = text.slice(leadingTrivia.length).trimStart();
-    const hasExport = textAfterTrivia.startsWith("export ");
-
-    // Check if this variable has namespace dependencies
-    if (declaration.namespaceDependencies.size > 0) {
-      // Transform: export const Lib = lib; -> export declare const Lib: typeof lib;
-      const namespaceNames = Array.from(declaration.namespaceDependencies);
-      for (const nsName of namespaceNames) {
-        // Match pattern: const VarName = nsName;
-        const pattern = new RegExp(`(const\\s+${declaration.name})\\s*=\\s*${nsName}\\s*;`, "g");
-        text = text.replace(pattern, `$1: typeof ${nsName};`);
-      }
-    }
-
-    const checker = this.options.typeChecker;
-    if (checker) {
-      const bindingPatternText = OutputGenerator.transformBindingPatternVariableStatement(
-        statement,
-        checker,
-        hasExport,
-        leadingTrivia,
-      );
-      if (bindingPatternText) {
-        return bindingPatternText;
-      }
-
-      const initializerTransformedText = OutputGenerator.transformVariableInitializers(
-        statement,
-        checker,
-        hasExport,
-        leadingTrivia,
-      );
-      if (initializerTransformedText) {
-        return initializerTransformedText;
-      }
-    }
-
-    // Add declare keyword to variable declarations if they're not exported
-    if (!declaration.isExported && !text.trim().startsWith("declare ")) {
-      text = text.replace(/^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*))(const|let|var)\s+/, "$1declare $2 ");
-    } else if (declaration.isExported) {
-      // For exported variables, add declare after export
-      text = text.replace(
-        /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)export\s+)(const|let|var)\s+/,
-        "$1declare $2 ",
-      );
-    }
-
-    return text;
-  }
-  /* eslint-enable no-param-reassign */
-
-  private generateVariableStatementLines(statement: ts.VariableStatement, declarations: TypeDeclaration[]): string[] {
-    const checker = this.options.typeChecker;
-    if (!checker) {
-      return [];
-    }
-
-    let leadingTrivia = "";
-
-    const orderedDeclarations = [...declarations].sort((a, b) => {
-      const aPos = a.variableDeclaration?.pos ?? 0;
-      const bPos = b.variableDeclaration?.pos ?? 0;
-      return aPos - bPos;
-    });
-
-    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
-    const separator = OutputGenerator.getVariableDeclarationSeparator(statement);
-
-    const hasDefaultOnly = orderedDeclarations.some((decl) => decl.isExportedAsDefaultOnly);
-    if (hasDefaultOnly) {
-      const declarationTexts: string[] = [];
-      for (const decl of orderedDeclarations) {
-        const declText = OutputGenerator.buildVariableDeclarationText(statement, decl, checker);
-        if (declText) {
-          declarationTexts.push(declText);
-        }
-
-        const shouldExport =
-          !decl.isExportEquals && (decl.isExported || decl.wasOriginallyExported) && !decl.isExportedAsDefaultOnly;
-        if (shouldExport) {
-          this.extraDefaultExports.add(decl.normalizedName);
-        }
-      }
-
-      if (declarationTexts.length === 0) {
-        return [];
-      }
-
-      const prefix = "declare ";
-      let line = `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(separator)};`;
-      for (const decl of orderedDeclarations) {
-        line = this.replaceRenamedReferences(line, decl);
-      }
-      return [line];
-    }
-
-    const groups = new Map<boolean, TypeDeclaration[]>();
-    for (const decl of orderedDeclarations) {
-      const shouldExport =
-        !decl.isExportEquals && (decl.isExported || decl.wasOriginallyExported) && !decl.isExportedAsDefaultOnly;
-
-      const group = groups.get(shouldExport);
-      if (group) {
-        group.push(decl);
-      } else {
-        groups.set(shouldExport, [decl]);
-      }
-    }
-
-    const lines: string[] = [];
-
-    for (const shouldExport of [false, true]) {
-      const group = groups.get(shouldExport);
-      if (!group || group.length === 0) {
-        continue;
-      }
-
-      const declarationTexts: string[] = [];
-      for (const decl of group) {
-        const declText = OutputGenerator.buildVariableDeclarationText(statement, decl, checker);
-        if (declText) {
-          declarationTexts.push(declText);
-        }
-      }
-
-      if (declarationTexts.length === 0) {
-        continue;
-      }
-
-      const prefix = shouldExport ? "export declare " : "declare ";
-      let line = `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(separator)};`;
-      for (const decl of group) {
-        line = this.replaceRenamedReferences(line, decl);
-      }
-
-      lines.push(line);
-      leadingTrivia = "";
-    }
-
-    return lines;
-  }
-
-  private static buildVariableDeclarationText(
-    statement: ts.VariableStatement,
-    declaration: TypeDeclaration,
-    checker: ts.TypeChecker,
-  ): string | null {
-    const varDecl = declaration.variableDeclaration;
-    if (!varDecl || !ts.isIdentifier(varDecl.name)) {
-      return null;
-    }
-
-    const name = declaration.normalizedName;
-    const initializer = varDecl.initializer;
-
-    if (initializer && ts.isIdentifier(initializer) && declaration.namespaceDependencies.has(initializer.text)) {
-      return `${name}: typeof ${initializer.text}`;
-    }
-
-    const explicitType = varDecl.type?.getText(statement.getSourceFile()) ?? null;
-    if (explicitType) {
-      return `${name}: ${explicitType}`;
-    }
-
-    if (initializer && OutputGenerator.shouldKeepInitializer(varDecl, checker)) {
-      return `${name} = ${initializer.getText(statement.getSourceFile())}`;
-    }
-
-    const type = checker.getTypeAtLocation(varDecl.name);
-    const typeText = checker.typeToString(type, varDecl.name, ts.TypeFormatFlags.NoTruncation);
-    return `${name}: ${typeText}`;
-  }
-
-  private static transformBindingPatternVariableStatement(
-    statement: ts.VariableStatement,
-    checker: ts.TypeChecker,
-    hasExport: boolean,
-    leadingTrivia: string,
-  ): string | null {
-    const declarations = statement.declarationList.declarations;
-    const hasBindingPattern = declarations.some(
-      (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
-    );
-
-    if (!hasBindingPattern) {
-      return null;
-    }
-
-    const allBindingPatterns = declarations.every(
-      (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
-    );
-
-    if (!allBindingPatterns) {
-      return null;
-    }
-
-    const identifiers: ts.Identifier[] = [];
-    for (const decl of declarations) {
-      OutputGenerator.collectBindingIdentifiers(decl.name, identifiers);
-    }
-
-    if (identifiers.length === 0) {
-      return null;
-    }
-
-    const declarationsText = identifiers
-      .map((identifier) => {
-        const type = checker.getTypeAtLocation(identifier);
-        const typeText = checker.typeToString(type, identifier, ts.TypeFormatFlags.NoTruncation);
-        return `${identifier.text}: ${typeText}`;
-      })
-      .join(", ");
-
-    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
-    const prefix = hasExport ? "export declare " : "declare ";
-    return `${leadingTrivia}${prefix}${keyword} ${declarationsText};`;
-  }
-
-  private static transformVariableInitializers(
-    statement: ts.VariableStatement,
-    checker: ts.TypeChecker,
-    hasExport: boolean,
-    leadingTrivia: string,
-  ): string | null {
-    const declarations = statement.declarationList.declarations;
-    if (!declarations.every((decl) => ts.isIdentifier(decl.name))) {
-      return null;
-    }
-
-    let needsRewrite = false;
-    const declarationTexts: string[] = [];
-
-    for (const decl of declarations) {
-      if (!ts.isIdentifier(decl.name)) {
-        return null;
-      }
-
-      const name = decl.name.text;
-      const initializer = decl.initializer;
-      const explicitType = decl.type?.getText(statement.getSourceFile()) ?? null;
-
-      let keepInitializer = false;
-      let initializerText: string | null = null;
-      let typeText: string | null = null;
-
-      if (initializer) {
-        keepInitializer = OutputGenerator.shouldKeepInitializer(decl, checker);
-        if (keepInitializer) {
-          initializerText = initializer.getText(statement.getSourceFile());
-        } else {
-          needsRewrite = true;
-        }
-      }
-
-      if (!keepInitializer) {
-        if (explicitType) {
-          typeText = explicitType;
-        } else {
-          const type = checker.getTypeAtLocation(decl.name);
-          typeText = checker.typeToString(type, decl.name, ts.TypeFormatFlags.NoTruncation);
-          needsRewrite = needsRewrite || initializer !== undefined;
-        }
-      }
-
-      let declarationText = name;
-      if (keepInitializer && initializerText) {
-        declarationText = `${declarationText} = ${initializerText}`;
-      } else if (typeText) {
-        declarationText = `${declarationText}: ${typeText}`;
-      }
-
-      declarationTexts.push(declarationText);
-    }
-
-    if (!needsRewrite) {
-      return null;
-    }
-
-    const keyword = OutputGenerator.getVariableDeclarationKeyword(statement.declarationList);
-    const prefix = hasExport ? "export declare " : "declare ";
-    return `${leadingTrivia}${prefix}${keyword} ${declarationTexts.join(", ")};`;
-  }
-
-  private static shouldKeepInitializer(decl: ts.VariableDeclaration, checker: ts.TypeChecker): boolean {
-    if (!decl.initializer) {
-      return false;
-    }
-
-    if (decl.type) {
-      return false;
-    }
-
-    const type = checker.getTypeAtLocation(decl.initializer);
-
-    if (type.isLiteral()) {
-      return true;
-    }
-
-    if (type.isUnion()) {
-      return type.types.every((member) => member.isLiteral());
-    }
-
-    return false;
-  }
-
-  private static collectBindingIdentifiers(name: ts.BindingName, identifiers: ts.Identifier[]): void {
-    if (ts.isIdentifier(name)) {
-      identifiers.push(name);
-      return;
-    }
-
-    if (ts.isObjectBindingPattern(name)) {
-      for (const element of name.elements) {
-        if (ts.isBindingElement(element)) {
-          OutputGenerator.collectBindingIdentifiers(element.name, identifiers);
-        }
-      }
-      return;
-    }
-
-    if (ts.isArrayBindingPattern(name)) {
-      for (const element of name.elements) {
-        if (ts.isOmittedExpression(element)) {
-          continue;
-        }
-        if (ts.isBindingElement(element)) {
-          OutputGenerator.collectBindingIdentifiers(element.name, identifiers);
-        }
-      }
-    }
-  }
-
-  private static getVariableDeclarationKeyword(list: ts.VariableDeclarationList): string {
-    // eslint-disable-next-line no-bitwise
-    if (list.flags & ts.NodeFlags.Const) {
-      return "const";
-    }
-    // eslint-disable-next-line no-bitwise
-    if (list.flags & ts.NodeFlags.Let) {
-      return "let";
-    }
-    return "var";
-  }
-
-  private static getVariableDeclarationSeparator(statement: ts.VariableStatement): string {
-    const text = statement.getText(statement.getSourceFile());
-    const match = text.match(/,\s*\n(\s*)\S/);
-    if (match) {
-      return `,\n${match[1]}`;
-    }
-    return ", ";
-  }
-
   private static getVariableStatementKey(sourceFile: string, statement: ts.VariableStatement): string {
     return `${sourceFile}:${statement.pos}:${statement.end}`;
   }
@@ -858,11 +481,11 @@ export class OutputGenerator {
     const used = Array.from(this.usedDeclarations);
     const exported = used.filter((id) => {
       const decl = this.registry.getDeclaration(id);
-      return decl && decl.isExported;
+      return decl && decl.exportInfo.kind !== ExportKind.NotExported;
     });
     const nonExported = used.filter((id) => {
       const decl = this.registry.getDeclaration(id);
-      return decl && !decl.isExported;
+      return decl && decl.exportInfo.kind === ExportKind.NotExported;
     });
 
     for (const id of nonExported) {
@@ -875,19 +498,23 @@ export class OutputGenerator {
     return sorted;
   }
 
-  private replaceRenamedReferences(text: string, declaration: TypeDeclaration): string {
-    let result = text;
+  private buildRenameMap(declaration: TypeDeclaration): Map<string, string> {
+    const renameMap = new Map<string, string>();
 
-    if (declaration.name !== declaration.normalizedName) {
-      const regex = new RegExp(`\\b(type|interface|class|enum)\\s+${declaration.name}\\b`, "g");
-      result = result.replace(regex, `$1 ${declaration.normalizedName}`);
+    if (
+      declaration.name !== declaration.normalizedName &&
+      (ts.isTypeAliasDeclaration(declaration.node) ||
+        ts.isInterfaceDeclaration(declaration.node) ||
+        ts.isClassDeclaration(declaration.node) ||
+        ts.isEnumDeclaration(declaration.node))
+    ) {
+      renameMap.set(declaration.name, declaration.normalizedName);
     }
 
     for (const depId of declaration.dependencies) {
       const depDecl = this.registry.getDeclaration(depId);
       if (depDecl && depDecl.name !== depDecl.normalizedName) {
-        const regex = new RegExp(`\\b${depDecl.name}\\b(?![_])`, "g");
-        result = result.replace(regex, depDecl.normalizedName);
+        renameMap.set(depDecl.name, depDecl.normalizedName);
       }
     }
 
@@ -903,13 +530,23 @@ export class OutputGenerator {
         const normalizedName = OutputGenerator.extractImportName(externalImport.normalizedName);
 
         if (originalName !== normalizedName) {
-          const regex = new RegExp(`\\b${originalName}\\b(?![_])`, "g");
-          result = result.replace(regex, normalizedName);
+          renameMap.set(originalName, normalizedName);
         }
       }
     }
 
-    return result;
+    return renameMap;
+  }
+
+  private buildRenameMapForDeclarations(declarations: TypeDeclaration[]): Map<string, string> {
+    const merged = new Map<string, string>();
+    for (const declaration of declarations) {
+      for (const [name, normalized] of this.buildRenameMap(declaration)) {
+        merged.set(name, normalized);
+      }
+    }
+
+    return merged;
   }
 
   private static extractImportName(importStr: string): string {
@@ -955,5 +592,206 @@ export class OutputGenerator {
     }
 
     return directives;
+  }
+
+  private static transformStatementForOutput(
+    declaration: TypeDeclaration,
+    shouldHaveExport: boolean,
+    suppressExportForDefault: boolean,
+  ): ts.Statement {
+    let statement = declaration.node as ts.Statement;
+    const modifiersMap = modifiersToMap(getModifiers(statement));
+
+    const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
+    modifiersMap[ts.SyntaxKind.ExportKeyword] = hadExport && shouldHaveExport;
+    if (suppressExportForDefault) {
+      modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
+    }
+
+    if (OutputGenerator.shouldAddDeclareKeyword(statement)) {
+      modifiersMap[ts.SyntaxKind.DeclareKeyword] = true;
+    }
+
+    statement = recreateRootLevelNodeWithModifiers(statement, modifiersMap) as ts.Statement;
+
+    const result = ts.transform(statement, [OutputGenerator.createOutputTransformer()]);
+    const transformed = result.transformed[0] as ts.Statement;
+    result.dispose();
+    return transformed;
+  }
+
+  private static createOutputTransformer(): ts.TransformerFactory<ts.Statement> {
+    return (context) => {
+      const visit: ts.Visitor = (node) => {
+        if (OutputGenerator.shouldStripNamespaceMemberExport(node)) {
+          return OutputGenerator.stripExportFromStatement(node as ts.Statement, false);
+        }
+
+        if (ts.isFunctionDeclaration(node) && node.body) {
+          const updated = ts.factory.updateFunctionDeclaration(
+            node,
+            node.modifiers,
+            node.asteriskToken,
+            node.name,
+            node.typeParameters,
+            node.parameters,
+            node.type,
+            undefined,
+          );
+          ts.setTextRange(updated, node);
+          return updated;
+        }
+
+        if (ts.isClassDeclaration(node)) {
+          const members = node.members.map((member) => OutputGenerator.stripClassMemberImplementation(member));
+          const updated = ts.factory.updateClassDeclaration(
+            node,
+            node.modifiers,
+            node.name,
+            node.typeParameters,
+            node.heritageClauses,
+            members,
+          );
+          ts.setTextRange(updated, node);
+          return updated;
+        }
+
+        if (ts.isModuleDeclaration(node)) {
+          // eslint-disable-next-line no-bitwise
+          const isDeclareGlobal = (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+          let body = node.body;
+          if (body && ts.isModuleBlock(body)) {
+            const statements = body.statements.map((statement) =>
+              OutputGenerator.stripExportFromStatement(statement, isDeclareGlobal),
+            );
+            body = ts.factory.updateModuleBlock(body, statements);
+          }
+
+          let flags = node.flags;
+          if (!isDeclareGlobal && ts.isIdentifier(node.name)) {
+            // eslint-disable-next-line no-bitwise
+            flags |= ts.NodeFlags.Namespace;
+          }
+
+          const updated = ts.factory.createModuleDeclaration(node.modifiers, node.name, body, flags);
+          ts.setTextRange(updated, node);
+          return ts.visitEachChild(updated, visit, context);
+        }
+
+        return ts.visitEachChild(node, visit, context);
+      };
+
+      return (rootNode) => ts.visitNode(rootNode, visit) as ts.Statement;
+    };
+  }
+
+  private static stripClassMemberImplementation(member: ts.ClassElement): ts.ClassElement {
+    const modifiers = getModifiers(member);
+    if (ts.isPropertyDeclaration(member)) {
+      const filteredModifiers = OutputGenerator.stripAccessModifiers(modifiers);
+      const updated = ts.factory.updatePropertyDeclaration(
+        member,
+        filteredModifiers,
+        member.name,
+        member.questionToken ?? member.exclamationToken,
+        member.type,
+        undefined,
+      );
+      ts.setTextRange(updated, member);
+      return updated;
+    }
+
+    if (modifiers) {
+      const filteredModifiers = OutputGenerator.stripAccessModifiers(modifiers);
+      if (filteredModifiers !== modifiers) {
+        if (ts.isMethodDeclaration(member)) {
+          const updated = ts.factory.updateMethodDeclaration(
+            member,
+            filteredModifiers,
+            member.asteriskToken,
+            member.name,
+            member.questionToken,
+            member.typeParameters,
+            member.parameters,
+            member.type,
+            member.body,
+          );
+          ts.setTextRange(updated, member);
+          return updated;
+        }
+      }
+    }
+
+    return member;
+  }
+
+  private static stripExportFromStatement(statement: ts.Statement, preserveNamespaceExport: boolean): ts.Statement {
+    if (preserveNamespaceExport && ts.isModuleDeclaration(statement)) {
+      return statement;
+    }
+
+    const modifiers = getModifiers(statement);
+    if (!modifiers) {
+      return statement;
+    }
+
+    const modifiersMap = modifiersToMap(modifiers);
+    if (!modifiersMap[ts.SyntaxKind.ExportKeyword]) {
+      return statement;
+    }
+
+    modifiersMap[ts.SyntaxKind.ExportKeyword] = false;
+    return recreateRootLevelNodeWithModifiers(statement, modifiersMap) as ts.Statement;
+  }
+
+  private static shouldStripNamespaceMemberExport(node: ts.Node): boolean {
+    if (!ts.isStatement(node)) {
+      return false;
+    }
+
+    const parentBlock = (node as Omit<ts.Node, "parent"> & { parent?: ts.Node }).parent;
+    if (!parentBlock) {
+      return false;
+    }
+    if (!ts.isModuleBlock(parentBlock)) {
+      return false;
+    }
+
+    const moduleDecl = parentBlock.parent;
+    if (!ts.isModuleDeclaration(moduleDecl)) {
+      return false;
+    }
+
+    return !ts.isModuleDeclaration(node);
+  }
+
+  private static shouldAddDeclareKeyword(statement: ts.Statement): boolean {
+    if (
+      ts.isClassDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement) ||
+      ts.isModuleDeclaration(statement)
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private static stripAccessModifiers(
+    modifiers: readonly ts.Modifier[] | undefined,
+  ): readonly ts.Modifier[] | undefined {
+    if (!modifiers || modifiers.length === 0) {
+      return modifiers;
+    }
+
+    const filtered = modifiers.filter(
+      (modifier) =>
+        modifier.kind !== ts.SyntaxKind.PublicKeyword &&
+        modifier.kind !== ts.SyntaxKind.PrivateKeyword &&
+        modifier.kind !== ts.SyntaxKind.ProtectedKeyword,
+    );
+
+    return filtered.length === modifiers.length ? modifiers : filtered;
   }
 }

@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
+import { ExportKind } from "./types.js";
 
 export class DependencyAnalyzer {
   private registry: TypeRegistry;
@@ -30,7 +31,7 @@ export class DependencyAnalyzer {
   private trackEntryFileAliases(): void {
     const entryFiles = new Set<string>();
     for (const declaration of this.registry.declarations.values()) {
-      if (declaration.isExported) {
+      if (declaration.exportInfo.kind !== ExportKind.NotExported) {
         entryFiles.add(declaration.sourceFile);
       }
     }
