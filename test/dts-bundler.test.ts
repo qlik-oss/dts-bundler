@@ -121,7 +121,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle default export of default export", () => {
+    it("should handle default export of default export", () => {
       const { expected, result } = runTestCase("default-export-of-default-export");
       expect(result).toBe(expected);
     });

@@ -55,7 +55,11 @@ export class DeclarationParser {
 
     for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
       if (isEntry) {
-        this.exportResolver.parseReExports(filePath, sourceFile, this.importMap);
+        this.exportResolver.parseReExports(filePath, sourceFile, this.importMap, (name: string) => {
+          if (!this.entryExportDefaultName) {
+            this.entryExportDefaultName = name;
+          }
+        });
       }
       ExportResolver.resolveExportEquals(filePath, sourceFile, this.importMap);
     }

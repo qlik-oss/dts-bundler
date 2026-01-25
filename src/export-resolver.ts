@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { hasExportModifier } from "./declaration-utils.js";
+import { getDeclarationName, hasDefaultModifier, hasExportModifier } from "./declaration-utils.js";
 import type { FileCollector } from "./file-collector.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
@@ -48,6 +48,7 @@ export class ExportResolver {
       string,
       Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
     >,
+    onEntryExportDefaultName?: (name: string) => void,
   ): void {
     for (const statement of sourceFile.statements) {
       if (!ts.isExportDeclaration(statement)) continue;
@@ -63,16 +64,27 @@ export class ExportResolver {
         for (const element of statement.exportClause.elements) {
           const exportedName = element.name.text;
           const originalName = element.propertyName?.text || exportedName;
+          let resolvedOriginalName = originalName;
+          if (originalName === "default") {
+            const defaultExportName = this.resolveDefaultExportName(resolvedPath);
+            if (!defaultExportName) continue;
+            resolvedOriginalName = defaultExportName;
+          }
 
-          const key = `${resolvedPath}:${originalName}`;
+          const key = `${resolvedPath}:${resolvedOriginalName}`;
           const declarationId = this.registry.nameIndex.get(key);
           if (declarationId) {
             const declaration = this.registry.getDeclaration(declarationId);
             if (declaration) {
+              const isDefaultExport = exportedName === "default";
               declaration.exportInfo = {
-                kind: ExportKind.Named,
-                wasOriginallyExported: true,
+                kind: isDefaultExport ? ExportKind.Default : ExportKind.Named,
+                wasOriginallyExported: !isDefaultExport,
               };
+
+              if (isDefaultExport) {
+                onEntryExportDefaultName?.(resolvedOriginalName);
+              }
             }
           }
         }
@@ -104,6 +116,26 @@ export class ExportResolver {
         }
       }
     }
+  }
+
+  private resolveDefaultExportName(resolvedPath: string): string | null {
+    const sourceFile = this.fileCollector.getProgram().getSourceFile(resolvedPath);
+    if (!sourceFile) return null;
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
+      if (ts.isIdentifier(statement.expression)) {
+        return statement.expression.text;
+      }
+    }
+
+    for (const statement of sourceFile.statements) {
+      if (!hasDefaultModifier(statement)) continue;
+      const name = getDeclarationName(statement);
+      if (name) return name;
+    }
+
+    return null;
   }
 
   static resolveExportEquals(
