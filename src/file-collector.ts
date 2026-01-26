@@ -166,6 +166,10 @@ export class FileCollector {
     return this.typeChecker;
   }
 
+  getCompilerOptions(): ts.CompilerOptions {
+    return this.program.getCompilerOptions();
+  }
+
   /**
    * Check if a given file path belongs to an inlined library
    */

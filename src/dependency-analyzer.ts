@@ -161,6 +161,11 @@ export class DependencyAnalyzer {
       references.add(node.initializer.text);
     }
 
+    // Handle property access expressions (e.g., Foo.Bar)
+    if (ts.isPropertyAccessExpression(node)) {
+      DependencyAnalyzer.extractPropertyAccess(node, references);
+    }
+
     const isCtsFile = (() => {
       const ext = path.extname(node.getSourceFile().fileName).toLowerCase();
       return ext === ".cts" || ext === ".d.cts";

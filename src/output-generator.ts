@@ -29,6 +29,8 @@ export class OutputGenerator {
     entryExportDefault?: ts.ExportAssignment | null;
     entryExportDefaultName?: string | null;
     typeChecker?: ts.TypeChecker;
+    preserveConstEnums?: boolean;
+    respectPreserveConstEnum?: boolean;
   };
 
   constructor(
@@ -47,6 +49,8 @@ export class OutputGenerator {
       entryExportDefault?: ts.ExportAssignment | null;
       entryExportDefaultName?: string | null;
       typeChecker?: ts.TypeChecker;
+      preserveConstEnums?: boolean;
+      respectPreserveConstEnum?: boolean;
     } = {},
   ) {
     this.registry = registry;
@@ -257,6 +261,7 @@ export class OutputGenerator {
       const suppressExportForDefault = declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier;
       const suppressExportForModuleAugmentation =
         ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
+      const stripConstEnum = this.shouldStripConstEnum(declaration);
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
@@ -269,6 +274,8 @@ export class OutputGenerator {
         declaration,
         shouldHaveExport,
         suppressExportForDefault,
+        stripConstEnum,
+        this.options.typeChecker,
       );
       const renameMap = this.buildRenameMap(declaration);
       const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, { renameMap });
@@ -749,15 +756,47 @@ export class OutputGenerator {
     declaration: TypeDeclaration,
     shouldHaveExport: boolean,
     suppressExportForDefault: boolean,
+    stripConstEnum: boolean,
+    typeChecker?: ts.TypeChecker,
   ): ts.Statement {
     let statement = declaration.node as ts.Statement;
     const modifiersMap = modifiersToMap(getModifiers(statement));
+    const wasConstEnum = Boolean(modifiersMap[ts.SyntaxKind.ConstKeyword]);
 
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
     const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
     modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
     if (suppressExportForDefault) {
       modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
+    }
+
+    if (ts.isEnumDeclaration(statement)) {
+      if (wasConstEnum && typeChecker) {
+        const members = statement.members.map((member) => {
+          if (member.initializer) {
+            return member;
+          }
+
+          const value = typeChecker.getConstantValue(member);
+          if (value === undefined) {
+            return member;
+          }
+
+          const initializer =
+            typeof value === "number"
+              ? ts.factory.createNumericLiteral(value)
+              : ts.factory.createStringLiteral(String(value));
+          const updated = ts.factory.updateEnumMember(member, member.name, initializer);
+          ts.setTextRange(updated, member);
+          return updated;
+        });
+
+        statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
+      }
+    }
+
+    if (stripConstEnum) {
+      modifiersMap[ts.SyntaxKind.ConstKeyword] = false;
     }
 
     if (OutputGenerator.shouldAddDeclareKeyword(statement)) {
@@ -926,7 +965,13 @@ export class OutputGenerator {
   }
 
   private static shouldAddDeclareKeyword(statement: ts.Statement): boolean {
-    if (statement.getSourceFile().isDeclarationFile) {
+    const sourceFile = statement.getSourceFile();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!sourceFile) {
+      return true;
+    }
+
+    if (sourceFile.isDeclarationFile) {
       return false;
     }
 
@@ -977,6 +1022,24 @@ export class OutputGenerator {
     }
 
     return true;
+  }
+
+  private shouldStripConstEnum(declaration: TypeDeclaration): boolean {
+    if (!this.options.preserveConstEnums || !this.options.respectPreserveConstEnum) {
+      return false;
+    }
+
+    if (!ts.isEnumDeclaration(declaration.node)) {
+      return false;
+    }
+
+    const modifiers = getModifiers(declaration.node);
+    const hasConst = modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ConstKeyword) ?? false;
+    if (!hasConst) {
+      return false;
+    }
+
+    return declaration.exportInfo.kind !== ExportKind.NotExported && declaration.exportInfo.wasOriginallyExported;
   }
 
   private static stripAccessModifiers(

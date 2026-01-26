@@ -25,6 +25,7 @@ function bundle(
     referencedTypes?: Set<string>;
     inlineDeclareGlobals?: boolean;
     inlineDeclareExternals?: boolean;
+    respectPreserveConstEnum?: boolean;
   } = {},
 ): string {
   const entryFile = path.resolve(entry);
@@ -71,6 +72,7 @@ function bundle(
     entryExportDefault: parser.entryExportDefault,
     entryExportDefaultName: parser.entryExportDefaultName,
     typeChecker: collector.getTypeChecker(),
+    preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,
   });
   return generator.generate();
 }
@@ -92,6 +94,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     exportReferencedTypes,
     inlineDeclareGlobals,
     inlineDeclareExternals,
+    respectPreserveConstEnum,
   } = options;
 
   if (!entry) {
@@ -107,6 +110,7 @@ export function bundleDts(options: BundleDtsOptions): string {
     importedLibraries,
     inlineDeclareGlobals,
     inlineDeclareExternals,
+    respectPreserveConstEnum,
   });
 }
 

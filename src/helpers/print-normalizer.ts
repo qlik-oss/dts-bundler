@@ -100,6 +100,22 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
     result = collapseEmptyBlocks(result);
   }
 
+  if (ts.isEnumDeclaration(node) && originalText) {
+    const body = originalText.split("{")[1] ?? "";
+    if (body.includes(",")) {
+      result = result.replace(/(^\s*[^\n{}]+)(\n)(?=\s*(?:[^\n{}]|\}))/gm, (match, line, newline) => {
+        const trimmed = String(line).trim();
+        if (trimmed.length === 0) {
+          return match;
+        }
+        if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("}")) {
+          return match;
+        }
+        return `${line},${newline}`;
+      });
+    }
+  }
+
   if (ts.isTypeAliasDeclaration(node)) {
     result = collapseSimpleTypeLiterals(result, originalText);
   }

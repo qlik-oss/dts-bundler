@@ -230,7 +230,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should respect preserve const enum when enabled", () => {
+    it("should respect preserve const enum when enabled", () => {
       const { expected, result } = runTestCase("respect-preserve-const-enum", { respectPreserveConstEnum: true });
       expect(result).toBe(expected);
     });
