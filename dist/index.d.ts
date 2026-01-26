@@ -26,6 +26,10 @@ interface BundleDtsOptions {
    */
   inlineDeclareGlobals?: boolean;
   /**
+   * Whether to inline declare module blocks for external modules
+   */
+  inlineDeclareExternals?: boolean;
+  /**
    * Whether to export referenced types automatically
    */
   exportReferencedTypes?: boolean;

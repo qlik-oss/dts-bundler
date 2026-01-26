@@ -59,7 +59,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle mixed ES and CommonJS imports", () => {
+    it("should handle mixed ES and CommonJS imports", () => {
       const { expected, result } = runTestCase("mixed-imports");
       expect(result).toBe(expected);
     });
@@ -235,19 +235,19 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle extending other modules", () => {
-      const { expected, result } = runTestCase("extend-other-module");
+    it("should handle extending other modules", () => {
+      const { expected, result } = runTestCase("extend-other-module", { inlineDeclareExternals: true });
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle globalThis references", () => {
+    it("should handle globalThis references", () => {
       const { expected, result } = runTestCase("globalThis");
       expect(result).toBe(expected);
     });
   });
 
   describe("Name Resolution", () => {
-    it.skip("should handle external types with same name from different packages", () => {
+    it("should handle external types with same name from different packages", () => {
       const { expected, result } = runTestCase("external-name-conflicts", { inlinedLibraries: ["@myorg/lib"] });
       expect(result).toBe(expected);
     });

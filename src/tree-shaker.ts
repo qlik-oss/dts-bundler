@@ -21,6 +21,12 @@ export class TreeShaker {
       this.markUsed(declaration.id);
     }
 
+    for (const declaration of this.registry.declarations.values()) {
+      if (declaration.forceInclude) {
+        this.markUsed(declaration.id);
+      }
+    }
+
     this.markNamespaceExportsUsed();
 
     return {

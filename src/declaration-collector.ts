@@ -66,7 +66,10 @@ export class DeclarationCollector {
     }
 
     const moduleName = moduleDecl.name.text;
-    const shouldInline = this.fileCollector.shouldInline(moduleName);
+    const resolvedModule = this.fileCollector.resolveModuleSpecifier(filePath, moduleName);
+    const shouldInline =
+      this.fileCollector.shouldInline(moduleName) ||
+      (resolvedModule ? this.fileCollector.shouldInlineFilePath(resolvedModule) : false);
 
     if (!shouldInline) {
       if (!this.options.inlineDeclareExternals) {
@@ -103,6 +106,7 @@ export class DeclarationCollector {
       };
 
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+      declaration.forceInclude = true;
       this.registry.register(declaration);
     }
   }

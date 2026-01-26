@@ -158,6 +158,24 @@ export class FileCollector {
     return false;
   }
 
+  shouldInlineFilePath(filePath: string): boolean {
+    const sourceFile = this.program.getSourceFile(filePath);
+    if (sourceFile) {
+      return this.shouldInlineFile(sourceFile);
+    }
+
+    const libraryName = getLibraryName(filePath);
+    if (libraryName === null) {
+      return true;
+    }
+
+    if (this.inlinedLibrariesSet.has(libraryName)) {
+      return true;
+    }
+
+    return false;
+  }
+
   getProgram(): ts.Program {
     return this.program;
   }
@@ -272,6 +290,12 @@ export class FileCollector {
 
     this.moduleResolveCache.set(importPath, null);
     return null;
+  }
+
+  resolveModuleSpecifier(fromFile: string, importPath: string): string | null {
+    const result = ts.resolveModuleName(importPath, fromFile, this.program.getCompilerOptions(), ts.sys);
+    const resolvedFileName = result.resolvedModule?.resolvedFileName;
+    return resolvedFileName ?? null;
   }
 
   collectFiles(): Map<string, CollectedFile> {

@@ -48,6 +48,7 @@ var TypeDeclaration = class {
 	externalDependencies;
 	namespaceDependencies;
 	variableDeclaration;
+	forceInclude;
 	text;
 	constructor(name, sourceFilePath, node, sourceFileNode, exportInfo) {
 		this.id = Symbol(name);
@@ -60,6 +61,7 @@ var TypeDeclaration = class {
 		this.dependencies = /* @__PURE__ */ new Set();
 		this.externalDependencies = /* @__PURE__ */ new Map();
 		this.namespaceDependencies = /* @__PURE__ */ new Set();
+		this.forceInclude = false;
 		this.text = null;
 	}
 	getText() {
@@ -99,7 +101,7 @@ var ExternalImport = class {
 
 //#endregion
 //#region src/declaration-collector.ts
-var DeclarationCollector = class {
+var DeclarationCollector = class DeclarationCollector {
 	registry;
 	fileCollector;
 	options;
@@ -115,13 +117,28 @@ var DeclarationCollector = class {
 				this.parseAmbientModule(statement, filePath, sourceFile);
 				continue;
 			}
+			if (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name) && statement.body && ts.isModuleBlock(statement.body)) {
+				this.parseModuleAugmentation(statement, filePath, sourceFile, isEntry);
+				continue;
+			}
 			this.parseDeclaration(statement, filePath, sourceFile, isEntry, onDefaultExportName);
 		}
 	}
 	parseAmbientModule(moduleDecl, filePath, sourceFile) {
 		if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) return;
 		const moduleName = moduleDecl.name.text;
-		if (!this.fileCollector.shouldInline(moduleName)) return;
+		const resolvedModule = this.fileCollector.resolveModuleSpecifier(filePath, moduleName);
+		if (!(this.fileCollector.shouldInline(moduleName) || (resolvedModule ? this.fileCollector.shouldInlineFilePath(resolvedModule) : false))) {
+			if (!this.options.inlineDeclareExternals) return;
+			const name = getDeclarationName(moduleDecl);
+			if (!name) return;
+			const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, {
+				kind: ExportKind.Named,
+				wasOriginallyExported: true
+			});
+			this.registry.register(declaration);
+			return;
+		}
 		for (const statement of moduleDecl.body.statements) {
 			if (!isDeclaration(statement)) continue;
 			const name = getDeclarationName(statement);
@@ -131,6 +148,7 @@ var DeclarationCollector = class {
 				kind: hasExport ? ExportKind.Named : ExportKind.NotExported,
 				wasOriginallyExported: hasExport
 			});
+			declaration.forceInclude = true;
 			this.registry.register(declaration);
 		}
 	}
@@ -168,18 +186,25 @@ var DeclarationCollector = class {
 		const hasExport = hasExportModifier(statement);
 		const declareGlobal = isDeclareGlobal(statement);
 		if (hasBindingPattern) {
-			const name = `__binding_${statement.pos}`;
-			let isExported = isEntry ? hasExport : false;
-			let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
-			if (declareGlobal && this.options.inlineDeclareGlobals) {
-				isExported = true;
-				wasOriginallyExported = true;
+			const identifiers = DeclarationCollector.collectBindingIdentifiers(declarations);
+			if (identifiers.length === 0) return;
+			for (const { identifier, element } of identifiers) {
+				const name = identifier.text;
+				let isExported = isEntry ? hasExport : false;
+				let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+				if (declareGlobal && this.options.inlineDeclareGlobals) {
+					isExported = true;
+					wasOriginallyExported = true;
+				}
+				const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, {
+					kind: isExported ? ExportKind.Named : ExportKind.NotExported,
+					wasOriginallyExported
+				});
+				const synthetic = ts.factory.createVariableDeclaration(identifier, void 0, void 0, element.initializer);
+				ts.setTextRange(synthetic, element);
+				declaration.variableDeclaration = synthetic;
+				this.registry.register(declaration);
 			}
-			const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, {
-				kind: isExported ? ExportKind.Named : ExportKind.NotExported,
-				wasOriginallyExported
-			});
-			this.registry.register(declaration);
 			return;
 		}
 		for (const varDecl of declarations) {
@@ -199,11 +224,57 @@ var DeclarationCollector = class {
 			this.registry.register(declaration);
 		}
 	}
+	static collectBindingIdentifiers(declarations) {
+		const identifiers = [];
+		const visitBindingElement = (element) => {
+			if (ts.isIdentifier(element.name)) {
+				identifiers.push({
+					identifier: element.name,
+					element
+				});
+				return;
+			}
+			if (ts.isObjectBindingPattern(element.name)) {
+				for (const child of element.name.elements) visitBindingElement(child);
+				return;
+			}
+			if (ts.isArrayBindingPattern(element.name)) for (const child of element.name.elements) {
+				if (ts.isOmittedExpression(child)) continue;
+				visitBindingElement(child);
+			}
+		};
+		for (const decl of declarations) {
+			if (ts.isIdentifier(decl.name)) continue;
+			if (ts.isObjectBindingPattern(decl.name)) for (const element of decl.name.elements) visitBindingElement(element);
+			else if (ts.isArrayBindingPattern(decl.name)) for (const element of decl.name.elements) {
+				if (ts.isOmittedExpression(element)) continue;
+				visitBindingElement(element);
+			}
+		}
+		return identifiers;
+	}
+	parseModuleAugmentation(moduleDecl, filePath, sourceFile, isEntry) {
+		const name = getDeclarationName(moduleDecl);
+		if (!name) return;
+		const hasExport = hasExportModifier(moduleDecl);
+		const declareGlobal = isDeclareGlobal(moduleDecl);
+		let isExported = isEntry ? hasExport : false;
+		let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+		if (declareGlobal && this.options.inlineDeclareGlobals) {
+			isExported = true;
+			wasOriginallyExported = true;
+		}
+		const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, {
+			kind: isExported ? ExportKind.Named : ExportKind.NotExported,
+			wasOriginallyExported
+		});
+		this.registry.register(declaration);
+	}
 };
 
 //#endregion
 //#region src/export-resolver.ts
-var ExportResolver = class {
+var ExportResolver = class ExportResolver {
 	registry;
 	fileCollector;
 	constructor(registry, fileCollector) {
@@ -218,9 +289,146 @@ var ExportResolver = class {
 				this.parseExportEquals(statement, filePath, isEntry, importMap);
 				continue;
 			}
-			if (isEntry) {
-				onEntryExportDefault(statement);
-				this.parseExportDefault(statement, filePath);
+			if (isEntry) onEntryExportDefault(statement);
+			this.parseExportDefault(statement, filePath);
+		}
+	}
+	collectDirectNamespaceExports(filePath, sourceFile) {
+		for (const statement of sourceFile.statements) {
+			if (!ts.isExportDeclaration(statement)) continue;
+			if (!statement.exportClause || !ts.isNamespaceExport(statement.exportClause)) continue;
+			if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+			const exportName = statement.exportClause.name.text;
+			const importPath = statement.moduleSpecifier.text;
+			if (this.fileCollector.shouldInline(importPath)) {
+				const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+				if (!resolvedPath) continue;
+				this.registry.registerNamespaceExport(filePath, {
+					name: exportName,
+					targetFile: resolvedPath
+				}, false);
+			} else {
+				const importName = `* as ${exportName}`;
+				this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+				this.registry.registerNamespaceExport(filePath, {
+					name: exportName,
+					externalModule: importPath,
+					externalImportName: importName
+				}, false);
+			}
+		}
+	}
+	collectFileExports(filePath, sourceFile, importMap, isEntry) {
+		const fileImports = importMap.get(filePath);
+		for (const statement of sourceFile.statements) {
+			if (isDeclaration(statement) && hasExportModifier(statement)) {
+				if (ts.isVariableStatement(statement)) {
+					for (const declaration of statement.declarationList.declarations) {
+						if (ts.isIdentifier(declaration.name)) {
+							this.registry.registerExportedName(filePath, { name: declaration.name.text });
+							continue;
+						}
+						if (ts.isObjectBindingPattern(declaration.name) || ts.isArrayBindingPattern(declaration.name)) for (const identifier of ExportResolver.collectBindingIdentifiers(declaration.name)) this.registry.registerExportedName(filePath, { name: identifier.text });
+					}
+					continue;
+				}
+				const name = getDeclarationName(statement);
+				if (name) this.registry.registerExportedName(filePath, { name });
+				continue;
+			}
+			if (!ts.isExportDeclaration(statement)) continue;
+			if (!statement.exportClause) {
+				if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+				const importPath = statement.moduleSpecifier.text;
+				if (this.fileCollector.shouldInline(importPath)) {
+					const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+					if (resolvedPath) this.registry.registerStarExport(filePath, { targetFile: resolvedPath }, isEntry);
+				} else this.registry.registerStarExport(filePath, {
+					externalModule: importPath,
+					isTypeOnly: statement.isTypeOnly
+				}, isEntry);
+				continue;
+			}
+			if (ts.isNamespaceExport(statement.exportClause)) {
+				const exportName = statement.exportClause.name.text;
+				const existingNamespaceInfo = this.registry.getNamespaceExportInfo(filePath, exportName);
+				if (!existingNamespaceInfo) if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+					const importPath = statement.moduleSpecifier.text;
+					if (this.fileCollector.shouldInline(importPath)) {
+						const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+						if (resolvedPath) this.registry.registerNamespaceExport(filePath, {
+							name: exportName,
+							targetFile: resolvedPath
+						});
+					} else {
+						const importName = `* as ${exportName}`;
+						this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+						this.registry.registerNamespaceExport(filePath, {
+							name: exportName,
+							externalModule: importPath,
+							externalImportName: importName
+						});
+					}
+				} else this.registry.registerExportedName(filePath, { name: exportName });
+				else this.registry.registerExportedName(filePath, {
+					name: exportName,
+					externalModule: existingNamespaceInfo.externalModule,
+					externalImportName: existingNamespaceInfo.externalImportName
+				});
+				if (isEntry) this.registry.registerEntryNamespaceExport(filePath, exportName);
+				continue;
+			}
+			if (!ts.isNamedExports(statement.exportClause)) continue;
+			if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+				const importPath = statement.moduleSpecifier.text;
+				const isInline = this.fileCollector.shouldInline(importPath);
+				const resolvedPath = isInline ? this.fileCollector.resolveImport(filePath, importPath) : null;
+				for (const element of statement.exportClause.elements) {
+					const exportedName = element.name.text;
+					const originalName = element.propertyName?.text || exportedName;
+					if (isInline && resolvedPath) {
+						const namespaceInfo = this.registry.getNamespaceExportInfo(resolvedPath, originalName);
+						if (namespaceInfo) {
+							this.registry.registerNamespaceExport(filePath, {
+								name: exportedName,
+								targetFile: namespaceInfo.targetFile,
+								externalModule: namespaceInfo.externalModule,
+								externalImportName: namespaceInfo.externalImportName
+							});
+							if (isEntry) this.registry.registerEntryNamespaceExport(filePath, exportedName);
+						} else this.registry.registerExportedName(filePath, { name: exportedName });
+					} else if (!isInline) {
+						const importName = originalName === exportedName ? originalName : `${originalName} as ${exportedName}`;
+						this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+						this.registry.registerExportedName(filePath, {
+							name: exportedName,
+							externalModule: importPath,
+							externalImportName: importName
+						});
+					}
+				}
+				continue;
+			}
+			for (const element of statement.exportClause.elements) {
+				const exportedName = element.name.text;
+				const originalName = element.propertyName?.text || exportedName;
+				const importInfo = fileImports?.get(originalName);
+				if (importInfo && importInfo.isExternal && importInfo.sourceFile) this.registry.registerExportedName(filePath, {
+					name: exportedName,
+					externalModule: importInfo.sourceFile,
+					externalImportName: importInfo.originalName
+				});
+				else this.registry.registerExportedName(filePath, { name: exportedName });
+				const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, originalName);
+				if (namespaceInfo && exportedName !== originalName) {
+					this.registry.registerNamespaceExport(filePath, {
+						name: exportedName,
+						targetFile: namespaceInfo.targetFile,
+						externalModule: namespaceInfo.externalModule,
+						externalImportName: namespaceInfo.externalImportName
+					});
+					if (isEntry) this.registry.registerEntryNamespaceExport(filePath, exportedName);
+				}
 			}
 		}
 	}
@@ -265,8 +473,13 @@ var ExportResolver = class {
 					let key;
 					if (importInfo && !importInfo.isExternal && importInfo.sourceFile) key = `${importInfo.sourceFile}:${importInfo.originalName}`;
 					else key = `${filePath}:${originalName}`;
+					const moduleAugmentation = this.findModuleAugmentationDeclaration(filePath, originalName);
+					if (moduleAugmentation) moduleAugmentation.exportInfo = {
+						kind: ExportKind.Named,
+						wasOriginallyExported: true
+					};
 					const declarationId = this.registry.nameIndex.get(key);
-					if (declarationId) {
+					if (declarationId && !moduleAugmentation) {
 						const declaration = this.registry.getDeclaration(declarationId);
 						if (declaration) declaration.exportInfo = {
 							kind: ExportKind.Named,
@@ -276,6 +489,43 @@ var ExportResolver = class {
 				}
 			}
 		}
+	}
+	findModuleAugmentationDeclaration(filePath, name) {
+		const declarations = this.registry.declarationsByFile.get(filePath);
+		if (!declarations) return null;
+		for (const declId of declarations) {
+			const declaration = this.registry.getDeclaration(declId);
+			if (!declaration) continue;
+			if (!ts.isModuleDeclaration(declaration.node)) continue;
+			if (!ts.isIdentifier(declaration.node.name)) continue;
+			if (declaration.node.name.text !== name) continue;
+			return declaration;
+		}
+		return null;
+	}
+	applyStarExports() {
+		if (this.registry.entryStarExports.length === 0) return;
+		const visitedFiles = /* @__PURE__ */ new Set();
+		for (const entry of this.registry.entryStarExports) if (entry.info.targetFile) this.markStarExportedDeclarations(entry.info.targetFile, visitedFiles);
+	}
+	markStarExportedDeclarations(filePath, visitedFiles) {
+		if (visitedFiles.has(filePath)) return;
+		visitedFiles.add(filePath);
+		const fileDeclarations = this.registry.declarationsByFile.get(filePath);
+		if (fileDeclarations) for (const declId of fileDeclarations) {
+			const declaration = this.registry.getDeclaration(declId);
+			if (!declaration) continue;
+			if (!ts.isStatement(declaration.node)) continue;
+			if (!hasExportModifier(declaration.node)) continue;
+			if (hasDefaultModifier(declaration.node)) continue;
+			if (declaration.exportInfo.kind === ExportKind.Equals) continue;
+			if (declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly) continue;
+			declaration.exportInfo = {
+				kind: ExportKind.Named,
+				wasOriginallyExported: true
+			};
+		}
+		for (const starExport of this.registry.getStarExports(filePath)) if (starExport.targetFile) this.markStarExportedDeclarations(starExport.targetFile, visitedFiles);
 	}
 	resolveDefaultExportName(resolvedPath) {
 		const sourceFile = this.fileCollector.getProgram().getSourceFile(resolvedPath);
@@ -290,6 +540,25 @@ var ExportResolver = class {
 			if (name) return name;
 		}
 		return null;
+	}
+	static collectBindingIdentifiers(name) {
+		const identifiers = [];
+		const visitBindingName = (bindingName) => {
+			if (ts.isIdentifier(bindingName)) {
+				identifiers.push(bindingName);
+				return;
+			}
+			if (ts.isObjectBindingPattern(bindingName)) {
+				for (const element of bindingName.elements) visitBindingName(element.name);
+				return;
+			}
+			if (ts.isArrayBindingPattern(bindingName)) for (const element of bindingName.elements) {
+				if (ts.isOmittedExpression(element)) continue;
+				visitBindingName(element.name);
+			}
+		};
+		visitBindingName(name);
+		return identifiers;
 	}
 	static resolveExportEquals(filePath, sourceFile, importMap) {
 		let exportedName = null;
@@ -363,9 +632,11 @@ var ExportResolver = class {
 var ImportParser = class {
 	registry;
 	fileCollector;
-	constructor(registry, fileCollector) {
+	options;
+	constructor(registry, fileCollector, options) {
 		this.registry = registry;
 		this.fileCollector = fileCollector;
+		this.options = { inlineDeclareExternals: options?.inlineDeclareExternals ?? false };
 	}
 	parseImports(filePath, sourceFile) {
 		const fileImports = /* @__PURE__ */ new Map();
@@ -373,7 +644,7 @@ var ImportParser = class {
 		else if (ts.isImportEqualsDeclaration(statement)) this.parseImportEquals(statement, filePath, fileImports);
 		for (const statement of sourceFile.statements) if (ts.isModuleDeclaration(statement) && ts.isStringLiteral(statement.name) && statement.body && ts.isModuleBlock(statement.body)) {
 			const moduleName = statement.name.text;
-			if (!this.fileCollector.shouldInline(moduleName)) continue;
+			if (!(this.fileCollector.shouldInline(moduleName) || this.options.inlineDeclareExternals)) continue;
 			for (const moduleStatement of statement.body.statements) if (ts.isImportDeclaration(moduleStatement)) this.parseImport(moduleStatement, filePath, fileImports);
 			else if (ts.isImportEqualsDeclaration(moduleStatement)) this.parseImportEquals(moduleStatement, filePath, fileImports);
 		}
@@ -504,8 +775,11 @@ var DeclarationParser = class {
 		this.registry = registry;
 		this.fileCollector = fileCollector;
 		this.importMap = /* @__PURE__ */ new Map();
-		this.options = { inlineDeclareGlobals: options?.inlineDeclareGlobals ?? false };
-		this.importParser = new ImportParser(registry, fileCollector);
+		this.options = {
+			inlineDeclareGlobals: options?.inlineDeclareGlobals ?? false,
+			inlineDeclareExternals: options?.inlineDeclareExternals ?? false
+		};
+		this.importParser = new ImportParser(registry, fileCollector, { inlineDeclareExternals: this.options.inlineDeclareExternals });
 		this.declarationCollector = new DeclarationCollector(registry, fileCollector, this.options);
 		this.exportResolver = new ExportResolver(registry, fileCollector);
 	}
@@ -514,6 +788,8 @@ var DeclarationParser = class {
 			const fileImports = this.importParser.parseImports(filePath, sourceFile);
 			this.importMap.set(filePath, fileImports);
 		}
+		for (const [filePath, { sourceFile }] of files.entries()) this.exportResolver.collectDirectNamespaceExports(filePath, sourceFile);
+		for (const [filePath, { sourceFile, isEntry }] of files.entries()) this.exportResolver.collectFileExports(filePath, sourceFile, this.importMap, isEntry);
 		for (const [filePath, { sourceFile, isEntry }] of files.entries()) {
 			this.declarationCollector.collectDeclarations(filePath, sourceFile, isEntry, (name) => {
 				this.entryExportDefaultName = name;
@@ -530,6 +806,7 @@ var DeclarationParser = class {
 			});
 			ExportResolver.resolveExportEquals(filePath, sourceFile, this.importMap);
 		}
+		this.exportResolver.applyStarExports();
 	}
 };
 
@@ -579,7 +856,12 @@ var DependencyAnalyzer = class DependencyAnalyzer {
 					const importName = importInfo.originalName;
 					declaration.externalDependencies.get(moduleName)?.add(importName);
 				} else if (importInfo.sourceFile) {
-					const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
+					let originalName = importInfo.originalName;
+					if (originalName === "default") {
+						const defaultName = this.getDefaultExportName(importInfo.sourceFile);
+						if (defaultName) originalName = defaultName;
+					}
+					const key = `${importInfo.sourceFile}:${originalName}`;
 					const depId = this.registry.nameIndex.get(key);
 					if (depId) declaration.dependencies.add(depId);
 				}
@@ -590,7 +872,18 @@ var DependencyAnalyzer = class DependencyAnalyzer {
 			}
 		}
 	}
+	getDefaultExportName(sourceFile) {
+		const declarations = this.registry.declarationsByFile.get(sourceFile);
+		if (!declarations) return null;
+		for (const declId of declarations) {
+			const decl = this.registry.getDeclaration(declId);
+			if (!decl) continue;
+			if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) return decl.name;
+		}
+		return null;
+	}
 	extractTypeReferences(node, references) {
+		if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) references.add(node.name.text);
 		if (ts.isTypeReferenceNode(node)) {
 			const typeName = node.typeName;
 			if (ts.isIdentifier(typeName)) references.add(typeName.text);
@@ -602,13 +895,22 @@ var DependencyAnalyzer = class DependencyAnalyzer {
 			else if (ts.isQualifiedName(exprName)) DependencyAnalyzer.extractQualifiedName(exprName, references);
 		}
 		if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.initializer)) references.add(node.initializer.text);
-		if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.heritageClauses) {
-			for (const clause of node.heritageClauses) for (const type of clause.types) if (ts.isIdentifier(type.expression)) references.add(type.expression.text);
-			else if (ts.isPropertyAccessExpression(type.expression)) DependencyAnalyzer.extractPropertyAccess(type.expression, references);
-		}
+		if (ts.isPropertyAccessExpression(node)) DependencyAnalyzer.extractPropertyAccess(node, references);
+		const isCtsFile = (() => {
+			const ext = path.extname(node.getSourceFile().fileName).toLowerCase();
+			return ext === ".cts" || ext === ".d.cts";
+		})();
+		const processHeritageClauses = () => {
+			if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.heritageClauses) {
+				for (const clause of node.heritageClauses) for (const type of clause.types) if (ts.isIdentifier(type.expression)) references.add(type.expression.text);
+				else if (ts.isPropertyAccessExpression(type.expression)) DependencyAnalyzer.extractPropertyAccess(type.expression, references);
+			}
+		};
+		if (!isCtsFile) processHeritageClauses();
 		node.forEachChild((child) => {
 			this.extractTypeReferences(child, references);
 		});
+		if (isCtsFile) processHeritageClauses();
 	}
 	static extractQualifiedName(qualifiedName, references) {
 		let current = qualifiedName;
@@ -707,6 +1009,11 @@ var FileCollector = class FileCollector {
 	}
 	createProgram() {
 		const compilerOptions = getCompilerOptions(findTsConfig(this.entryFile));
+		const entryExt = path.extname(this.entryFile).toLowerCase();
+		if (entryExt === ".cts" || entryExt === ".mts" || entryExt === ".cjs" || entryExt === ".mjs") {
+			compilerOptions.moduleResolution = ts.ModuleResolutionKind.NodeNext;
+			if (compilerOptions.module === void 0) compilerOptions.module = ts.ModuleKind.NodeNext;
+		}
 		compilerOptions.declaration = true;
 		compilerOptions.skipLibCheck = true;
 		compilerOptions.skipDefaultLibCheck = true;
@@ -757,11 +1064,22 @@ var FileCollector = class FileCollector {
 		}
 		return false;
 	}
+	shouldInlineFilePath(filePath) {
+		const sourceFile = this.program.getSourceFile(filePath);
+		if (sourceFile) return this.shouldInlineFile(sourceFile);
+		const libraryName = getLibraryName(filePath);
+		if (libraryName === null) return true;
+		if (this.inlinedLibrariesSet.has(libraryName)) return true;
+		return false;
+	}
 	getProgram() {
 		return this.program;
 	}
 	getTypeChecker() {
 		return this.typeChecker;
+	}
+	getCompilerOptions() {
+		return this.program.getCompilerOptions();
 	}
 	/**
 	* Check if a given file path belongs to an inlined library
@@ -782,6 +1100,22 @@ var FileCollector = class FileCollector {
 			if (importPath.endsWith(".mjs")) basePaths.push(resolved.slice(0, -4));
 			if (importPath.endsWith(".cjs")) basePaths.push(resolved.slice(0, -4));
 			if (importPath.endsWith(".js")) basePaths.push(resolved.slice(0, -3));
+			const lastDotIndex = importPath.lastIndexOf(".");
+			if (lastDotIndex > 0 && lastDotIndex > importPath.lastIndexOf("/")) {
+				const ext = importPath.substring(lastDotIndex);
+				if (![
+					".ts",
+					".tsx",
+					".js",
+					".mjs",
+					".cjs",
+					".mts",
+					".cts"
+				].includes(ext)) {
+					const arbitraryDeclPath = `${resolved}.d${ext}.ts`;
+					if (fs.existsSync(arbitraryDeclPath)) return arbitraryDeclPath;
+				}
+			}
 			const extensions = [
 				"",
 				".ts",
@@ -824,13 +1158,14 @@ var FileCollector = class FileCollector {
 		this.moduleResolveCache.set(importPath, null);
 		return null;
 	}
+	resolveModuleSpecifier(fromFile, importPath) {
+		return ts.resolveModuleName(importPath, fromFile, this.program.getCompilerOptions(), ts.sys).resolvedModule?.resolvedFileName ?? null;
+	}
 	collectFiles() {
 		const files = /* @__PURE__ */ new Map();
 		const sourceFiles = this.program.getSourceFiles();
-		for (const sourceFile of sourceFiles) {
-			if (!this.shouldInlineFile(sourceFile)) continue;
+		const createCollectedFile = (sourceFile, isEntry) => {
 			const filePath = sourceFile.fileName;
-			const isEntry = filePath === this.entryFile;
 			let content;
 			if (fs.existsSync(filePath)) content = fs.readFileSync(filePath, "utf-8");
 			else content = sourceFile.text;
@@ -843,13 +1178,44 @@ var FileCollector = class FileCollector {
 			const referencedTypes = /* @__PURE__ */ new Set();
 			const typeRefs = sourceFile.typeReferenceDirectives;
 			for (const ref of typeRefs) if (ref.preserve === true) referencedTypes.add(ref.fileName);
-			files.set(filePath, {
+			return {
 				content,
 				sourceFile,
 				isEntry,
 				hasEmptyExport,
 				referencedTypes
-			});
+			};
+		};
+		for (const sourceFile of sourceFiles) {
+			if (!this.shouldInlineFile(sourceFile)) continue;
+			const filePath = sourceFile.fileName;
+			const isEntry = filePath === this.entryFile;
+			files.set(filePath, createCollectedFile(sourceFile, isEntry));
+		}
+		const queue = Array.from(files.keys());
+		while (queue.length > 0) {
+			const currentPath = queue.shift();
+			if (!currentPath) continue;
+			const current = files.get(currentPath);
+			if (!current) continue;
+			for (const statement of current.sourceFile.statements) {
+				let moduleSpecifier;
+				if (ts.isImportDeclaration(statement)) moduleSpecifier = statement.moduleSpecifier;
+				else if (ts.isExportDeclaration(statement)) moduleSpecifier = statement.moduleSpecifier;
+				else if (ts.isImportEqualsDeclaration(statement)) {
+					if (ts.isExternalModuleReference(statement.moduleReference)) moduleSpecifier = statement.moduleReference.expression;
+				}
+				if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) continue;
+				const importPath = moduleSpecifier.text;
+				const resolvedPath = this.resolveImport(currentPath, importPath);
+				if (!resolvedPath || files.has(resolvedPath)) continue;
+				if (!fs.existsSync(resolvedPath)) continue;
+				const content = fs.readFileSync(resolvedPath, "utf-8");
+				const sourceFile = ts.createSourceFile(resolvedPath, content, ts.ScriptTarget.Latest, true);
+				if (!this.shouldInlineFile(sourceFile)) continue;
+				files.set(resolvedPath, createCollectedFile(sourceFile, false));
+				queue.push(resolvedPath);
+			}
 		}
 		return files;
 	}
@@ -871,10 +1237,15 @@ var NameNormalizer = class NameNormalizer {
 			if (!byName.has(name)) byName.set(name, []);
 			byName.get(name)?.push(declaration);
 		}
-		for (const [name, declarations] of byName.entries()) if (declarations.length > 1) for (let i = 1; i < declarations.length; i++) {
-			const counter = this.nameCounter.get(name) || 1;
-			this.nameCounter.set(name, counter + 1);
-			declarations[i].normalizedName = `${name}_${counter}`;
+		for (const [name, declarations] of byName.entries()) if (declarations.length > 1) {
+			const hasInlineAugmentation = declarations.some((decl) => decl.forceInclude);
+			const allInterfaces = declarations.every((decl) => ts.isInterfaceDeclaration(decl.node));
+			if (hasInlineAugmentation && allInterfaces) continue;
+			for (let i = 1; i < declarations.length; i++) {
+				const counter = this.nameCounter.get(name) || 1;
+				this.nameCounter.set(name, counter + 1);
+				declarations[i].normalizedName = `${name}_${counter}`;
+			}
 		}
 		this.normalizeExternalImports();
 	}
@@ -1100,7 +1471,25 @@ function normalizePrintedStatement(text, node, originalText) {
 		});
 	}
 	if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) result = collapseEmptyBlocks(result);
-	if (ts.isModuleDeclaration(node)) result = collapseEmptyBlocks(result);
+	if (ts.isModuleDeclaration(node)) {
+		result = result.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
+		if (originalText) {
+			const header = originalText.split("{")[0] ?? originalText;
+			const isDeclareModule = /\bdeclare\s+module\b/.test(header);
+			const isNamespace = /\bnamespace\b/.test(header);
+			const isModule = /\bmodule\b/.test(header);
+			if (!isDeclareModule && isModule && !isNamespace) result = result.replace(/^(\s*(?:export\s+)?(?:declare\s+)?)(module)(\b)/, "$1namespace$3");
+		}
+		result = collapseEmptyBlocks(result);
+	}
+	if (ts.isEnumDeclaration(node) && originalText) {
+		if ((originalText.split("{")[1] ?? "").includes(",")) result = result.replace(/(^\s*[^\n{}]+)(\n)(?=\s*(?:[^\n{}]|\}))/gm, (match, line, newline) => {
+			const trimmed = String(line).trim();
+			if (trimmed.length === 0) return match;
+			if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("}")) return match;
+			return `${line},${newline}`;
+		});
+	}
 	if (ts.isTypeAliasDeclaration(node)) result = collapseSimpleTypeLiterals(result, originalText);
 	return result;
 }
@@ -1161,6 +1550,7 @@ var VariableDeclarationEmitter = class VariableDeclarationEmitter {
 	buildVariableDeclarationList(statement, declarations) {
 		const statementDeclarations = statement.declarationList.declarations;
 		if (statementDeclarations.some((decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name))) {
+			if (VariableDeclarationEmitter.hasBindingPatternInitializer(statementDeclarations)) return statement.declarationList;
 			if (!statementDeclarations.every((decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name))) return statement.declarationList;
 			const identifiers = [];
 			for (const decl of statementDeclarations) VariableDeclarationEmitter.collectBindingIdentifiers(decl.name, identifiers);
@@ -1199,6 +1589,20 @@ var VariableDeclarationEmitter = class VariableDeclarationEmitter {
 		}
 		if (newDeclarations.length === 0) return statement.declarationList;
 		return ts.factory.createVariableDeclarationList(newDeclarations, statement.declarationList.flags);
+	}
+	static hasBindingPatternInitializer(declarations) {
+		const visitBindingElement = (element) => {
+			if (element.initializer) return true;
+			if (ts.isObjectBindingPattern(element.name)) return element.name.elements.some(visitBindingElement);
+			if (ts.isArrayBindingPattern(element.name)) return element.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
+			return false;
+		};
+		return declarations.some((decl) => {
+			if (ts.isIdentifier(decl.name)) return false;
+			if (ts.isObjectBindingPattern(decl.name)) return decl.name.elements.some(visitBindingElement);
+			if (ts.isArrayBindingPattern(decl.name)) return decl.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
+			return false;
+		});
 	}
 	printStatement(statementNode, sourceStatement, declarations) {
 		const renameMap = this.getRenameMap(declarations);
@@ -1264,6 +1668,8 @@ var OutputGenerator = class OutputGenerator {
 		const declarations = this.generateDeclarations();
 		const namespaces = this.generateNamespaces();
 		const exportEquals = this.generateExportEquals();
+		const starExports = this.generateStarExports();
+		const namespaceExports = this.generateNamespaceExports();
 		const exportDefault = this.generateExportDefault();
 		const umdDeclaration = this.options.umdModuleName ? [`export as namespace ${this.options.umdModuleName};`] : [];
 		const emptyExport = this.options.includeEmptyExport ? ["export {};"] : [];
@@ -1278,6 +1684,12 @@ var OutputGenerator = class OutputGenerator {
 		appendSection(namespaces);
 		appendSection(declarations);
 		if (exportEquals.length > 0) lines.push(...exportEquals);
+		appendSection(starExports);
+		appendSection(namespaceExports.blocks);
+		if (namespaceExports.exportList.length > 0) {
+			if (lines.length > 0) lines.push("");
+			lines.push(...namespaceExports.exportList);
+		}
 		if (exportDefault.length > 0) {
 			if (lines.length > 0) lines.push("");
 			lines.push(...exportDefault);
@@ -1350,6 +1762,15 @@ var OutputGenerator = class OutputGenerator {
 			});
 		}
 		const processedVariableStatements = /* @__PURE__ */ new Set();
+		const exportedModuleAugmentations = /* @__PURE__ */ new Set();
+		for (const declId of this.usedDeclarations) {
+			const decl = this.registry.getDeclaration(declId);
+			if (!decl) continue;
+			if (!ts.isModuleDeclaration(decl.node)) continue;
+			if (!ts.isIdentifier(decl.node.name)) continue;
+			if (decl.exportInfo.kind === ExportKind.NotExported && !decl.exportInfo.wasOriginallyExported) continue;
+			exportedModuleAugmentations.add(decl.node.name.text);
+		}
 		for (const declaration of ordered) {
 			if (ts.isVariableStatement(declaration.node)) {
 				const statement = declaration.node;
@@ -1367,8 +1788,10 @@ var OutputGenerator = class OutputGenerator {
 			}
 			const hasDefaultModifier = ts.canHaveModifiers(declaration.node) && (ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false);
 			const suppressExportForDefault = declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier;
-			const shouldHaveExport = declaration.exportInfo.kind !== ExportKind.Equals && !suppressExportForDefault && declaration.exportInfo.kind !== ExportKind.DefaultOnly && (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
-			const transformedStatement = OutputGenerator.transformStatementForOutput(declaration, shouldHaveExport, suppressExportForDefault);
+			const suppressExportForModuleAugmentation = ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
+			const stripConstEnum = this.shouldStripConstEnum(declaration);
+			const shouldHaveExport = declaration.exportInfo.kind !== ExportKind.Equals && !suppressExportForDefault && !suppressExportForModuleAugmentation && declaration.exportInfo.kind !== ExportKind.DefaultOnly && (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
+			const transformedStatement = OutputGenerator.transformStatementForOutput(declaration, shouldHaveExport, suppressExportForDefault, stripConstEnum, this.options.typeChecker);
 			const renameMap = this.buildRenameMap(declaration);
 			const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, { renameMap });
 			lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText()));
@@ -1431,6 +1854,92 @@ var OutputGenerator = class OutputGenerator {
 		const normalizedName = this.nameMap.get(exportedName) || exportedName;
 		const extraExports = Array.from(this.extraDefaultExports).filter((name) => name !== normalizedName);
 		return `export { ${[`${normalizedName} as default`, ...extraExports].join(", ")} };`;
+	}
+	generateStarExports() {
+		const lines = [];
+		if (this.registry.entryStarExports.length === 0) return lines;
+		const seen = /* @__PURE__ */ new Set();
+		const visitedFiles = /* @__PURE__ */ new Set();
+		const pushExternal = (moduleName, isTypeOnly = false) => {
+			const key = `${moduleName}:${isTypeOnly ? "type" : "value"}`;
+			if (seen.has(key)) return;
+			seen.add(key);
+			const typePrefix = isTypeOnly ? "type " : "";
+			lines.push(`export ${typePrefix}* from "${moduleName}";`);
+		};
+		const collectFromFile = (filePath) => {
+			if (visitedFiles.has(filePath)) return;
+			visitedFiles.add(filePath);
+			for (const starExport of this.registry.getStarExports(filePath)) if (starExport.externalModule) pushExternal(starExport.externalModule, starExport.isTypeOnly ?? false);
+			else if (starExport.targetFile) collectFromFile(starExport.targetFile);
+		};
+		for (const entry of this.registry.entryStarExports) if (entry.info.externalModule) pushExternal(entry.info.externalModule, entry.info.isTypeOnly ?? false);
+		else if (entry.info.targetFile) collectFromFile(entry.info.targetFile);
+		return lines;
+	}
+	generateNamespaceExports() {
+		const blocks = [];
+		const exportNames = [];
+		if (this.registry.entryNamespaceExports.length === 0) return {
+			blocks,
+			exportList: []
+		};
+		const depthCache = /* @__PURE__ */ new Map();
+		const entryExports = this.registry.entryNamespaceExports.map((entry) => ({
+			entry,
+			depth: this.getNamespaceExportDepth(entry, depthCache)
+		}));
+		entryExports.sort((a, b) => b.depth - a.depth);
+		const visited = /* @__PURE__ */ new Set();
+		for (const { entry } of entryExports) {
+			const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+			if (!info) continue;
+			this.buildNamespaceBlocks(entry.sourceFile, entry.name, info, visited, blocks);
+		}
+		for (const entry of this.registry.entryNamespaceExports) exportNames.push(entry.name);
+		return {
+			blocks,
+			exportList: exportNames.length > 0 ? [`export { ${exportNames.join(", ")} };`] : []
+		};
+	}
+	buildNamespaceBlocks(sourceFile, namespaceName, info, visited, blocks) {
+		const key = `${sourceFile}:${namespaceName}`;
+		if (visited.has(key)) return;
+		visited.add(key);
+		if (!info.targetFile) return;
+		const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+		for (const exported of exportedNames) {
+			const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+			if (childInfo && childInfo.targetFile) this.buildNamespaceBlocks(info.targetFile, exported.name, childInfo, visited, blocks);
+		}
+		const exportList = exportedNames.map((item) => item.name);
+		blocks.push(`declare namespace ${namespaceName} {`);
+		if (exportList.length > 0) blocks.push(`  export { ${exportList.join(", ")} };`);
+		blocks.push(`}`);
+	}
+	getNamespaceExportDepth(entry, depthCache) {
+		const key = `${entry.sourceFile}:${entry.name}`;
+		if (depthCache.has(key)) return depthCache.get(key);
+		const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+		if (!info || !info.targetFile) {
+			depthCache.set(key, 1);
+			return 1;
+		}
+		const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+		let maxChild = 0;
+		for (const exported of exportedNames) {
+			const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+			if (childInfo && childInfo.targetFile) {
+				const childDepth = this.getNamespaceExportDepth({
+					name: exported.name,
+					sourceFile: info.targetFile
+				}, depthCache);
+				if (childDepth > maxChild) maxChild = childDepth;
+			}
+		}
+		const depth = 1 + maxChild;
+		depthCache.set(key, depth);
+		return depth;
 	}
 	static stripExportModifier(text) {
 		text = text.replace(/export\s+default\s+/, "");
@@ -1500,7 +2009,7 @@ var OutputGenerator = class OutputGenerator {
 	}
 	buildRenameMap(declaration) {
 		const renameMap = /* @__PURE__ */ new Map();
-		if (declaration.name !== declaration.normalizedName && (ts.isTypeAliasDeclaration(declaration.node) || ts.isInterfaceDeclaration(declaration.node) || ts.isClassDeclaration(declaration.node) || ts.isEnumDeclaration(declaration.node))) renameMap.set(declaration.name, declaration.normalizedName);
+		if (declaration.name !== declaration.normalizedName) renameMap.set(declaration.name, declaration.normalizedName);
 		for (const depId of declaration.dependencies) {
 			const depDecl = this.registry.getDeclaration(depId);
 			if (depDecl && depDecl.name !== depDecl.normalizedName) renameMap.set(depDecl.name, depDecl.normalizedName);
@@ -1546,12 +2055,29 @@ var OutputGenerator = class OutputGenerator {
 		for (const typeName of sortedTypes) if (allowedTypesLibraries.includes(typeName)) directives.push(`/// <reference types="${typeName}" />`);
 		return directives;
 	}
-	static transformStatementForOutput(declaration, shouldHaveExport, suppressExportForDefault) {
+	static transformStatementForOutput(declaration, shouldHaveExport, suppressExportForDefault, stripConstEnum, typeChecker) {
 		let statement = declaration.node;
 		const modifiersMap = modifiersToMap(getModifiers(statement));
+		const wasConstEnum = Boolean(modifiersMap[ts.SyntaxKind.ConstKeyword]);
 		const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
-		modifiersMap[ts.SyntaxKind.ExportKeyword] = hadExport && shouldHaveExport;
+		const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
+		modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
 		if (suppressExportForDefault) modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
+		if (ts.isEnumDeclaration(statement)) {
+			if (wasConstEnum && typeChecker) {
+				const members = statement.members.map((member) => {
+					if (member.initializer) return member;
+					const value = typeChecker.getConstantValue(member);
+					if (value === void 0) return member;
+					const initializer = typeof value === "number" ? ts.factory.createNumericLiteral(value) : ts.factory.createStringLiteral(String(value));
+					const updated = ts.factory.updateEnumMember(member, member.name, initializer);
+					ts.setTextRange(updated, member);
+					return updated;
+				});
+				statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
+			}
+		}
+		if (stripConstEnum) modifiersMap[ts.SyntaxKind.ConstKeyword] = false;
 		if (OutputGenerator.shouldAddDeclareKeyword(statement)) modifiersMap[ts.SyntaxKind.DeclareKeyword] = true;
 		statement = recreateRootLevelNodeWithModifiers(statement, modifiersMap);
 		const result = ts.transform(statement, [OutputGenerator.createOutputTransformer()]);
@@ -1576,13 +2102,14 @@ var OutputGenerator = class OutputGenerator {
 				}
 				if (ts.isModuleDeclaration(node)) {
 					const isDeclareGlobal = (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+					const isExternalModule = ts.isStringLiteral(node.name) || ts.isNoSubstitutionTemplateLiteral(node.name);
 					let body = node.body;
 					if (body && ts.isModuleBlock(body)) {
-						const statements = body.statements.map((statement) => OutputGenerator.stripExportFromStatement(statement, isDeclareGlobal));
+						const statements = isExternalModule ? body.statements : body.statements.map((statement) => OutputGenerator.stripExportFromStatement(statement, isDeclareGlobal));
 						body = ts.factory.updateModuleBlock(body, statements);
 					}
 					let flags = node.flags;
-					if (!isDeclareGlobal && ts.isIdentifier(node.name)) flags |= ts.NodeFlags.Namespace;
+					if (!isDeclareGlobal && ts.isIdentifier(node.name) && OutputGenerator.isNamespaceDeclaration(node)) flags |= ts.NodeFlags.Namespace;
 					const updated = ts.factory.createModuleDeclaration(node.modifiers, node.name, body, flags);
 					ts.setTextRange(updated, node);
 					return ts.visitEachChild(updated, visit, context);
@@ -1628,11 +2155,36 @@ var OutputGenerator = class OutputGenerator {
 		if (!ts.isModuleBlock(parentBlock)) return false;
 		const moduleDecl = parentBlock.parent;
 		if (!ts.isModuleDeclaration(moduleDecl)) return false;
+		if (ts.isStringLiteral(moduleDecl.name) || ts.isNoSubstitutionTemplateLiteral(moduleDecl.name)) return false;
 		return !ts.isModuleDeclaration(node);
 	}
 	static shouldAddDeclareKeyword(statement) {
+		const sourceFile = statement.getSourceFile();
+		if (!sourceFile) return true;
+		if (sourceFile.isDeclarationFile) return false;
 		if (ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement) || ts.isFunctionDeclaration(statement) || ts.isModuleDeclaration(statement)) return true;
 		return false;
+	}
+	static isNamespaceDeclaration(node) {
+		const sourceFile = node.getSourceFile();
+		if (!sourceFile) return false;
+		const text = sourceFile.text.slice(node.pos, node.end);
+		const header = text.split("{")[0] ?? text;
+		if (/\bdeclare\s+module\b/.test(header)) return false;
+		return /\bnamespace\b/.test(header) || /\bmodule\b/.test(header);
+	}
+	static shouldForceExport(statement) {
+		if (!ts.isModuleDeclaration(statement)) return false;
+		if (!ts.isIdentifier(statement.name)) return false;
+		if (OutputGenerator.isNamespaceDeclaration(statement)) return false;
+		if ((statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0) return false;
+		return true;
+	}
+	shouldStripConstEnum(declaration) {
+		if (!this.options.preserveConstEnums || !this.options.respectPreserveConstEnum) return false;
+		if (!ts.isEnumDeclaration(declaration.node)) return false;
+		if (!(getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.ConstKeyword) ?? false)) return false;
+		return declaration.exportInfo.kind !== ExportKind.NotExported && declaration.exportInfo.wasOriginallyExported;
 	}
 	static stripAccessModifiers(modifiers) {
 		if (!modifiers || modifiers.length === 0) return modifiers;
@@ -1649,12 +2201,22 @@ var TypeRegistry = class {
 	nameIndex;
 	externalImports;
 	namespaceImports;
+	exportedNamesByFile;
+	namespaceExportsByFile;
+	entryNamespaceExports;
+	starExportsByFile;
+	entryStarExports;
 	constructor() {
 		this.declarations = /* @__PURE__ */ new Map();
 		this.declarationsByFile = /* @__PURE__ */ new Map();
 		this.nameIndex = /* @__PURE__ */ new Map();
 		this.externalImports = /* @__PURE__ */ new Map();
 		this.namespaceImports = /* @__PURE__ */ new Map();
+		this.exportedNamesByFile = /* @__PURE__ */ new Map();
+		this.namespaceExportsByFile = /* @__PURE__ */ new Map();
+		this.entryNamespaceExports = [];
+		this.starExportsByFile = /* @__PURE__ */ new Map();
+		this.entryStarExports = [];
 	}
 	register(declaration) {
 		this.declarations.set(declaration.id, declaration);
@@ -1668,6 +2230,50 @@ var TypeRegistry = class {
 		const moduleImports = this.externalImports.get(moduleName);
 		if (!moduleImports.has(importName)) moduleImports.set(importName, new ExternalImport(moduleName, importName, isTypeOnly));
 		return moduleImports.get(importName);
+	}
+	registerExportedName(filePath, info) {
+		const list = this.exportedNamesByFile.get(filePath) ?? [];
+		const existing = list.find((item) => item.name === info.name);
+		if (!existing) {
+			list.push(info);
+			this.exportedNamesByFile.set(filePath, list);
+			return;
+		}
+		if (!existing.externalModule && info.externalModule) existing.externalModule = info.externalModule;
+		if (!existing.externalImportName && info.externalImportName) existing.externalImportName = info.externalImportName;
+	}
+	registerNamespaceExport(filePath, info, registerExportedName = true) {
+		if (!this.namespaceExportsByFile.has(filePath)) this.namespaceExportsByFile.set(filePath, /* @__PURE__ */ new Map());
+		const fileMap = this.namespaceExportsByFile.get(filePath);
+		if (!fileMap.has(info.name)) fileMap.set(info.name, info);
+		if (registerExportedName) this.registerExportedName(filePath, {
+			name: info.name,
+			externalModule: info.externalModule,
+			externalImportName: info.externalImportName
+		});
+	}
+	getNamespaceExportInfo(filePath, name) {
+		const fileMap = this.namespaceExportsByFile.get(filePath);
+		if (!fileMap) return null;
+		return fileMap.get(name) ?? null;
+	}
+	registerEntryNamespaceExport(filePath, name) {
+		if (!this.entryNamespaceExports.some((entry) => entry.name === name && entry.sourceFile === filePath)) this.entryNamespaceExports.push({
+			name,
+			sourceFile: filePath
+		});
+	}
+	registerStarExport(filePath, info, isEntry) {
+		const list = this.starExportsByFile.get(filePath) ?? [];
+		list.push(info);
+		this.starExportsByFile.set(filePath, list);
+		if (isEntry) this.entryStarExports.push({
+			sourceFile: filePath,
+			info
+		});
+	}
+	getStarExports(filePath) {
+		return this.starExportsByFile.get(filePath) ?? [];
 	}
 	lookup(name, fromFile) {
 		const localKey = `${fromFile}:${name}`;
@@ -1701,6 +2307,8 @@ var TreeShaker = class {
 	shake() {
 		const exported = this.registry.getAllExported();
 		for (const declaration of exported) this.markUsed(declaration.id);
+		for (const declaration of this.registry.declarations.values()) if (declaration.forceInclude) this.markUsed(declaration.id);
+		this.markNamespaceExportsUsed();
 		return {
 			declarations: this.used,
 			externalImports: this.collectUsedExternalImports()
@@ -1725,6 +2333,59 @@ var TreeShaker = class {
 		}
 		return result;
 	}
+	markNamespaceExportsUsed() {
+		if (this.registry.entryNamespaceExports.length === 0) return;
+		const visitedFiles = /* @__PURE__ */ new Set();
+		const depthCache = /* @__PURE__ */ new Map();
+		const entryExports = this.registry.entryNamespaceExports.map((entry) => ({
+			entry,
+			depth: this.getNamespaceExportDepth(entry, depthCache)
+		}));
+		entryExports.sort((a, b) => b.depth - a.depth);
+		for (const { entry } of entryExports) {
+			const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+			if (!info) continue;
+			if (info.targetFile) this.markModuleExportsUsed(info.targetFile, visitedFiles);
+			else if (info.externalModule && info.externalImportName) this.usedExternals.add(`${info.externalModule}:${info.externalImportName}`);
+		}
+	}
+	getNamespaceExportDepth(entry, depthCache) {
+		const key = `${entry.sourceFile}:${entry.name}`;
+		if (depthCache.has(key)) return depthCache.get(key);
+		const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+		if (!info || !info.targetFile) {
+			depthCache.set(key, 1);
+			return 1;
+		}
+		const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+		let maxChild = 0;
+		for (const exported of exportedNames) {
+			const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
+			if (childInfo && childInfo.targetFile) {
+				const childDepth = this.getNamespaceExportDepth({
+					name: exported.name,
+					sourceFile: info.targetFile
+				}, depthCache);
+				if (childDepth > maxChild) maxChild = childDepth;
+			}
+		}
+		const depth = 1 + maxChild;
+		depthCache.set(key, depth);
+		return depth;
+	}
+	markModuleExportsUsed(filePath, visitedFiles) {
+		if (visitedFiles.has(filePath)) return;
+		visitedFiles.add(filePath);
+		const exportedNames = this.registry.exportedNamesByFile.get(filePath) ?? [];
+		for (const exported of exportedNames) {
+			if (exported.externalModule && exported.externalImportName) this.usedExternals.add(`${exported.externalModule}:${exported.externalImportName}`);
+			const declId = this.registry.nameIndex.get(`${filePath}:${exported.name}`);
+			if (declId) this.markUsed(declId);
+			const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
+			if (namespaceInfo?.targetFile) this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles);
+			else if (namespaceInfo?.externalModule && namespaceInfo.externalImportName) this.usedExternals.add(`${namespaceInfo.externalModule}:${namespaceInfo.externalImportName}`);
+		}
+	}
 };
 
 //#endregion
@@ -1738,7 +2399,10 @@ function bundle(entry, inlinedLibraries = [], options = {}) {
 	const allReferencedTypes = /* @__PURE__ */ new Set();
 	for (const file of files.values()) for (const refType of file.referencedTypes) allReferencedTypes.add(refType);
 	const registry = new TypeRegistry();
-	const parser = new DeclarationParser(registry, collector, { inlineDeclareGlobals: options.inlineDeclareGlobals ?? false });
+	const parser = new DeclarationParser(registry, collector, {
+		inlineDeclareGlobals: options.inlineDeclareGlobals ?? false,
+		inlineDeclareExternals: options.inlineDeclareExternals ?? false
+	});
 	parser.parseFiles(files);
 	new DependencyAnalyzer(registry, parser.importMap).analyze();
 	new NameNormalizer(registry).normalize();
@@ -1750,7 +2414,8 @@ function bundle(entry, inlinedLibraries = [], options = {}) {
 		entryExportEquals: parser.entryExportEquals,
 		entryExportDefault: parser.entryExportDefault,
 		entryExportDefaultName: parser.entryExportDefaultName,
-		typeChecker: collector.getTypeChecker()
+		typeChecker: collector.getTypeChecker(),
+		preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false
 	}).generate();
 }
 /**
@@ -1759,7 +2424,7 @@ function bundle(entry, inlinedLibraries = [], options = {}) {
 * @returns The bundled TypeScript declaration content
 */
 function bundleDts(options) {
-	const { entry, inlinedLibraries = [], allowedTypesLibraries, importedLibraries, noBanner, sortNodes, umdModuleName, exportReferencedTypes, inlineDeclareGlobals } = options;
+	const { entry, inlinedLibraries = [], allowedTypesLibraries, importedLibraries, noBanner, sortNodes, umdModuleName, exportReferencedTypes, inlineDeclareGlobals, inlineDeclareExternals, respectPreserveConstEnum } = options;
 	if (!entry) throw new Error("The 'entry' option is required");
 	return bundle(entry, inlinedLibraries, {
 		noBanner,
@@ -1768,7 +2433,9 @@ function bundleDts(options) {
 		exportReferencedTypes,
 		allowedTypesLibraries,
 		importedLibraries,
-		inlineDeclareGlobals
+		inlineDeclareGlobals,
+		inlineDeclareExternals,
+		respectPreserveConstEnum
 	});
 }
 function parseArgs() {

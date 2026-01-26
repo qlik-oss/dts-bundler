@@ -1,5 +1,6 @@
+import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
-import type { ExternalImport } from "./types.js";
+import type { ExternalImport, TypeDeclaration } from "./types.js";
 
 export class NameNormalizer {
   private registry: TypeRegistry;
@@ -11,7 +12,7 @@ export class NameNormalizer {
   }
 
   normalize(): void {
-    const byName = new Map<string, Array<{ normalizedName: string; name: string; sourceFile: string }>>();
+    const byName = new Map<string, TypeDeclaration[]>();
 
     for (const declaration of this.registry.declarations.values()) {
       const name = declaration.normalizedName;
@@ -23,6 +24,11 @@ export class NameNormalizer {
 
     for (const [name, declarations] of byName.entries()) {
       if (declarations.length > 1) {
+        const hasInlineAugmentation = declarations.some((decl) => decl.forceInclude);
+        const allInterfaces = declarations.every((decl) => ts.isInterfaceDeclaration(decl.node));
+        if (hasInlineAugmentation && allInterfaces) {
+          continue;
+        }
         for (let i = 1; i < declarations.length; i++) {
           const counter = this.nameCounter.get(name) || 1;
           this.nameCounter.set(name, counter + 1);

@@ -121,6 +121,7 @@ export class TypeDeclaration {
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
   public variableDeclaration?: ts.VariableDeclaration;
+  public forceInclude: boolean;
   private text: string | null;
 
   constructor(
@@ -140,6 +141,7 @@ export class TypeDeclaration {
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();
+    this.forceInclude = false;
     this.text = null;
   }
 
