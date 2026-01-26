@@ -46,6 +46,16 @@ export class DeclarationCollector {
         continue;
       }
 
+      if (
+        ts.isModuleDeclaration(statement) &&
+        ts.isIdentifier(statement.name) &&
+        statement.body &&
+        ts.isModuleBlock(statement.body)
+      ) {
+        this.parseModuleAugmentation(statement, filePath, sourceFile, isEntry);
+        continue;
+      }
+
       this.parseDeclaration(statement, filePath, sourceFile, isEntry, onDefaultExportName);
     }
   }
@@ -259,5 +269,35 @@ export class DeclarationCollector {
     }
 
     return identifiers;
+  }
+
+  private parseModuleAugmentation(
+    moduleDecl: ts.ModuleDeclaration,
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    isEntry: boolean,
+  ): void {
+    const name = getDeclarationName(moduleDecl);
+    if (!name) {
+      return;
+    }
+
+    const hasExport = hasExportModifier(moduleDecl);
+    const declareGlobal = isDeclareGlobal(moduleDecl);
+    let isExported = isEntry ? hasExport : false;
+    let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
+
+    if (declareGlobal && this.options.inlineDeclareGlobals) {
+      isExported = true;
+      wasOriginallyExported = true;
+    }
+
+    const exportInfo: ExportInfo = {
+      kind: isExported ? ExportKind.Named : ExportKind.NotExported,
+      wasOriginallyExported,
+    };
+
+    const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+    this.registry.register(declaration);
   }
 }

@@ -218,6 +218,15 @@ export class OutputGenerator {
     }
 
     const processedVariableStatements = new Set<string>();
+    const exportedModuleAugmentations = new Set<string>();
+    for (const declId of this.usedDeclarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (!ts.isModuleDeclaration(decl.node)) continue;
+      if (!ts.isIdentifier(decl.node.name)) continue;
+      if (decl.exportInfo.kind === ExportKind.NotExported && !decl.exportInfo.wasOriginallyExported) continue;
+      exportedModuleAugmentations.add(decl.node.name.text);
+    }
 
     for (const declaration of ordered) {
       if (ts.isVariableStatement(declaration.node)) {
@@ -246,10 +255,13 @@ export class OutputGenerator {
         ts.canHaveModifiers(declaration.node) &&
         (ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false);
       const suppressExportForDefault = declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier;
+      const suppressExportForModuleAugmentation =
+        ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
         !suppressExportForDefault &&
+        !suppressExportForModuleAugmentation &&
         declaration.exportInfo.kind !== ExportKind.DefaultOnly &&
         (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
 
@@ -742,7 +754,8 @@ export class OutputGenerator {
     const modifiersMap = modifiersToMap(getModifiers(statement));
 
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
-    modifiersMap[ts.SyntaxKind.ExportKeyword] = hadExport && shouldHaveExport;
+    const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
+    modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
     if (suppressExportForDefault) {
       modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
     }
@@ -810,7 +823,7 @@ export class OutputGenerator {
           }
 
           let flags = node.flags;
-          if (!isDeclareGlobal && ts.isIdentifier(node.name)) {
+          if (!isDeclareGlobal && ts.isIdentifier(node.name) && OutputGenerator.isNamespaceDeclaration(node)) {
             // eslint-disable-next-line no-bitwise
             flags |= ts.NodeFlags.Namespace;
           }
@@ -927,6 +940,43 @@ export class OutputGenerator {
     }
 
     return false;
+  }
+
+  private static isNamespaceDeclaration(node: ts.ModuleDeclaration): boolean {
+    const sourceFile = node.getSourceFile();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!sourceFile) {
+      return false;
+    }
+
+    const text = sourceFile.text.slice(node.pos, node.end);
+    const header = text.split("{")[0] ?? text;
+    if (/\bdeclare\s+module\b/.test(header)) {
+      return false;
+    }
+
+    return /\bnamespace\b/.test(header) || /\bmodule\b/.test(header);
+  }
+
+  private static shouldForceExport(statement: ts.Statement): boolean {
+    if (!ts.isModuleDeclaration(statement)) {
+      return false;
+    }
+
+    if (!ts.isIdentifier(statement.name)) {
+      return false;
+    }
+
+    if (OutputGenerator.isNamespaceDeclaration(statement)) {
+      return false;
+    }
+
+    // eslint-disable-next-line no-bitwise
+    if ((statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0) {
+      return false;
+    }
+
+    return true;
   }
 
   private static stripAccessModifiers(

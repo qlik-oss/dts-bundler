@@ -225,7 +225,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle ambient re-declared types", () => {
+    it("should handle ambient re-declared types", () => {
       const { expected, result } = runTestCase("ambient-redeclare-types");
       expect(result).toBe(expected);
     });

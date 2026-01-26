@@ -88,6 +88,15 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
 
   if (ts.isModuleDeclaration(node)) {
     result = result.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
+    if (originalText) {
+      const header = originalText.split("{")[0] ?? originalText;
+      const isDeclareModule = /\bdeclare\s+module\b/.test(header);
+      const isNamespace = /\bnamespace\b/.test(header);
+      const isModule = /\bmodule\b/.test(header);
+      if (!isDeclareModule && isModule && !isNamespace) {
+        result = result.replace(/^(\s*(?:export\s+)?(?:declare\s+)?)(module)(\b)/, "$1namespace$3");
+      }
+    }
     result = collapseEmptyBlocks(result);
   }
 

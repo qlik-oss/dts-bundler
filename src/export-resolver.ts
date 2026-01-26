@@ -304,8 +304,16 @@ export class ExportResolver {
             key = `${filePath}:${originalName}`;
           }
 
+          const moduleAugmentation = this.findModuleAugmentationDeclaration(filePath, originalName);
+          if (moduleAugmentation) {
+            moduleAugmentation.exportInfo = {
+              kind: ExportKind.Named,
+              wasOriginallyExported: true,
+            };
+          }
+
           const declarationId = this.registry.nameIndex.get(key);
-          if (declarationId) {
+          if (declarationId && !moduleAugmentation) {
             const declaration = this.registry.getDeclaration(declarationId);
             if (declaration) {
               declaration.exportInfo = {
@@ -317,6 +325,24 @@ export class ExportResolver {
         }
       }
     }
+  }
+
+  private findModuleAugmentationDeclaration(filePath: string, name: string): TypeDeclaration | null {
+    const declarations = this.registry.declarationsByFile.get(filePath);
+    if (!declarations) {
+      return null;
+    }
+
+    for (const declId of declarations) {
+      const declaration = this.registry.getDeclaration(declId);
+      if (!declaration) continue;
+      if (!ts.isModuleDeclaration(declaration.node)) continue;
+      if (!ts.isIdentifier(declaration.node.name)) continue;
+      if (declaration.node.name.text !== name) continue;
+      return declaration;
+    }
+
+    return null;
   }
 
   applyStarExports(): void {

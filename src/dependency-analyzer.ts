@@ -133,6 +133,10 @@ export class DependencyAnalyzer {
   }
 
   private extractTypeReferences(node: ts.Node, references: Set<string>): void {
+    if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
+      references.add(node.name.text);
+    }
+
     if (ts.isTypeReferenceNode(node)) {
       const typeName = node.typeName;
       if (ts.isIdentifier(typeName)) {
