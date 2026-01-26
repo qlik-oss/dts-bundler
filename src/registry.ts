@@ -45,14 +45,19 @@ export class TypeRegistry {
     this.nameIndex.set(key, declaration.id);
   }
 
-  registerExternal(moduleName: string, importName: string, isTypeOnly: boolean): ExternalImport {
+  registerExternal(
+    moduleName: string,
+    importName: string,
+    isTypeOnly: boolean,
+    isDefaultImport = false,
+  ): ExternalImport {
     if (!this.externalImports.has(moduleName)) {
       this.externalImports.set(moduleName, new Map());
     }
 
     const moduleImports = this.externalImports.get(moduleName) as Map<string, ExternalImport>;
     if (!moduleImports.has(importName)) {
-      moduleImports.set(importName, new ExternalImport(moduleName, importName, isTypeOnly));
+      moduleImports.set(importName, new ExternalImport(moduleName, importName, isTypeOnly, isDefaultImport));
     }
 
     return moduleImports.get(importName) as ExternalImport;

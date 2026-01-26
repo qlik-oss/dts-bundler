@@ -193,11 +193,13 @@ export class ExternalImport {
   public originalName: string;
   public normalizedName: string;
   public isTypeOnly: boolean;
+  public isDefaultImport: boolean;
 
-  constructor(moduleName: string, importName: string, isTypeOnly = false) {
+  constructor(moduleName: string, importName: string, isTypeOnly = false, isDefaultImport = false) {
     this.moduleName = moduleName;
     this.originalName = importName;
     this.normalizedName = importName;
     this.isTypeOnly = isTypeOnly;
+    this.isDefaultImport = isDefaultImport;
   }
 }

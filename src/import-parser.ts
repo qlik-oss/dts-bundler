@@ -114,7 +114,7 @@ export class ImportParser {
           isExternal: true,
           aliasName: null,
         });
-        this.registry.registerExternal(moduleName, `default as ${localName}`, isTypeOnly);
+        this.registry.registerExternal(moduleName, `default as ${localName}`, isTypeOnly, true);
       }
 
       if (statement.importClause?.namedBindings) {

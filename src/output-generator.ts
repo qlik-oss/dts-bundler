@@ -162,30 +162,45 @@ export class OutputGenerator {
       const isTypeOnly = esImports.every((imp) => imp.isTypeOnly);
       const typePrefix = isTypeOnly ? "type " : "";
 
-      const hasNamespace = esImports.some((imp) => imp.normalizedName.startsWith("* as "));
-      const defaultImports = esImports.filter((imp) => imp.normalizedName.startsWith("default as "));
-      const namedImports = esImports.filter(
-        (imp) => !imp.normalizedName.startsWith("* as ") && !imp.normalizedName.startsWith("default as "),
-      );
+      const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
+      const nonNamespaceImports = esImports.filter((imp) => !imp.normalizedName.startsWith("* as "));
 
-      if (hasNamespace) {
-        const importList = esImports.map((imp) => imp.normalizedName).sort();
-        lines.push(`import ${typePrefix}${importList.join(", ")} from "${moduleName}";`);
-      } else if (defaultImports.length > 0 && namedImports.length > 0) {
-        // Both default and named imports
-        const defaultName = defaultImports[0].normalizedName.substring("default as ".length);
-        const namedList = namedImports.map((imp) => imp.normalizedName).sort();
-        lines.push(`import ${typePrefix}${defaultName}, { ${namedList.join(", ")} } from "${moduleName}";`);
-      } else if (defaultImports.length > 0) {
-        // Only default imports
-        for (const defaultImport of defaultImports) {
-          const defaultName = defaultImport.normalizedName.substring("default as ".length);
+      for (const namespaceImport of namespaceImports) {
+        const namespacePrefix = namespaceImport.isTypeOnly ? "type " : "";
+        lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
+      }
+
+      if (nonNamespaceImports.length === 0) {
+        continue;
+      }
+
+      const defaultImports = nonNamespaceImports.filter((imp) => imp.normalizedName.startsWith("default as "));
+      const namedImports = nonNamespaceImports.filter((imp) => !imp.normalizedName.startsWith("default as "));
+      const primaryDefault = defaultImports.find((imp) => imp.isDefaultImport) ?? null;
+      const hasDefaultImport = Boolean(primaryDefault);
+      const namedListOrdered = nonNamespaceImports
+        .filter((imp) => imp !== primaryDefault)
+        .map((imp) => imp.normalizedName);
+
+      if (hasDefaultImport) {
+        const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";
+        if (namedListOrdered.length > 0) {
+          if (namedListOrdered.length > 1) {
+            const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
+            lines.push(`import ${typePrefix}${defaultName}, {\n${namedBlock}\n} from "${moduleName}";`);
+          } else {
+            lines.push(`import ${typePrefix}${defaultName}, { ${namedListOrdered[0]} } from "${moduleName}";`);
+          }
+        } else {
           lines.push(`import ${typePrefix}${defaultName} from "${moduleName}";`);
         }
-      } else if (namedImports.length > 0) {
-        // Only named imports
-        const importList = namedImports.map((imp) => imp.normalizedName).sort();
-        lines.push(`import ${typePrefix}{ ${importList.join(", ")} } from "${moduleName}";`);
+      } else if (defaultImports.length > 0 || namedImports.length > 0) {
+        if (namedListOrdered.length > 1) {
+          const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
+          lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
+        } else if (namedListOrdered.length === 1) {
+          lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
+        }
       }
     }
 
