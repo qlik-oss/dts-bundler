@@ -96,8 +96,23 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle default export from non-entry", () => {
+      const { expected, result } = runTestCase("export-default-from-non-entry");
+      expect(result).toBe(expected);
+    });
+
     it("should handle existing class exported as default", () => {
       const { expected, result } = runTestCase("export-default-exist-class");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle default export of just declared class from entry", () => {
+      const { expected, result } = runTestCase("export-default-just-declared-class-from-entry");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle default export of just declared functions from entry", () => {
+      const { expected, result } = runTestCase("export-default-just-declared-fns-from-entry");
       expect(result).toBe(expected);
     });
 
@@ -126,6 +141,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle default export of unnamed statements", () => {
+      const { expected, result } = runTestCase("export-default-unnamed-statement");
+      expect(result).toBe(expected);
+    });
+
     it("should handle exports wrapped with namespace chain", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace-chain", { exportReferencedTypes: true });
       expect(result).toBe(expected);
@@ -142,6 +162,11 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Re-export Patterns", () => {
     it("should handle export * from (re-export star)", () => {
       const { expected, result } = runTestCase("re-export-star");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export star with selection", () => {
+      const { expected, result } = runTestCase("re-export-star-with-selection");
       expect(result).toBe(expected);
     });
 
