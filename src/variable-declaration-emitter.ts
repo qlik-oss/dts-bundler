@@ -106,6 +106,10 @@ export class VariableDeclarationEmitter {
     );
 
     if (hasBindingPattern) {
+      if (VariableDeclarationEmitter.hasBindingPatternInitializer(statementDeclarations)) {
+        return statement.declarationList;
+      }
+
       const allBindingPatterns = statementDeclarations.every(
         (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
       );
@@ -170,6 +174,40 @@ export class VariableDeclarationEmitter {
     }
 
     return ts.factory.createVariableDeclarationList(newDeclarations, statement.declarationList.flags);
+  }
+
+  private static hasBindingPatternInitializer(declarations: ts.NodeArray<ts.VariableDeclaration>): boolean {
+    const visitBindingElement = (element: ts.BindingElement): boolean => {
+      if (element.initializer) {
+        return true;
+      }
+
+      if (ts.isObjectBindingPattern(element.name)) {
+        return element.name.elements.some(visitBindingElement);
+      }
+
+      if (ts.isArrayBindingPattern(element.name)) {
+        return element.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
+      }
+
+      return false;
+    };
+
+    return declarations.some((decl) => {
+      if (ts.isIdentifier(decl.name)) {
+        return false;
+      }
+
+      if (ts.isObjectBindingPattern(decl.name)) {
+        return decl.name.elements.some(visitBindingElement);
+      }
+
+      if (ts.isArrayBindingPattern(decl.name)) {
+        return decl.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
+      }
+
+      return false;
+    });
   }
 
   private printStatement(

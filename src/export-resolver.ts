@@ -94,6 +94,13 @@ export class ExportResolver {
           for (const declaration of statement.declarationList.declarations) {
             if (ts.isIdentifier(declaration.name)) {
               this.registry.registerExportedName(filePath, { name: declaration.name.text });
+              continue;
+            }
+
+            if (ts.isObjectBindingPattern(declaration.name) || ts.isArrayBindingPattern(declaration.name)) {
+              for (const identifier of ExportResolver.collectBindingIdentifiers(declaration.name)) {
+                this.registry.registerExportedName(filePath, { name: identifier.text });
+              }
             }
           }
           continue;
@@ -375,6 +382,36 @@ export class ExportResolver {
     }
 
     return null;
+  }
+
+  private static collectBindingIdentifiers(name: ts.BindingName): ts.Identifier[] {
+    const identifiers: ts.Identifier[] = [];
+
+    const visitBindingName = (bindingName: ts.BindingName): void => {
+      if (ts.isIdentifier(bindingName)) {
+        identifiers.push(bindingName);
+        return;
+      }
+
+      if (ts.isObjectBindingPattern(bindingName)) {
+        for (const element of bindingName.elements) {
+          visitBindingName(element.name);
+        }
+        return;
+      }
+
+      if (ts.isArrayBindingPattern(bindingName)) {
+        for (const element of bindingName.elements) {
+          if (ts.isOmittedExpression(element)) {
+            continue;
+          }
+          visitBindingName(element.name);
+        }
+      }
+    };
+
+    visitBindingName(name);
+    return identifiers;
   }
 
   static resolveExportEquals(

@@ -646,13 +646,7 @@ export class OutputGenerator {
   private buildRenameMap(declaration: TypeDeclaration): Map<string, string> {
     const renameMap = new Map<string, string>();
 
-    if (
-      declaration.name !== declaration.normalizedName &&
-      (ts.isTypeAliasDeclaration(declaration.node) ||
-        ts.isInterfaceDeclaration(declaration.node) ||
-        ts.isClassDeclaration(declaration.node) ||
-        ts.isEnumDeclaration(declaration.node))
-    ) {
+    if (declaration.name !== declaration.normalizedName) {
       renameMap.set(declaration.name, declaration.normalizedName);
     }
 

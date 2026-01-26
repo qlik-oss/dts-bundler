@@ -157,22 +157,32 @@ export class DeclarationCollector {
     const declareGlobal = isDeclareGlobal(statement);
 
     if (hasBindingPattern) {
-      const name = `__binding_${statement.pos}`;
-      let isExported = isEntry ? hasExport : false;
-      let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
-
-      if (declareGlobal && this.options.inlineDeclareGlobals) {
-        isExported = true;
-        wasOriginallyExported = true;
+      const identifiers = DeclarationCollector.collectBindingIdentifiers(declarations);
+      if (identifiers.length === 0) {
+        return;
       }
 
-      const exportInfo: ExportInfo = {
-        kind: isExported ? ExportKind.Named : ExportKind.NotExported,
-        wasOriginallyExported,
-      };
+      for (const { identifier, element } of identifiers) {
+        const name = identifier.text;
+        let isExported = isEntry ? hasExport : false;
+        let wasOriginallyExported = this.fileCollector.isFromInlinedLibrary(filePath) ? hasExport : isExported;
 
-      const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
-      this.registry.register(declaration);
+        if (declareGlobal && this.options.inlineDeclareGlobals) {
+          isExported = true;
+          wasOriginallyExported = true;
+        }
+
+        const exportInfo: ExportInfo = {
+          kind: isExported ? ExportKind.Named : ExportKind.NotExported,
+          wasOriginallyExported,
+        };
+
+        const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+        const synthetic = ts.factory.createVariableDeclaration(identifier, undefined, undefined, element.initializer);
+        ts.setTextRange(synthetic, element);
+        declaration.variableDeclaration = synthetic;
+        this.registry.register(declaration);
+      }
       return;
     }
 
@@ -199,5 +209,55 @@ export class DeclarationCollector {
       declaration.variableDeclaration = varDecl;
       this.registry.register(declaration);
     }
+  }
+
+  private static collectBindingIdentifiers(
+    declarations: ts.NodeArray<ts.VariableDeclaration>,
+  ): Array<{ identifier: ts.Identifier; element: ts.BindingElement }> {
+    const identifiers: Array<{ identifier: ts.Identifier; element: ts.BindingElement }> = [];
+
+    const visitBindingElement = (element: ts.BindingElement): void => {
+      if (ts.isIdentifier(element.name)) {
+        identifiers.push({ identifier: element.name, element });
+        return;
+      }
+
+      if (ts.isObjectBindingPattern(element.name)) {
+        for (const child of element.name.elements) {
+          visitBindingElement(child);
+        }
+        return;
+      }
+
+      if (ts.isArrayBindingPattern(element.name)) {
+        for (const child of element.name.elements) {
+          if (ts.isOmittedExpression(child)) {
+            continue;
+          }
+          visitBindingElement(child);
+        }
+      }
+    };
+
+    for (const decl of declarations) {
+      if (ts.isIdentifier(decl.name)) {
+        continue;
+      }
+
+      if (ts.isObjectBindingPattern(decl.name)) {
+        for (const element of decl.name.elements) {
+          visitBindingElement(element);
+        }
+      } else if (ts.isArrayBindingPattern(decl.name)) {
+        for (const element of decl.name.elements) {
+          if (ts.isOmittedExpression(element)) {
+            continue;
+          }
+          visitBindingElement(element);
+        }
+      }
+    }
+
+    return identifiers;
   }
 }

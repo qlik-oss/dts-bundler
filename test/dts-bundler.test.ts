@@ -215,12 +215,12 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle recursive types", () => {
+    it("should handle recursive types", () => {
       const { expected, result } = runTestCase("recursive-types");
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle binding patterns without initializer", () => {
+    it("should handle binding patterns without initializer", () => {
       const { expected, result } = runTestCase("binding-patterns-without-initializer");
       expect(result).toBe(expected);
     });
