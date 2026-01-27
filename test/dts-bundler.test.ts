@@ -288,4 +288,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(() => bundleDts({ entry: "nonexistent.ts" })).toThrow("does not exist");
     });
   });
+
+  describe("Save JSDoc comments", () => {
+    it("should keep jsdoc comments in the output", () => {
+      const { expected, result } = runTestCase("save-jsdoc");
+      expect(result).toBe(expected);
+    });
+  });
 });
