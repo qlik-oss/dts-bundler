@@ -227,6 +227,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("tree-shaking");
       expect(result).toBe(expected);
     });
+
+    it("should tree shake unused types in simple case", () => {
+      const { expected, result } = runTestCase("simple-tree-shaking");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("TypeScript Features", () => {
