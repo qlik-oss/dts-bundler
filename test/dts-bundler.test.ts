@@ -281,6 +281,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("external-name-conflicts", { inlinedLibraries: ["@myorg/lib"] });
       expect(result).toBe(expected);
     });
+
+    it("should handle name collisions across files", () => {
+      const { expected, result } = runTestCase("names-collision-across-files");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Error Handling", () => {

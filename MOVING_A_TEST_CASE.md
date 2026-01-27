@@ -8,3 +8,19 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 - index.spec.js -> don't copy this one.
 - tsconfig.json -> copy this one
 - any other file should be copied over as is, since they're likeley imported by the input file.
+
+## test cases to move (maybe)
+
+- names-collision-across-files - Critical collision handling
+- names-collision-with-globals - Global name collision
+- simple-tree-shaking - Basic tree shaking
+- export-declaration-merging - Declaration merging
+- inline-declare-global - Opposite of existing test
+- import()-type - Dynamic import types
+- labelled-tuples - Modern TypeScript feature
+- export-keyof-typeof-var-type - typeof/keyof handling
+- import-variables - Variable imports
+- non-exported-abstract-class - Abstract class handling
+- strip-export-from-non-exported-class - Export keyword stripping
+- primitive-generation - Function primitives
+- merged-namespaces - Namespace merging (complex)
