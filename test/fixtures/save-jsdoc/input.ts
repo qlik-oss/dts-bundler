@@ -1,4 +1,4 @@
-import { NonExportedClass } from './some-class';
+import { NonExportedClass } from "./some-class";
 
 /**
  * ExportedInterface JSDoc
@@ -14,14 +14,16 @@ export type ExportedType = string | number;
  * ExportedConstEnum JSDoc
  */
 export const enum ExportedConstEnum {
-	/** Item description */
-	Item,
+  /** Item description */
+  Item,
 }
 
 /**
  * ExportedEnum JSDoc
  */
-export enum ExportedEnum { Item }
+export enum ExportedEnum {
+  Item,
+}
 
 /**
  * const JSDoc

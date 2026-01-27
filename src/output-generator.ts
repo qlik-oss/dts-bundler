@@ -492,7 +492,8 @@ export class OutputGenerator {
       );
       const renameMap = this.buildRenameMap(declaration);
       const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, { renameMap });
-      lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText()));
+      const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
+      lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
     }
 
     return lines;
@@ -974,8 +975,6 @@ export class OutputGenerator {
   ): ts.Statement {
     let statement = declaration.node as ts.Statement;
     const modifiersMap = modifiersToMap(getModifiers(statement));
-    const wasConstEnum = Boolean(modifiersMap[ts.SyntaxKind.ConstKeyword]);
-
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
     const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
     modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
@@ -983,29 +982,46 @@ export class OutputGenerator {
       modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
     }
 
-    if (ts.isEnumDeclaration(statement)) {
-      if (wasConstEnum && typeChecker) {
-        const members = statement.members.map((member) => {
-          if (member.initializer) {
-            return member;
+    if (ts.isEnumDeclaration(statement) && typeChecker) {
+      let nextNumericValue: number | null = 0;
+      const members = statement.members.map((member) => {
+        if (member.initializer) {
+          if (ts.isNumericLiteral(member.initializer)) {
+            nextNumericValue = Number(member.initializer.text) + 1;
+          } else {
+            nextNumericValue = null;
           }
+          return member;
+        }
 
-          const value = typeChecker.getConstantValue(member);
-          if (value === undefined) {
-            return member;
-          }
-
+        const value = typeChecker.getConstantValue(member);
+        if (value !== undefined) {
           const initializer =
             typeof value === "number"
               ? ts.factory.createNumericLiteral(value)
               : ts.factory.createStringLiteral(String(value));
+          if (typeof value === "number") {
+            nextNumericValue = value + 1;
+          } else {
+            nextNumericValue = null;
+          }
           const updated = ts.factory.updateEnumMember(member, member.name, initializer);
           ts.setTextRange(updated, member);
           return updated;
-        });
+        }
 
-        statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
-      }
+        if (nextNumericValue !== null) {
+          const initializer = ts.factory.createNumericLiteral(nextNumericValue);
+          nextNumericValue += 1;
+          const updated = ts.factory.updateEnumMember(member, member.name, initializer);
+          ts.setTextRange(updated, member);
+          return updated;
+        }
+
+        return member;
+      });
+
+      statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
     }
 
     if (stripConstEnum) {
@@ -1121,11 +1137,63 @@ export class OutputGenerator {
             member.typeParameters,
             member.parameters,
             member.type,
-            member.body,
+            undefined,
           );
           ts.setTextRange(updated, member);
           return updated;
         }
+      }
+
+      if (ts.isMethodDeclaration(member) && member.body) {
+        const updated = ts.factory.updateMethodDeclaration(
+          member,
+          filteredModifiers,
+          member.asteriskToken,
+          member.name,
+          member.questionToken,
+          member.typeParameters,
+          member.parameters,
+          member.type,
+          undefined,
+        );
+        ts.setTextRange(updated, member);
+        return updated;
+      }
+
+      if (ts.isConstructorDeclaration(member) && member.body) {
+        const updated = ts.factory.updateConstructorDeclaration(
+          member,
+          filteredModifiers,
+          member.parameters,
+          undefined,
+        );
+        ts.setTextRange(updated, member);
+        return updated;
+      }
+
+      if (ts.isGetAccessorDeclaration(member) && member.body) {
+        const updated = ts.factory.updateGetAccessorDeclaration(
+          member,
+          filteredModifiers,
+          member.name,
+          member.parameters,
+          member.type,
+          undefined,
+        );
+        ts.setTextRange(updated, member);
+        return updated;
+      }
+
+      if (ts.isSetAccessorDeclaration(member) && member.body) {
+        const updated = ts.factory.updateSetAccessorDeclaration(
+          member,
+          filteredModifiers,
+          member.name,
+          member.parameters,
+          undefined,
+        );
+        ts.setTextRange(updated, member);
+        return updated;
       }
     }
 
@@ -1175,6 +1243,30 @@ export class OutputGenerator {
     }
 
     return !ts.isModuleDeclaration(node);
+  }
+
+  private static isConstEnumDeclaration(node: ts.Node): boolean {
+    if (!ts.isEnumDeclaration(node) || !ts.canHaveModifiers(node)) {
+      return false;
+    }
+
+    return ts.getModifiers(node)?.some((mod) => mod.kind === ts.SyntaxKind.ConstKeyword) ?? false;
+  }
+
+  private static shouldPreserveJsDoc(declaration: TypeDeclaration, shouldHaveExport: boolean): boolean {
+    if (shouldHaveExport) {
+      return true;
+    }
+
+    if (declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly) {
+      return true;
+    }
+
+    if (OutputGenerator.isConstEnumDeclaration(declaration.node)) {
+      return true;
+    }
+
+    return ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
   }
 
   private static shouldAddDeclareKeyword(statement: ts.Statement): boolean {

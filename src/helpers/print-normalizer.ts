@@ -1,5 +1,9 @@
 import ts from "typescript";
 
+type NormalizeOptions = {
+  preserveJsDoc?: boolean;
+};
+
 function normalizeIndentation(text: string): string {
   const lines = text.split("\n");
   const normalized = lines.map((line) => {
@@ -60,7 +64,25 @@ function collapseGenericArguments(text: string): string {
   });
 }
 
-export function normalizePrintedStatement(text: string, node: ts.Node, originalText?: string): string {
+function stripLeadingJsDoc(text: string): string {
+  return text.replace(/^(?:\s*\/\*\*[\s\S]*?\*\/\s*\n)*/, "");
+}
+
+function stripLeadingNonJsDoc(text: string): string {
+  return text.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*(?!\*)[\s\S]*?\*\/\s*\n)*/, "");
+}
+
+function stripLeadingAllComments(text: string): string {
+  return text.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
+}
+
+export function normalizePrintedStatement(
+  text: string,
+  node: ts.Node,
+  originalText?: string,
+  options: NormalizeOptions = {},
+): string {
+  const preserveJsDoc = options.preserveJsDoc ?? true;
   let result = text.replace(/\t/g, "  ");
   result = normalizeIndentation(result);
   result = collapseGenericArguments(result);
@@ -68,12 +90,16 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
     return `<${String(first).trim()} ${String(second).trim()}>`;
   });
 
+  if (!preserveJsDoc) {
+    result = stripLeadingJsDoc(result);
+  }
+
   if (ts.isVariableStatement(node) && originalText && /,\s*\n/.test(originalText)) {
     result = result.replace(/,\s+/g, ",\n  ");
   }
 
   if (ts.isVariableStatement(node)) {
-    result = result.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
+    result = preserveJsDoc ? stripLeadingNonJsDoc(result) : stripLeadingAllComments(result);
     result = result.replace(/:\s*([^;]+);/g, (match, typeText) => {
       const collapsed = String(typeText)
         .replace(/\s*\n\s*/g, " ")
@@ -88,7 +114,7 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
   }
 
   if (ts.isModuleDeclaration(node)) {
-    result = result.replace(/^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*/, "");
+    result = preserveJsDoc ? stripLeadingNonJsDoc(result) : stripLeadingAllComments(result);
     if (originalText) {
       const header = originalText.split("{")[0] ?? originalText;
       const isDeclareModule = /\bdeclare\s+module\b/.test(header);
@@ -101,12 +127,20 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
     result = collapseEmptyBlocks(result);
   }
 
-  if (ts.isEnumDeclaration(node) && originalText) {
-    const body = originalText.split("{")[1] ?? "";
-    if (body.includes(",")) {
+  if (ts.isEnumDeclaration(node)) {
+    const printedBody = result.split("{")[1] ?? "";
+    if (printedBody.includes("\n")) {
       result = result.replace(/(^\s*[^\n{}]+)(\n)(?=\s*(?:[^\n{}]|\}))/gm, (match, line, newline) => {
         const trimmed = String(line).trim();
         if (trimmed.length === 0) {
+          return match;
+        }
+        if (
+          trimmed.startsWith("//") ||
+          trimmed.startsWith("/*") ||
+          trimmed.startsWith("*") ||
+          trimmed.startsWith("*/")
+        ) {
           return match;
         }
         if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("}")) {

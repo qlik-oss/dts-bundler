@@ -42,7 +42,8 @@ export class VariableDeclarationEmitter {
         return [];
       }
 
-      return [this.printStatement(statementNode, statement, orderedDeclarations)];
+      const preserveJsDoc = VariableDeclarationEmitter.shouldPreserveJsDoc(orderedDeclarations, false);
+      return [this.printStatement(statementNode, statement, orderedDeclarations, preserveJsDoc)];
     }
 
     const groups = new Map<boolean, TypeDeclaration[]>();
@@ -70,7 +71,8 @@ export class VariableDeclarationEmitter {
         continue;
       }
 
-      lines.push(this.printStatement(statementNode, statement, group));
+      const preserveJsDoc = VariableDeclarationEmitter.shouldPreserveJsDoc(group, shouldExport);
+      lines.push(this.printStatement(statementNode, statement, group, preserveJsDoc));
     }
 
     return lines;
@@ -101,8 +103,7 @@ export class VariableDeclarationEmitter {
       ts.setTextRange(variableStatement, { pos, end });
       return variableStatement;
     }
-    const start = statement.getStart(sourceFile);
-    const pos = start >= 0 ? start : 0;
+    const pos = statement.pos >= 0 ? statement.pos : 0;
     const end = statement.end >= 0 ? statement.end : pos;
     ts.setTextRange(variableStatement, { pos, end });
     return variableStatement;
@@ -217,6 +218,7 @@ export class VariableDeclarationEmitter {
     statementNode: ts.VariableStatement,
     sourceStatement: ts.VariableStatement,
     declarations: TypeDeclaration[],
+    preserveJsDoc: boolean,
   ): string {
     const renameMap = this.getRenameMap(declarations);
     const sourceFile = sourceStatement.getSourceFile();
@@ -224,11 +226,11 @@ export class VariableDeclarationEmitter {
     if (!sourceFile) {
       const fallbackSource = statementNode.getSourceFile();
       const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap });
-      return normalizePrintedStatement(printed, sourceStatement, "");
+      return normalizePrintedStatement(printed, sourceStatement, "", { preserveJsDoc });
     }
     const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap });
     const originalText = sourceStatement.getText(sourceFile);
-    return normalizePrintedStatement(printed, sourceStatement, originalText);
+    return normalizePrintedStatement(printed, sourceStatement, originalText, { preserveJsDoc });
   }
 
   private static shouldExportDeclaration(decl: TypeDeclaration): boolean {
@@ -260,5 +262,15 @@ export class VariableDeclarationEmitter {
     }
 
     return false;
+  }
+
+  private static shouldPreserveJsDoc(declarations: TypeDeclaration[], shouldExport: boolean): boolean {
+    if (shouldExport) {
+      return true;
+    }
+
+    return declarations.some(
+      (decl) => decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly,
+    );
   }
 }
