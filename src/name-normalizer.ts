@@ -1,18 +1,24 @@
+import fs from "node:fs";
+import path from "node:path";
 import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
-import type { ExternalImport, TypeDeclaration } from "./types.js";
+import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
 
 export class NameNormalizer {
   private registry: TypeRegistry;
   private nameCounter: Map<string, number>;
+  private entryFile?: string;
 
-  constructor(registry: TypeRegistry) {
+  constructor(registry: TypeRegistry, entryFile?: string) {
     this.registry = registry;
     this.nameCounter = new Map();
+    this.entryFile = entryFile;
   }
 
   normalize(): void {
     const byName = new Map<string, TypeDeclaration[]>();
+    const entrySourceOrder = this.getEntrySourceOrder();
+    const entryBasenameOrder = this.getEntryBasenameOrder();
 
     for (const declaration of this.registry.declarations.values()) {
       const name = declaration.normalizedName;
@@ -26,19 +32,264 @@ export class NameNormalizer {
       if (declarations.length > 1) {
         const hasInlineAugmentation = declarations.some((decl) => decl.forceInclude);
         const allInterfaces = declarations.every((decl) => ts.isInterfaceDeclaration(decl.node));
+        const hasModuleDeclaration = declarations.some((decl) => ts.isModuleDeclaration(decl.node));
+        const hasInterfaceDeclaration = declarations.some((decl) => ts.isInterfaceDeclaration(decl.node));
+        const allInterfacesOrModules = declarations.every(
+          (decl) => ts.isInterfaceDeclaration(decl.node) || ts.isModuleDeclaration(decl.node),
+        );
         if (hasInlineAugmentation && allInterfaces) {
           continue;
         }
-        for (let i = 1; i < declarations.length; i++) {
+        if (hasModuleDeclaration && hasInterfaceDeclaration && allInterfacesOrModules) {
+          continue;
+        }
+        const grouped = new Map<
+          string,
+          {
+            sourceFile: string;
+            declarations: TypeDeclaration[];
+            firstIndex: number;
+            exported: boolean;
+            hasExportEquals: boolean;
+            moduleOnly: boolean;
+          }
+        >();
+
+        declarations.forEach((decl, index) => {
+          const group = grouped.get(decl.sourceFile);
+          const isExported = decl.exportInfo.kind !== ExportKind.NotExported || decl.exportInfo.wasOriginallyExported;
+          if (!group) {
+            grouped.set(decl.sourceFile, {
+              sourceFile: decl.sourceFile,
+              declarations: [decl],
+              firstIndex: index,
+              exported: isExported,
+              hasExportEquals: decl.exportInfo.kind === ExportKind.Equals,
+              moduleOnly: ts.isModuleDeclaration(decl.node),
+            });
+            return;
+          }
+          group.declarations.push(decl);
+          if (isExported) {
+            group.exported = true;
+          }
+          if (decl.exportInfo.kind === ExportKind.Equals) {
+            group.hasExportEquals = true;
+          }
+          if (!ts.isModuleDeclaration(decl.node)) {
+            group.moduleOnly = false;
+          }
+        });
+
+        const orderedGroups = Array.from(grouped.values()).sort((a, b) => {
+          if (a.exported !== b.exported) {
+            return a.exported ? -1 : 1;
+          }
+          if (a.hasExportEquals !== b.hasExportEquals) {
+            return a.hasExportEquals ? 1 : -1;
+          }
+          if (a.moduleOnly !== b.moduleOnly) {
+            return a.moduleOnly ? 1 : -1;
+          }
+          const aEntryOrder = entrySourceOrder.get(a.sourceFile);
+          const bEntryOrder = entrySourceOrder.get(b.sourceFile);
+          if (aEntryOrder !== undefined && bEntryOrder !== undefined && aEntryOrder !== bEntryOrder) {
+            return aEntryOrder - bEntryOrder;
+          }
+          if (aEntryOrder !== undefined && bEntryOrder === undefined) {
+            return -1;
+          }
+          if (aEntryOrder === undefined && bEntryOrder !== undefined) {
+            return 1;
+          }
+          const aBase = entryBasenameOrder.get(path.basename(a.sourceFile, path.extname(a.sourceFile)));
+          const bBase = entryBasenameOrder.get(path.basename(b.sourceFile, path.extname(b.sourceFile)));
+          if (aBase !== undefined && bBase !== undefined && aBase !== bBase) {
+            return aBase - bBase;
+          }
+          const pathOrder = a.sourceFile.localeCompare(b.sourceFile);
+          if (pathOrder !== 0) {
+            return pathOrder;
+          }
+          return a.firstIndex - b.firstIndex;
+        });
+
+        for (let i = 1; i < orderedGroups.length; i++) {
           const counter = this.nameCounter.get(name) || 1;
           this.nameCounter.set(name, counter + 1);
-          declarations[i].normalizedName = `${name}_${counter}`;
+          const normalized = `${name}$${counter}`;
+          for (const decl of orderedGroups[i].declarations) {
+            decl.normalizedName = normalized;
+          }
         }
       }
     }
 
     this.normalizeExternalImports();
-    this.normalizeDeclarationExternalConflicts();
+    this.normalizeExternalNamespaceImports();
+    const protectedExternalNames = this.getProtectedExternalNames();
+    this.normalizeDeclarationProtectedExternalConflicts(protectedExternalNames);
+    this.normalizeExternalImportDeclarationConflicts();
+  }
+
+  private getProtectedExternalNames(): Set<string> {
+    if (!this.entryFile) {
+      return new Set();
+    }
+
+    const protectedNames = new Set<string>();
+    const exported = this.registry.exportedNamesByFile.get(this.entryFile) ?? [];
+    for (const info of exported) {
+      if (info.externalModule && info.externalImportName) {
+        protectedNames.add(info.name);
+      }
+    }
+
+    for (const entry of this.registry.entryNamespaceExports) {
+      if (entry.sourceFile !== this.entryFile) continue;
+      const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+      if (info?.externalModule && info.externalImportName) {
+        protectedNames.add(entry.name);
+      }
+    }
+
+    return protectedNames;
+  }
+
+  private getEntrySourceOrder(): Map<string, number> {
+    const order = new Map<string, number>();
+    if (!this.entryFile) {
+      return order;
+    }
+
+    const exported = this.registry.exportedNamesByFile.get(this.entryFile) ?? [];
+    exported.forEach((info, index) => {
+      if (!info.sourceFile) {
+        return;
+      }
+      if (!order.has(info.sourceFile)) {
+        order.set(info.sourceFile, index);
+      }
+    });
+
+    try {
+      const entryDir = path.dirname(this.entryFile);
+      const sourceText = fs.readFileSync(this.entryFile, "utf8");
+      const sourceFile = ts.createSourceFile(this.entryFile, sourceText, ts.ScriptTarget.Latest, true);
+      let stmtIndex = order.size;
+
+      const registerModulePath = (modulePath: string): void => {
+        if (!modulePath.startsWith(".")) {
+          return;
+        }
+        const resolved = this.resolveSourceFileFromRegistry(entryDir, modulePath);
+        if (resolved && !order.has(resolved)) {
+          order.set(resolved, stmtIndex);
+          stmtIndex += 1;
+        }
+      };
+
+      for (const statement of sourceFile.statements) {
+        if (
+          ts.isExportDeclaration(statement) &&
+          statement.moduleSpecifier &&
+          ts.isStringLiteral(statement.moduleSpecifier)
+        ) {
+          registerModulePath(statement.moduleSpecifier.text);
+        }
+        if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+          registerModulePath(statement.moduleSpecifier.text);
+        }
+      }
+    } catch {
+      // Ignore entry parsing errors and fall back to exported order
+    }
+
+    return order;
+  }
+
+  private resolveSourceFileFromRegistry(entryDir: string, modulePath: string): string | null {
+    const basePath = path.resolve(entryDir, modulePath);
+    const candidates = [
+      basePath,
+      `${basePath}.ts`,
+      `${basePath}.d.ts`,
+      `${basePath}.mts`,
+      `${basePath}.cts`,
+      path.join(basePath, "index.ts"),
+      path.join(basePath, "index.d.ts"),
+      path.join(basePath, "index.mts"),
+      path.join(basePath, "index.cts"),
+    ];
+
+    for (const candidate of candidates) {
+      if (this.registry.declarationsByFile.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    const normalizedBase = basePath.replace(/\\/g, "/");
+    for (const filePath of this.registry.declarationsByFile.keys()) {
+      const normalizedPath = filePath.replace(/\\/g, "/");
+      if (normalizedPath === normalizedBase) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.ts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.d.ts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.mts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.cts`)) {
+        return filePath;
+      }
+    }
+
+    return null;
+  }
+
+  private getEntryBasenameOrder(): Map<string, number> {
+    const order = new Map<string, number>();
+    if (!this.entryFile) {
+      return order;
+    }
+
+    try {
+      const sourceText = fs.readFileSync(this.entryFile, "utf8");
+      const sourceFile = ts.createSourceFile(this.entryFile, sourceText, ts.ScriptTarget.Latest, true);
+      let stmtIndex = 0;
+
+      const registerModule = (modulePath: string): void => {
+        if (!modulePath.startsWith(".")) {
+          return;
+        }
+        const base = path.basename(modulePath);
+        if (!order.has(base)) {
+          order.set(base, stmtIndex);
+          stmtIndex += 1;
+        }
+      };
+
+      for (const statement of sourceFile.statements) {
+        if (
+          ts.isExportDeclaration(statement) &&
+          statement.moduleSpecifier &&
+          ts.isStringLiteral(statement.moduleSpecifier)
+        ) {
+          registerModule(statement.moduleSpecifier.text);
+        }
+        if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+          registerModule(statement.moduleSpecifier.text);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return order;
   }
 
   private normalizeExternalImports(): void {
@@ -76,31 +327,103 @@ export class NameNormalizer {
     }
   }
 
-  private normalizeDeclarationExternalConflicts(): void {
-    const externalNames = new Set<string>();
-
+  private normalizeExternalNamespaceImports(): void {
     for (const moduleImports of this.registry.externalImports.values()) {
-      for (const externalImport of moduleImports.values()) {
-        externalNames.add(NameNormalizer.extractImportName(externalImport.normalizedName));
-      }
-    }
-
-    if (externalNames.size === 0) {
-      return;
-    }
-
-    const conflictCounters = new Map<string, number>();
-
-    for (const declaration of this.registry.declarations.values()) {
-      const current = declaration.normalizedName;
-      if (!externalNames.has(current)) {
+      const namespaceImports = Array.from(moduleImports.values()).filter((imp) => imp.originalName.startsWith("* as "));
+      if (namespaceImports.length <= 1) {
         continue;
       }
 
-      const counter = conflictCounters.get(current) ?? 1;
-      conflictCounters.set(current, counter + 1);
-      declaration.normalizedName = `${current}$${counter}`;
+      const canonical = namespaceImports[0];
+      const canonicalName = NameNormalizer.extractImportName(canonical.normalizedName);
+      for (let i = 1; i < namespaceImports.length; i++) {
+        namespaceImports[i].normalizedName = `* as ${canonicalName}`;
+      }
     }
+  }
+
+  private normalizeDeclarationProtectedExternalConflicts(protectedExternalNames: Set<string>): void {
+    if (protectedExternalNames.size === 0) {
+      return;
+    }
+
+    const usedNames = new Set<string>();
+    for (const declaration of this.registry.declarations.values()) {
+      usedNames.add(declaration.normalizedName);
+    }
+    for (const moduleImports of this.registry.externalImports.values()) {
+      for (const externalImport of moduleImports.values()) {
+        usedNames.add(NameNormalizer.extractImportName(externalImport.normalizedName));
+      }
+    }
+
+    for (const declaration of this.registry.declarations.values()) {
+      const current = declaration.normalizedName;
+      if (!protectedExternalNames.has(current)) {
+        continue;
+      }
+
+      let counter = 1;
+      let candidate = `${current}$${counter}`;
+      while (usedNames.has(candidate)) {
+        counter += 1;
+        candidate = `${current}$${counter}`;
+      }
+
+      declaration.normalizedName = candidate;
+      usedNames.add(candidate);
+    }
+  }
+
+  private normalizeExternalImportDeclarationConflicts(): void {
+    const declarationNames = new Set<string>();
+    for (const declaration of this.registry.declarations.values()) {
+      declarationNames.add(declaration.normalizedName);
+    }
+
+    if (declarationNames.size === 0) {
+      return;
+    }
+
+    const usedNames = new Set<string>(declarationNames);
+    for (const moduleImports of this.registry.externalImports.values()) {
+      for (const externalImport of moduleImports.values()) {
+        usedNames.add(NameNormalizer.extractImportName(externalImport.normalizedName));
+      }
+    }
+
+    for (const moduleImports of this.registry.externalImports.values()) {
+      for (const externalImport of moduleImports.values()) {
+        const importName = NameNormalizer.extractImportName(externalImport.normalizedName);
+        if (!declarationNames.has(importName)) {
+          continue;
+        }
+
+        let counter = 1;
+        let candidate = `${importName}$${counter}`;
+        while (usedNames.has(candidate)) {
+          counter += 1;
+          candidate = `${importName}$${counter}`;
+        }
+
+        externalImport.normalizedName = NameNormalizer.replaceImportLocalName(externalImport.normalizedName, candidate);
+        usedNames.add(candidate);
+      }
+    }
+  }
+
+  private static replaceImportLocalName(importStr: string, newLocalName: string): string {
+    if (importStr.startsWith("default as ")) {
+      return `default as ${newLocalName}`;
+    }
+    if (importStr.startsWith("* as ")) {
+      return `* as ${newLocalName}`;
+    }
+    if (importStr.includes(" as ")) {
+      const [original] = importStr.split(" as ");
+      return `${original} as ${newLocalName}`;
+    }
+    return `${importStr} as ${newLocalName}`;
   }
 
   private static extractImportName(importStr: string): string {

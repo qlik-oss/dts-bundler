@@ -29,9 +29,11 @@ const resolveEntryExportOriginalName = (
   registry: TypeRegistry,
   entryFile: string,
   exported: { name: string; originalName?: string; sourceFile?: string },
+  aliasMap?: Map<string, { sourceFile: string; originalName: string }>,
 ): { sourceFile: string; originalName: string } => {
-  const sourceFile = exported.sourceFile ?? entryFile;
-  let originalName = exported.originalName ?? exported.name;
+  const aliasInfo = !exported.originalName || !exported.sourceFile ? (aliasMap?.get(exported.name) ?? null) : null;
+  const sourceFile = aliasInfo?.sourceFile ?? exported.sourceFile ?? entryFile;
+  let originalName = aliasInfo?.originalName ?? exported.originalName ?? exported.name;
 
   if (originalName === "default" && exported.sourceFile) {
     const resolvedDefault = resolveDefaultExportNameFromRegistry(registry, exported.sourceFile);
@@ -59,8 +61,9 @@ const shouldSkipEntryExport = (
   registry: TypeRegistry,
   entryFile: string,
   exported: { name: string; originalName?: string; sourceFile?: string },
+  aliasMap?: Map<string, { sourceFile: string; originalName: string }>,
 ): boolean => {
-  const { sourceFile, originalName } = resolveEntryExportOriginalName(registry, entryFile, exported);
+  const { sourceFile, originalName } = resolveEntryExportOriginalName(registry, entryFile, exported, aliasMap);
 
   if (originalName !== exported.name) {
     return false;
@@ -86,6 +89,7 @@ export const buildEntryExportData = (params: {
   nameMap: Map<string, string>;
   getNormalizedExternalImportName: (moduleName: string, importName: string) => string;
   extractImportName: (importStr: string) => string;
+  entryAliasMap?: Map<string, { sourceFile: string; originalName: string }>;
 }): EntryExportData => {
   const exportFromByModule = new Map<string, string[]>();
   const exportListItems: string[] = [];
@@ -148,12 +152,17 @@ export const buildEntryExportData = (params: {
       continue;
     }
 
-    const { sourceFile, originalName } = resolveEntryExportOriginalName(params.registry, entryFile, exported);
+    const { sourceFile, originalName } = resolveEntryExportOriginalName(
+      params.registry,
+      entryFile,
+      exported,
+      params.entryAliasMap,
+    );
     const normalizedOriginal = params.nameMap.get(`${sourceFile}:${originalName}`) ?? originalName;
     const exportItem =
       normalizedOriginal === exported.name ? normalizedOriginal : `${normalizedOriginal} as ${exported.name}`;
 
-    if (shouldSkipEntryExport(params.registry, entryFile, exported)) {
+    if (shouldSkipEntryExport(params.registry, entryFile, exported, params.entryAliasMap)) {
       continue;
     }
 

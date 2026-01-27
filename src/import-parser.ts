@@ -75,6 +75,7 @@ export class ImportParser {
             sourceFile: resolvedPath,
             isExternal: false,
             aliasName: localName !== originalName ? localName : null,
+            isTypeOnly,
           });
         }
       }
@@ -86,6 +87,7 @@ export class ImportParser {
           sourceFile: resolvedPath,
           isExternal: false,
           aliasName: null,
+          isTypeOnly,
         });
         const key = `${filePath}:${localName}`;
         this.registry.namespaceImports.set(key, {
@@ -113,6 +115,7 @@ export class ImportParser {
           sourceFile: moduleName,
           isExternal: true,
           aliasName: null,
+          isTypeOnly,
         });
         this.registry.registerExternal(moduleName, `default as ${localName}`, isTypeOnly, true);
       }
@@ -128,6 +131,7 @@ export class ImportParser {
               sourceFile: moduleName,
               isExternal: true,
               aliasName: localName !== originalName ? localName : null,
+              isTypeOnly,
             });
             this.registry.registerExternal(moduleName, importName, isTypeOnly);
           }
@@ -138,6 +142,7 @@ export class ImportParser {
             sourceFile: moduleName,
             isExternal: true,
             aliasName: null,
+            isTypeOnly,
           });
           this.registry.registerExternal(moduleName, `* as ${localName}`, isTypeOnly);
         }
@@ -172,6 +177,7 @@ export class ImportParser {
         sourceFile: resolvedPath,
         isExternal: false,
         aliasName: null,
+        isTypeOnly,
       });
     } else {
       fileImports.set(importName, {
@@ -179,6 +185,7 @@ export class ImportParser {
         sourceFile: importPath,
         isExternal: true,
         aliasName: null,
+        isTypeOnly,
       });
       this.registry.registerExternal(importPath, `= ${importName}`, isTypeOnly);
     }

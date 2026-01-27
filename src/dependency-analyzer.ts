@@ -8,18 +8,39 @@ export class DependencyAnalyzer {
   private registry: TypeRegistry;
   private importMap: Map<
     string,
-    Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+    Map<
+      string,
+      {
+        originalName: string;
+        sourceFile: string | null;
+        isExternal: boolean;
+        aliasName?: string | null;
+        isTypeOnly?: boolean;
+      }
+    >
   >;
+  private entryFile?: string;
 
   constructor(
     registry: TypeRegistry,
     importMap: Map<
       string,
-      Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      Map<
+        string,
+        {
+          originalName: string;
+          sourceFile: string | null;
+          isExternal: boolean;
+          aliasName?: string | null;
+          isTypeOnly?: boolean;
+        }
+      >
     >,
+    entryFile?: string,
   ) {
     this.registry = registry;
     this.importMap = importMap;
+    this.entryFile = entryFile;
   }
 
   analyze(): void {
@@ -31,30 +52,71 @@ export class DependencyAnalyzer {
   }
 
   private trackEntryFileAliases(): void {
-    const entryFiles = new Set<string>();
-    for (const declaration of this.registry.declarations.values()) {
-      if (declaration.exportInfo.kind !== ExportKind.NotExported) {
-        entryFiles.add(declaration.sourceFile);
-      }
+    if (!this.entryFile) {
+      return;
     }
 
-    for (const entryFile of entryFiles) {
-      const fileImports = this.importMap.get(entryFile);
-      if (!fileImports) continue;
+    const fileImports = this.importMap.get(this.entryFile);
+    if (!fileImports) {
+      return;
+    }
 
-      for (const [, importInfo] of fileImports.entries()) {
-        if (!importInfo.isExternal && importInfo.aliasName) {
-          const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
-          const declId = this.registry.nameIndex.get(key);
-          if (declId) {
-            const decl = this.registry.getDeclaration(declId);
-            if (decl) {
-              decl.normalizedName = importInfo.aliasName;
-            }
+    const entryTypeRefs = this.collectEntryTypeReferences(this.entryFile);
+
+    for (const [, importInfo] of fileImports.entries()) {
+      if (!importInfo.isExternal && importInfo.aliasName && entryTypeRefs.has(importInfo.aliasName)) {
+        const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
+        const declId = this.registry.nameIndex.get(key);
+        if (declId) {
+          const decl = this.registry.getDeclaration(declId);
+          if (decl) {
+            decl.normalizedName = importInfo.aliasName;
           }
         }
       }
     }
+  }
+
+  private collectEntryTypeReferences(entryFile: string): Set<string> {
+    const refs = new Set<string>();
+    const declarations = this.registry.declarationsByFile.get(entryFile);
+    if (!declarations) return refs;
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isTypeReferenceNode(node)) {
+        const typeName = node.typeName;
+        if (ts.isIdentifier(typeName)) {
+          refs.add(typeName.text);
+        } else if (ts.isQualifiedName(typeName)) {
+          const leftmost = DependencyAnalyzer.getLeftmostEntityName(typeName);
+          if (leftmost) refs.add(leftmost);
+        }
+      }
+
+      if (ts.isTypeQueryNode(node)) {
+        const leftmost = DependencyAnalyzer.getLeftmostEntityName(node.exprName);
+        if (leftmost) refs.add(leftmost);
+      }
+
+      node.forEachChild(visit);
+    };
+
+    for (const declId of declarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (decl) {
+        visit(decl.node);
+      }
+    }
+
+    return refs;
+  }
+
+  private static getLeftmostEntityName(entity: ts.EntityName): string | null {
+    let current: ts.EntityName = entity;
+    while (ts.isQualifiedName(current)) {
+      current = current.left;
+    }
+    return ts.isIdentifier(current) ? current.text : null;
   }
 
   private analyzeDependencies(declaration: {
@@ -63,6 +125,7 @@ export class DependencyAnalyzer {
     dependencies: Set<symbol>;
     externalDependencies: Map<string, Set<string>>;
     namespaceDependencies: Set<string>;
+    importAliases: Map<string, { sourceFile: string; originalName: string; qualifiedName?: string }>;
     id: symbol;
   }): void {
     const fileImports = this.importMap.get(declaration.sourceFile) ?? new Map();
@@ -100,6 +163,24 @@ export class DependencyAnalyzer {
             if (defaultName) {
               originalName = defaultName;
             }
+          }
+
+          const importedKey = `${importInfo.sourceFile}:${refName}`;
+          const originalKey = `${importInfo.sourceFile}:${originalName}`;
+          const hasImportedDecl = this.registry.nameIndex.has(importedKey);
+          const hasOriginalDecl = this.registry.nameIndex.has(originalKey);
+
+          if (importInfo.aliasName || refName !== originalName) {
+            const aliasEntry: { sourceFile: string; originalName: string; qualifiedName?: string } = {
+              sourceFile: importInfo.sourceFile,
+              originalName,
+            };
+
+            if (!importInfo.aliasName && !hasImportedDecl && hasOriginalDecl && refName !== originalName) {
+              aliasEntry.qualifiedName = `${originalName}.${refName}`;
+            }
+
+            declaration.importAliases.set(refName, aliasEntry);
           }
 
           const key = `${importInfo.sourceFile}:${originalName}`;

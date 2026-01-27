@@ -53,10 +53,10 @@ function bundle(
   });
   parser.parseFiles(files);
 
-  const analyzer = new DependencyAnalyzer(registry, parser.importMap);
+  const analyzer = new DependencyAnalyzer(registry, parser.importMap, entryFile);
   analyzer.analyze();
 
-  const normalizer = new NameNormalizer(registry);
+  const normalizer = new NameNormalizer(registry, entryFile);
   normalizer.normalize();
 
   const shaker = new TreeShaker(registry, {

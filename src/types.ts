@@ -65,6 +65,7 @@ export interface ImportInfo {
   sourceFile: string | null;
   isExternal: boolean;
   aliasName?: string | null;
+  isTypeOnly?: boolean;
 }
 
 export enum ExportKind {
@@ -123,6 +124,7 @@ export class TypeDeclaration {
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
+  public importAliases: Map<string, { sourceFile: string; originalName: string; qualifiedName?: string }>; // Track alias -> original mapping
   public variableDeclaration?: ts.VariableDeclaration;
   public forceInclude: boolean;
   private text: string | null;
@@ -144,6 +146,7 @@ export class TypeDeclaration {
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();
+    this.importAliases = new Map();
     this.forceInclude = false;
     this.text = null;
   }

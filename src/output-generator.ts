@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import ts from "typescript";
 import pkg from "../package.json" assert { type: "json" };
 import { AstPrinter } from "./ast-printer.js";
@@ -18,6 +20,7 @@ export class OutputGenerator {
   private extraDefaultExports: Set<string>;
   private variableDeclarationEmitter: VariableDeclarationEmitter | null;
   private astPrinter: AstPrinter;
+  private namespaceValueAliasesByFile: Map<string, Set<string>>;
   private entryExportData: EntryExportData | null = null;
   private options: {
     noBanner?: boolean;
@@ -63,6 +66,7 @@ export class OutputGenerator {
     this.nameMap = new Map();
     this.extraDefaultExports = new Set();
     this.astPrinter = new AstPrinter();
+    this.namespaceValueAliasesByFile = this.collectNamespaceValueAliases();
     this.variableDeclarationEmitter = options.typeChecker
       ? new VariableDeclarationEmitter(
           options.typeChecker,
@@ -175,7 +179,12 @@ export class OutputGenerator {
       const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
       const nonNamespaceImports = esImports.filter((imp) => !imp.normalizedName.startsWith("* as "));
 
+      const emittedNamespaces = new Set<string>();
       for (const namespaceImport of namespaceImports) {
+        if (emittedNamespaces.has(namespaceImport.normalizedName)) {
+          continue;
+        }
+        emittedNamespaces.add(namespaceImport.normalizedName);
         const namespacePrefix = namespaceImport.isTypeOnly ? "type " : "";
         lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
       }
@@ -269,8 +278,43 @@ export class OutputGenerator {
       nameMap: this.nameMap,
       getNormalizedExternalImportName: this.getNormalizedExternalImportName.bind(this),
       extractImportName: OutputGenerator.extractImportName,
+      entryAliasMap: this.getEntryExportAliasMap(),
     });
     return this.entryExportData;
+  }
+
+  private getEntryExportAliasMap(): Map<string, { sourceFile: string; originalName: string }> {
+    const aliasMap = new Map<string, { sourceFile: string; originalName: string }>();
+    const entryFile = this.options.entryFile;
+    if (!entryFile) {
+      return aliasMap;
+    }
+
+    try {
+      const entryDir = path.dirname(entryFile);
+      const sourceText = fs.readFileSync(entryFile, "utf8");
+      const sourceFile = ts.createSourceFile(entryFile, sourceText, ts.ScriptTarget.Latest, true);
+
+      for (const statement of sourceFile.statements) {
+        if (!ts.isExportDeclaration(statement)) continue;
+        if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+        if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+
+        const modulePath = statement.moduleSpecifier.text;
+        const sourcePath = this.resolveSourceFileFromRegistry(entryDir, modulePath);
+        if (!sourcePath) continue;
+
+        for (const element of statement.exportClause.elements) {
+          const exportedName = element.name.text;
+          const originalName = element.propertyName?.text ?? exportedName;
+          aliasMap.set(exportedName, { sourceFile: sourcePath, originalName });
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return aliasMap;
   }
   private filterExternalImports(excluded: Set<string>, required: Set<string>): Map<string, Set<ExternalImport>> {
     const result = new Map<string, Set<ExternalImport>>();
@@ -305,6 +349,49 @@ export class OutputGenerator {
     }
 
     return result;
+  }
+
+  private resolveSourceFileFromRegistry(entryDir: string, modulePath: string): string | null {
+    const basePath = path.resolve(entryDir, modulePath);
+    const candidates = [
+      basePath,
+      `${basePath}.ts`,
+      `${basePath}.d.ts`,
+      `${basePath}.mts`,
+      `${basePath}.cts`,
+      path.join(basePath, "index.ts"),
+      path.join(basePath, "index.d.ts"),
+      path.join(basePath, "index.mts"),
+      path.join(basePath, "index.cts"),
+    ];
+
+    for (const candidate of candidates) {
+      if (this.registry.declarationsByFile.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    const normalizedBase = basePath.replace(/\\/g, "/");
+    for (const filePath of this.registry.declarationsByFile.keys()) {
+      const normalizedPath = filePath.replace(/\\/g, "/");
+      if (normalizedPath === normalizedBase) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.ts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.d.ts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.mts`)) {
+        return filePath;
+      }
+      if (normalizedPath.endsWith(`${normalizedBase}.cts`)) {
+        return filePath;
+      }
+    }
+
+    return null;
   }
 
   private static buildExportFromLine(moduleName: string, items: string[]): string {
@@ -348,7 +435,12 @@ export class OutputGenerator {
     const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
     const nonNamespaceImports = esImports.filter((imp) => !imp.normalizedName.startsWith("* as "));
 
+    const emittedNamespaces = new Set<string>();
     for (const namespaceImport of namespaceImports) {
+      if (emittedNamespaces.has(namespaceImport.normalizedName)) {
+        continue;
+      }
+      emittedNamespaces.add(namespaceImport.normalizedName);
       const namespacePrefix = namespaceImport.isTypeOnly ? "type " : "";
       lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
     }
@@ -491,7 +583,11 @@ export class OutputGenerator {
         this.options.typeChecker,
       );
       const renameMap = this.buildRenameMap(declaration);
-      const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, { renameMap });
+      const qualifiedNameMap = this.buildQualifiedNameMap(declaration);
+      const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, {
+        renameMap,
+        qualifiedNameMap,
+      });
       const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
       lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
     }
@@ -515,6 +611,10 @@ export class OutputGenerator {
         const nsInfo = this.registry.namespaceImports.get(key);
 
         if (nsInfo && !usedNamespaces.has(namespaceName)) {
+          const valueAliases = this.namespaceValueAliasesByFile.get(decl.sourceFile);
+          if (!valueAliases?.has(namespaceName)) {
+            continue;
+          }
           // Collect all declarations from the source file
           const fileDeclarations = this.registry.declarationsByFile.get(nsInfo.sourceFile);
           if (fileDeclarations) {
@@ -907,6 +1007,32 @@ export class OutputGenerator {
       }
     }
 
+    for (const [alias, info] of declaration.importAliases.entries()) {
+      if (info.qualifiedName) {
+        const parts = info.qualifiedName.split(".");
+        const root = parts[0];
+        const key = `${info.sourceFile}:${root}`;
+        const depId = this.registry.nameIndex.get(key);
+        const depDecl = depId ? this.registry.getDeclaration(depId) : null;
+        const normalizedRoot = depDecl?.normalizedName ?? root;
+        const normalizedQualified = [normalizedRoot, ...parts.slice(1)].join(".");
+        if (alias !== normalizedQualified) {
+          renameMap.set(alias, normalizedQualified);
+        }
+        continue;
+      }
+
+      const key = `${info.sourceFile}:${info.originalName}`;
+      const depId = this.registry.nameIndex.get(key);
+      if (!depId) continue;
+      const depDecl = this.registry.getDeclaration(depId);
+      if (!depDecl) continue;
+      const normalized = depDecl.normalizedName;
+      if (alias !== normalized) {
+        renameMap.set(alias, normalized);
+      }
+    }
+
     return renameMap;
   }
 
@@ -919,6 +1045,119 @@ export class OutputGenerator {
     }
 
     return merged;
+  }
+
+  private buildQualifiedNameMap(declaration: TypeDeclaration): Map<string, string> {
+    const qualifiedNameMap = new Map<string, string>();
+    const valueAliases = this.namespaceValueAliasesByFile.get(declaration.sourceFile) ?? new Set<string>();
+
+    for (const [key, nsInfo] of this.registry.namespaceImports.entries()) {
+      const split = OutputGenerator.splitNamespaceKey(key);
+      if (split.filePath !== declaration.sourceFile) continue;
+      if (valueAliases.has(nsInfo.namespaceName)) continue;
+
+      const fileDeclarations = this.registry.declarationsByFile.get(nsInfo.sourceFile);
+      if (fileDeclarations) {
+        for (const declId of fileDeclarations) {
+          const depDecl = this.registry.getDeclaration(declId);
+          if (!depDecl) continue;
+          const mapKey = `${nsInfo.namespaceName}.${depDecl.name}`;
+          qualifiedNameMap.set(mapKey, depDecl.normalizedName);
+        }
+      }
+
+      const defaultName = this.getDefaultExportName(nsInfo.sourceFile);
+      if (defaultName) {
+        const defaultId = this.registry.nameIndex.get(`${nsInfo.sourceFile}:${defaultName}`);
+        const defaultDecl = defaultId ? this.registry.getDeclaration(defaultId) : null;
+        const normalizedDefault = defaultDecl?.normalizedName ?? defaultName;
+        qualifiedNameMap.set(`${nsInfo.namespaceName}.default`, normalizedDefault);
+      }
+    }
+
+    return qualifiedNameMap;
+  }
+
+  private collectNamespaceValueAliases(): Map<string, Set<string>> {
+    const aliasesByFile = new Map<string, Set<string>>();
+    for (const [key, info] of this.registry.namespaceImports.entries()) {
+      const split = OutputGenerator.splitNamespaceKey(key);
+      const set = aliasesByFile.get(split.filePath) ?? new Set<string>();
+      set.add(info.namespaceName);
+      aliasesByFile.set(split.filePath, set);
+    }
+
+    const valueAliasesByFile = new Map<string, Set<string>>();
+    for (const declId of this.usedDeclarations) {
+      const declaration = this.registry.getDeclaration(declId);
+      if (!declaration) continue;
+      const namespaceAliases = aliasesByFile.get(declaration.sourceFile);
+      if (!namespaceAliases || namespaceAliases.size === 0) continue;
+
+      const valueAliases = valueAliasesByFile.get(declaration.sourceFile) ?? new Set<string>();
+      const visit = (node: ts.Node): void => {
+        if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.initializer)) {
+          const name = node.initializer.text;
+          if (namespaceAliases.has(name)) {
+            valueAliases.add(name);
+          }
+        }
+
+        if (ts.isTypeQueryNode(node)) {
+          const exprName = node.exprName;
+          const leftmost = OutputGenerator.getLeftmostEntityName(exprName);
+          if (leftmost && namespaceAliases.has(leftmost)) {
+            valueAliases.add(leftmost);
+          }
+        }
+
+        node.forEachChild(visit);
+      };
+
+      visit(declaration.node);
+      if (valueAliases.size > 0) {
+        valueAliasesByFile.set(declaration.sourceFile, valueAliases);
+      }
+    }
+
+    return valueAliasesByFile;
+  }
+
+  private static splitNamespaceKey(key: string): { filePath: string; namespaceName: string } {
+    const splitIndex = key.lastIndexOf(":");
+    return {
+      filePath: key.slice(0, splitIndex),
+      namespaceName: key.slice(splitIndex + 1),
+    };
+  }
+
+  private static getLeftmostEntityName(entity: ts.EntityName): string | null {
+    let current: ts.EntityName = entity;
+    while (ts.isQualifiedName(current)) {
+      current = current.left;
+    }
+    return ts.isIdentifier(current) ? current.text : null;
+  }
+
+  private getDefaultExportName(filePath: string): string | null {
+    const declarations = this.registry.declarationsByFile.get(filePath);
+    if (!declarations) return null;
+
+    for (const declId of declarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+        return decl.name;
+      }
+      if (ts.isStatement(decl.node) && ts.canHaveModifiers(decl.node)) {
+        const hasDefault = ts.getModifiers(decl.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword);
+        if (hasDefault) {
+          return decl.name;
+        }
+      }
+    }
+
+    return null;
   }
 
   private static extractImportName(importStr: string): string {
