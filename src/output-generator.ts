@@ -2,6 +2,7 @@ import ts from "typescript";
 import pkg from "../package.json" assert { type: "json" };
 import { AstPrinter } from "./ast-printer.js";
 import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer.js";
+import { buildEntryExportData, type EntryExportData } from "./helpers/entry-exports.js";
 import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
@@ -17,12 +18,7 @@ export class OutputGenerator {
   private extraDefaultExports: Set<string>;
   private variableDeclarationEmitter: VariableDeclarationEmitter | null;
   private astPrinter: AstPrinter;
-  private entryExportData: {
-    exportFromByModule: Map<string, string[]>;
-    exportListItems: string[];
-    excludedExternalImports: Set<string>;
-    requiredExternalImports: Set<string>;
-  } | null = null;
+  private entryExportData: EntryExportData | null = null;
   private options: {
     noBanner?: boolean;
     sortNodes?: boolean;
@@ -225,16 +221,16 @@ export class OutputGenerator {
     const { exportFromByModule, excludedExternalImports, requiredExternalImports } = this.getEntryExportData();
 
     const filteredExternals = this.filterExternalImports(excludedExternalImports, requiredExternalImports);
-    const modules = new Set<string>([...filteredExternals.keys(), ...exportFromByModule.keys()]);
-    const sortedModules = Array.from(modules).sort();
     const lines: string[] = [];
 
-    for (const moduleName of sortedModules) {
-      const exportItems = exportFromByModule.get(moduleName) ?? [];
+    for (const [moduleName, exportItems] of exportFromByModule.entries()) {
       if (exportItems.length > 0) {
         lines.push(OutputGenerator.buildExportFromLine(moduleName, exportItems));
       }
+    }
 
+    const sortedModules = Array.from(filteredExternals.keys()).sort();
+    for (const moduleName of sortedModules) {
       const imports = filteredExternals.get(moduleName);
       if (imports && imports.size > 0) {
         lines.push(...OutputGenerator.buildExternalImportLines(moduleName, imports));
@@ -250,7 +246,7 @@ export class OutputGenerator {
       return [];
     }
 
-    if (exportListItems.length <= 2) {
+    if (exportListItems.length <= 3) {
       return [`export { ${exportListItems.join(", ")} };`];
     }
 
@@ -262,206 +258,20 @@ export class OutputGenerator {
     return lines;
   }
 
-  private getEntryExportData(): {
-    exportFromByModule: Map<string, string[]>;
-    exportListItems: string[];
-    excludedExternalImports: Set<string>;
-    requiredExternalImports: Set<string>;
-  } {
+  private getEntryExportData(): EntryExportData {
     if (this.entryExportData) {
       return this.entryExportData;
     }
-
-    const exportFromByModule = new Map<string, string[]>();
-    const exportListItems: string[] = [];
-    const exportListSet = new Set<string>();
-    const excludedExternalImports = new Set<string>();
-    const requiredExternalImports = new Set<string>();
-
-    const entryFile = this.options.entryFile;
-    if (!entryFile) {
-      this.entryExportData = { exportFromByModule, exportListItems, excludedExternalImports, requiredExternalImports };
-      return this.entryExportData;
-    }
-
-    const declarationExternalImports = this.collectDeclarationExternalImports();
-    const exportedNames = this.registry.exportedNamesByFile.get(entryFile) ?? [];
-    const namespaceExports = new Set(
-      this.registry.entryNamespaceExports.filter((entry) => entry.sourceFile === entryFile).map((entry) => entry.name),
-    );
-    const moduleAugmentations = new Set<string>();
-    const entryDeclarations = this.registry.declarationsByFile.get(entryFile);
-    if (entryDeclarations) {
-      for (const declId of entryDeclarations) {
-        const decl = this.registry.getDeclaration(declId);
-        if (decl && ts.isModuleDeclaration(decl.node) && ts.isIdentifier(decl.node.name)) {
-          moduleAugmentations.add(decl.node.name.text);
-        }
-      }
-    }
-
-    for (const exported of exportedNames) {
-      if (exported.name === "default") {
-        continue;
-      }
-
-      if (namespaceExports.has(exported.name)) {
-        continue;
-      }
-
-      if (moduleAugmentations.has(exported.name)) {
-        continue;
-      }
-
-      if (exported.externalModule && exported.externalImportName) {
-        const importName = this.getNormalizedExternalImportName(exported.externalModule, exported.externalImportName);
-        const importKey = `${exported.externalModule}:${exported.externalImportName}`;
-
-        if (exported.exportFrom && !declarationExternalImports.has(importKey)) {
-          const list = exportFromByModule.get(exported.externalModule) ?? [];
-          list.push(importName);
-          exportFromByModule.set(exported.externalModule, list);
-          excludedExternalImports.add(importKey);
-          continue;
-        }
-
-        requiredExternalImports.add(importKey);
-        const exportName = OutputGenerator.extractImportName(importName);
-        if (!exportListSet.has(exportName)) {
-          exportListSet.add(exportName);
-          exportListItems.push(exportName);
-        }
-        continue;
-      }
-
-      const sourceFile = exported.sourceFile ?? entryFile;
-      let originalName = exported.originalName ?? exported.name;
-      if (originalName === "default" && exported.sourceFile) {
-        const resolvedDefault = this.resolveDefaultExportNameFromRegistry(exported.sourceFile);
-        if (resolvedDefault) {
-          originalName = resolvedDefault;
-        } else {
-          const decls = this.registry.declarationsByFile.get(exported.sourceFile);
-          if (decls) {
-            for (const declId of decls) {
-              const decl = this.registry.getDeclaration(declId);
-              if (decl && decl.name.startsWith("_default")) {
-                originalName = decl.name;
-                break;
-              }
-            }
-          }
-        }
-      }
-      if (exported.sourceFile && originalName === "default") {
-        const decls = this.registry.declarationsByFile.get(exported.sourceFile);
-        if (decls) {
-          for (const declId of decls) {
-            const decl = this.registry.getDeclaration(declId);
-            if (decl && decl.name.startsWith("_default")) {
-              originalName = decl.name;
-              break;
-            }
-          }
-        }
-      }
-      const normalizedOriginal = this.nameMap.get(`${sourceFile}:${originalName}`) ?? originalName;
-      const exportItem =
-        normalizedOriginal === exported.name ? normalizedOriginal : `${normalizedOriginal} as ${exported.name}`;
-
-      if (this.shouldSkipEntryExport(entryFile, exported)) {
-        continue;
-      }
-
-      if (!exportListSet.has(exportItem)) {
-        exportListSet.add(exportItem);
-        exportListItems.push(exportItem);
-      }
-    }
-
-    this.entryExportData = { exportFromByModule, exportListItems, excludedExternalImports, requiredExternalImports };
+    this.entryExportData = buildEntryExportData({
+      registry: this.registry,
+      usedDeclarations: this.usedDeclarations,
+      entryFile: this.options.entryFile,
+      nameMap: this.nameMap,
+      getNormalizedExternalImportName: this.getNormalizedExternalImportName.bind(this),
+      extractImportName: OutputGenerator.extractImportName,
+    });
     return this.entryExportData;
   }
-
-  private shouldSkipEntryExport(
-    entryFile: string,
-    exported: { name: string; originalName?: string; sourceFile?: string },
-  ): boolean {
-    const sourceFile = exported.sourceFile ?? entryFile;
-    let originalName = exported.originalName ?? exported.name;
-    if (originalName === "default" && exported.sourceFile) {
-      const resolvedDefault = this.resolveDefaultExportNameFromRegistry(exported.sourceFile);
-      if (resolvedDefault) {
-        originalName = resolvedDefault;
-      } else {
-        const decls = this.registry.declarationsByFile.get(exported.sourceFile);
-        if (decls) {
-          for (const declId of decls) {
-            const decl = this.registry.getDeclaration(declId);
-            if (decl && decl.name.startsWith("_default")) {
-              originalName = decl.name;
-              break;
-            }
-          }
-        }
-      }
-    }
-    if (originalName !== exported.name) {
-      return false;
-    }
-
-    const declId = this.registry.nameIndex.get(`${sourceFile}:${originalName}`);
-    if (!declId) {
-      return false;
-    }
-
-    const decl = this.registry.getDeclaration(declId);
-    if (!decl) {
-      return false;
-    }
-
-    return decl.exportInfo.kind === ExportKind.Named || decl.exportInfo.wasOriginallyExported;
-  }
-
-  private collectDeclarationExternalImports(): Set<string> {
-    const externalImports = new Set<string>();
-    for (const declId of this.usedDeclarations) {
-      const declaration = this.registry.getDeclaration(declId);
-      if (!declaration) continue;
-      for (const [moduleName, importNames] of declaration.externalDependencies.entries()) {
-        for (const importName of importNames) {
-          externalImports.add(`${moduleName}:${importName}`);
-        }
-      }
-    }
-
-    return externalImports;
-  }
-
-  private resolveDefaultExportNameFromRegistry(filePath: string): string | null {
-    const declarations = this.registry.declarationsByFile.get(filePath);
-    if (!declarations) {
-      return null;
-    }
-
-    for (const declId of declarations) {
-      const decl = this.registry.getDeclaration(declId);
-      if (!decl) continue;
-      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
-        return decl.name;
-      }
-      if (ts.isStatement(decl.node) && ts.canHaveModifiers(decl.node)) {
-        const hasDefault =
-          ts.getModifiers(decl.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
-        if (hasDefault) {
-          return decl.name;
-        }
-      }
-    }
-
-    return null;
-  }
-
   private filterExternalImports(excluded: Set<string>, required: Set<string>): Map<string, Set<ExternalImport>> {
     const result = new Map<string, Set<ExternalImport>>();
 
@@ -553,7 +363,8 @@ export class OutputGenerator {
     const hasDefaultImport = Boolean(primaryDefault);
     const namedListOrdered = nonNamespaceImports
       .filter((imp) => imp !== primaryDefault)
-      .map((imp) => imp.normalizedName);
+      .map((imp) => imp.normalizedName)
+      .sort((a, b) => OutputGenerator.extractImportName(a).localeCompare(OutputGenerator.extractImportName(b)));
 
     if (hasDefaultImport) {
       const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";

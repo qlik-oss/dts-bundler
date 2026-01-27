@@ -1,6 +1,8 @@
 import ts from "typescript";
 import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils.js";
 import type { FileCollector } from "./file-collector.js";
+import { collectBindingIdentifiersFromName } from "./helpers/binding-identifiers.js";
+import { resolveDefaultExportNameFromRegistry } from "./helpers/default-export.js";
 import { getLibraryName } from "./helpers/node-modules.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, TypeDeclaration, type ExportInfo, type ExportedNameInfo } from "./types.js";
@@ -99,7 +101,7 @@ export class ExportResolver {
             }
 
             if (ts.isObjectBindingPattern(declaration.name) || ts.isArrayBindingPattern(declaration.name)) {
-              for (const identifier of ExportResolver.collectBindingIdentifiers(declaration.name)) {
+              for (const identifier of collectBindingIdentifiersFromName(declaration.name)) {
                 this.registry.registerExportedName(filePath, { name: identifier.text });
               }
             }
@@ -356,7 +358,7 @@ export class ExportResolver {
           if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
             if (importInfo.originalName === "default") {
               resolvedOriginalName =
-                this.resolveDefaultExportNameFromRegistry(importInfo.sourceFile) ?? importInfo.originalName;
+                resolveDefaultExportNameFromRegistry(this.registry, importInfo.sourceFile) ?? importInfo.originalName;
             } else {
               resolvedOriginalName = importInfo.originalName;
             }
@@ -396,24 +398,6 @@ export class ExportResolver {
     }
   }
 
-  private resolveDefaultExportNameFromRegistry(filePath: string): string | null {
-    const declarations = this.registry.declarationsByFile.get(filePath);
-    if (!declarations) return null;
-
-    for (const declId of declarations) {
-      const decl = this.registry.getDeclaration(declId);
-      if (!decl) continue;
-      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
-        return decl.name;
-      }
-      if (ts.isStatement(decl.node) && hasDefaultModifier(decl.node)) {
-        return decl.name;
-      }
-    }
-
-    return null;
-  }
-
   private findExportedNameInfo(filePath: string, name: string): ExportedNameInfo | null {
     const list = this.registry.exportedNamesByFile.get(filePath);
     if (!list) return null;
@@ -442,9 +426,8 @@ export class ExportResolver {
         const exports = checker.getExportsOfModule(moduleSymbol);
         const exportSymbol = exports.find((symbol) => symbol.name === exportName);
         if (exportSymbol) {
-          // eslint-disable-next-line no-bitwise
           const target =
-            exportSymbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
+            exportSymbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exportSymbol) : exportSymbol; // eslint-disable-line no-bitwise
           const declFile = target.declarations?.[0]?.getSourceFile();
           if (declFile) {
             const moduleName = getLibraryName(declFile.fileName);
@@ -537,7 +520,7 @@ export class ExportResolver {
   }
 
   private resolveDefaultExportName(resolvedPath: string): string | null {
-    const registryDefault = this.resolveDefaultExportNameFromRegistry(resolvedPath);
+    const registryDefault = resolveDefaultExportNameFromRegistry(this.registry, resolvedPath);
     if (registryDefault) {
       return registryDefault;
     }
@@ -559,36 +542,6 @@ export class ExportResolver {
     }
 
     return null;
-  }
-
-  private static collectBindingIdentifiers(name: ts.BindingName): ts.Identifier[] {
-    const identifiers: ts.Identifier[] = [];
-
-    const visitBindingName = (bindingName: ts.BindingName): void => {
-      if (ts.isIdentifier(bindingName)) {
-        identifiers.push(bindingName);
-        return;
-      }
-
-      if (ts.isObjectBindingPattern(bindingName)) {
-        for (const element of bindingName.elements) {
-          visitBindingName(element.name);
-        }
-        return;
-      }
-
-      if (ts.isArrayBindingPattern(bindingName)) {
-        for (const element of bindingName.elements) {
-          if (ts.isOmittedExpression(element)) {
-            continue;
-          }
-          visitBindingName(element.name);
-        }
-      }
-    };
-
-    visitBindingName(name);
-    return identifiers;
   }
 
   static resolveExportEquals(

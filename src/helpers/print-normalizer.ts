@@ -80,6 +80,7 @@ export function normalizePrintedStatement(text: string, node: ts.Node, originalT
         .trim();
       return `: ${collapsed};`;
     });
+    result = result.replace(/\{\s*([A-Za-z_$][\w$]*\??\s*:\s*[^;{}]+)\s*;\s*\}/g, "{ $1 }");
   }
 
   if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) {

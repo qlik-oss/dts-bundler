@@ -7,6 +7,7 @@ import {
   isDeclareGlobal,
 } from "./declaration-utils.js";
 import type { FileCollector } from "./file-collector.js";
+import { collectBindingElementsFromDeclarations } from "./helpers/binding-identifiers.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
 
@@ -307,7 +308,7 @@ export class DeclarationCollector {
     const declareGlobal = isDeclareGlobal(statement);
 
     if (hasBindingPattern) {
-      const identifiers = DeclarationCollector.collectBindingIdentifiers(declarations);
+      const identifiers = collectBindingElementsFromDeclarations(declarations);
       if (identifiers.length === 0) {
         return;
       }
@@ -359,56 +360,6 @@ export class DeclarationCollector {
       declaration.variableDeclaration = varDecl;
       this.registry.register(declaration);
     }
-  }
-
-  private static collectBindingIdentifiers(
-    declarations: ts.NodeArray<ts.VariableDeclaration>,
-  ): Array<{ identifier: ts.Identifier; element: ts.BindingElement }> {
-    const identifiers: Array<{ identifier: ts.Identifier; element: ts.BindingElement }> = [];
-
-    const visitBindingElement = (element: ts.BindingElement): void => {
-      if (ts.isIdentifier(element.name)) {
-        identifiers.push({ identifier: element.name, element });
-        return;
-      }
-
-      if (ts.isObjectBindingPattern(element.name)) {
-        for (const child of element.name.elements) {
-          visitBindingElement(child);
-        }
-        return;
-      }
-
-      if (ts.isArrayBindingPattern(element.name)) {
-        for (const child of element.name.elements) {
-          if (ts.isOmittedExpression(child)) {
-            continue;
-          }
-          visitBindingElement(child);
-        }
-      }
-    };
-
-    for (const decl of declarations) {
-      if (ts.isIdentifier(decl.name)) {
-        continue;
-      }
-
-      if (ts.isObjectBindingPattern(decl.name)) {
-        for (const element of decl.name.elements) {
-          visitBindingElement(element);
-        }
-      } else if (ts.isArrayBindingPattern(decl.name)) {
-        for (const element of decl.name.elements) {
-          if (ts.isOmittedExpression(element)) {
-            continue;
-          }
-          visitBindingElement(element);
-        }
-      }
-    }
-
-    return identifiers;
   }
 
   private parseModuleAugmentation(

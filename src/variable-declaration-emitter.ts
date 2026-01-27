@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { AstPrinter } from "./ast-printer.js";
+import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers.js";
 import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
 import { ExportKind, type TypeDeclaration } from "./types.js";
 
@@ -117,7 +118,7 @@ export class VariableDeclarationEmitter {
     );
 
     if (hasBindingPattern) {
-      if (VariableDeclarationEmitter.hasBindingPatternInitializer(statementDeclarations)) {
+      if (hasBindingPatternInitializer(statementDeclarations)) {
         return statement.declarationList;
       }
 
@@ -131,7 +132,7 @@ export class VariableDeclarationEmitter {
 
       const identifiers: ts.Identifier[] = [];
       for (const decl of statementDeclarations) {
-        VariableDeclarationEmitter.collectBindingIdentifiers(decl.name, identifiers);
+        identifiers.push(...collectBindingIdentifiersFromName(decl.name));
       }
 
       if (identifiers.length === 0) {
@@ -212,40 +213,6 @@ export class VariableDeclarationEmitter {
     return ts.factory.createVariableDeclarationList(newDeclarations, statement.declarationList.flags);
   }
 
-  private static hasBindingPatternInitializer(declarations: ts.NodeArray<ts.VariableDeclaration>): boolean {
-    const visitBindingElement = (element: ts.BindingElement): boolean => {
-      if (element.initializer) {
-        return true;
-      }
-
-      if (ts.isObjectBindingPattern(element.name)) {
-        return element.name.elements.some(visitBindingElement);
-      }
-
-      if (ts.isArrayBindingPattern(element.name)) {
-        return element.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
-      }
-
-      return false;
-    };
-
-    return declarations.some((decl) => {
-      if (ts.isIdentifier(decl.name)) {
-        return false;
-      }
-
-      if (ts.isObjectBindingPattern(decl.name)) {
-        return decl.name.elements.some(visitBindingElement);
-      }
-
-      if (ts.isArrayBindingPattern(decl.name)) {
-        return decl.name.elements.some((child) => !ts.isOmittedExpression(child) && visitBindingElement(child));
-      }
-
-      return false;
-    });
-  }
-
   private printStatement(
     statementNode: ts.VariableStatement,
     sourceStatement: ts.VariableStatement,
@@ -293,32 +260,5 @@ export class VariableDeclarationEmitter {
     }
 
     return false;
-  }
-
-  private static collectBindingIdentifiers(name: ts.BindingName, identifiers: ts.Identifier[]): void {
-    if (ts.isIdentifier(name)) {
-      identifiers.push(name);
-      return;
-    }
-
-    if (ts.isObjectBindingPattern(name)) {
-      for (const element of name.elements) {
-        if (ts.isBindingElement(element)) {
-          VariableDeclarationEmitter.collectBindingIdentifiers(element.name, identifiers);
-        }
-      }
-      return;
-    }
-
-    if (ts.isArrayBindingPattern(name)) {
-      for (const element of name.elements) {
-        if (ts.isOmittedExpression(element)) {
-          continue;
-        }
-        if (ts.isBindingElement(element)) {
-          VariableDeclarationEmitter.collectBindingIdentifiers(element.name, identifiers);
-        }
-      }
-    }
   }
 }
