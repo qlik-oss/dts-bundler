@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { isDeclareGlobal } from "./declaration-utils.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
 
@@ -8,17 +9,20 @@ export class NameNormalizer {
   private registry: TypeRegistry;
   private nameCounter: Map<string, number>;
   private entryFile?: string;
+  private typeChecker?: ts.TypeChecker;
 
-  constructor(registry: TypeRegistry, entryFile?: string) {
+  constructor(registry: TypeRegistry, entryFile?: string, typeChecker?: ts.TypeChecker) {
     this.registry = registry;
     this.nameCounter = new Map();
     this.entryFile = entryFile;
+    this.typeChecker = typeChecker;
   }
 
   normalize(): void {
     const byName = new Map<string, TypeDeclaration[]>();
     const entrySourceOrder = this.getEntrySourceOrder();
     const entryBasenameOrder = this.getEntryBasenameOrder();
+    const globalReferencedNames = this.collectGlobalReferencedNames();
 
     for (const declaration of this.registry.declarations.values()) {
       const name = declaration.normalizedName;
@@ -125,6 +129,7 @@ export class NameNormalizer {
       }
     }
 
+    this.normalizeGlobalDeclarationConflicts(globalReferencedNames);
     this.normalizeExternalImports();
     this.normalizeExternalNamespaceImports();
     const protectedExternalNames = this.getProtectedExternalNames();
@@ -438,5 +443,133 @@ export class NameNormalizer {
       return parts[1].trim();
     }
     return importStr;
+  }
+
+  private normalizeGlobalDeclarationConflicts(globalReferencedNames: Set<string>): void {
+    if (!this.typeChecker || globalReferencedNames.size === 0) {
+      return;
+    }
+
+    const usedNames = new Set<string>();
+    for (const declaration of this.registry.declarations.values()) {
+      usedNames.add(declaration.normalizedName);
+    }
+
+    for (const declaration of this.registry.declarations.values()) {
+      const current = declaration.normalizedName;
+      if (!globalReferencedNames.has(current)) {
+        continue;
+      }
+      if (!this.isGlobalName(current)) {
+        continue;
+      }
+      if (NameNormalizer.isWithinGlobalAugmentation(declaration.node)) {
+        continue;
+      }
+
+      let counter = 1;
+      let candidate = `${current}$${counter}`;
+      while (usedNames.has(candidate) || this.isGlobalName(candidate)) {
+        counter += 1;
+        candidate = `${current}$${counter}`;
+      }
+
+      declaration.normalizedName = candidate;
+      usedNames.add(candidate);
+    }
+  }
+
+  private isGlobalName(name: string): boolean {
+    if (!this.typeChecker) {
+      return false;
+    }
+
+    interface Ts54CompatTypeChecker extends ts.TypeChecker {
+      resolveName(
+        name: string,
+        location: ts.Node | undefined,
+        meaning: ts.SymbolFlags,
+        excludeGlobals: boolean,
+      ): ts.Symbol | undefined;
+    }
+
+    const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+    return (
+      (this.typeChecker as Ts54CompatTypeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined
+    );
+  }
+
+  private collectGlobalReferencedNames(): Set<string> {
+    const globalNames = new Set<string>();
+    if (!this.typeChecker) {
+      return globalNames;
+    }
+
+    const resolveGlobal = (name: string): ts.Symbol | undefined => {
+      interface Ts54CompatTypeChecker extends ts.TypeChecker {
+        resolveName(
+          name: string,
+          location: ts.Node | undefined,
+          meaning: ts.SymbolFlags,
+          excludeGlobals: boolean,
+        ): ts.Symbol | undefined;
+      }
+
+      const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+      return (this.typeChecker as Ts54CompatTypeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false);
+    };
+
+    const checkName = (nameNode: ts.Identifier): void => {
+      const name = nameNode.text;
+      const symbol = this.typeChecker?.getSymbolAtLocation(nameNode);
+      if (!symbol) return;
+      const globalSymbol = resolveGlobal(name);
+      if (globalSymbol && globalSymbol === symbol) {
+        globalNames.add(name);
+      }
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isTypeReferenceNode(node)) {
+        const typeName = node.typeName;
+        if (ts.isIdentifier(typeName)) {
+          checkName(typeName);
+        } else if (ts.isQualifiedName(typeName)) {
+          const leftmost = NameNormalizer.getLeftmostIdentifier(typeName);
+          if (leftmost) checkName(leftmost);
+        }
+      }
+
+      if (ts.isTypeQueryNode(node)) {
+        const exprName = node.exprName;
+        const leftmost = NameNormalizer.getLeftmostIdentifier(exprName);
+        if (leftmost) checkName(leftmost);
+      }
+
+      node.forEachChild(visit);
+    };
+
+    for (const declaration of this.registry.declarations.values()) {
+      visit(declaration.node);
+    }
+
+    return globalNames;
+  }
+
+  private static getLeftmostIdentifier(entity: ts.EntityName): ts.Identifier | null {
+    let current: ts.EntityName = entity;
+    while (ts.isQualifiedName(current)) {
+      current = current.left;
+    }
+    return ts.isIdentifier(current) ? current : null;
+  }
+
+  private static isWithinGlobalAugmentation(node: ts.Node): boolean {
+    for (let current: ts.Node = node; !ts.isSourceFile(current); current = current.parent) {
+      if (isDeclareGlobal(current as ts.Statement)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

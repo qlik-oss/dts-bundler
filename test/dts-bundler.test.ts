@@ -286,6 +286,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("names-collision-across-files");
       expect(result).toBe(expected);
     });
+
+    it("should handle name collisions with globals", () => {
+      const { expected, result } = runTestCase("names-collision-with-globals");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Error Handling", () => {

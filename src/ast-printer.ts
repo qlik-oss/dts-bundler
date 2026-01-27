@@ -3,6 +3,8 @@ import ts from "typescript";
 export interface AstPrintOptions {
   renameMap?: Map<string, string>;
   qualifiedNameMap?: Map<string, string>;
+  typeChecker?: ts.TypeChecker;
+  preserveGlobalReferences?: boolean;
 }
 
 export class AstPrinter {
@@ -18,7 +20,13 @@ export class AstPrinter {
   printNode(node: ts.Node, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
       options.renameMap || options.qualifiedNameMap
-        ? AstPrinter.applyRenameTransformer(node, options.renameMap, options.qualifiedNameMap)
+        ? AstPrinter.applyRenameTransformer(
+            node,
+            options.renameMap,
+            options.qualifiedNameMap,
+            options.typeChecker,
+            options.preserveGlobalReferences,
+          )
         : node;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
   }
@@ -26,7 +34,13 @@ export class AstPrinter {
   printStatement(statement: ts.Statement, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
       options.renameMap || options.qualifiedNameMap
-        ? AstPrinter.applyRenameTransformer(statement, options.renameMap, options.qualifiedNameMap)
+        ? AstPrinter.applyRenameTransformer(
+            statement,
+            options.renameMap,
+            options.qualifiedNameMap,
+            options.typeChecker,
+            options.preserveGlobalReferences,
+          )
         : statement;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
   }
@@ -35,8 +49,39 @@ export class AstPrinter {
     node: T,
     renameMap?: Map<string, string>,
     qualifiedNameMap?: Map<string, string>,
+    typeChecker?: ts.TypeChecker,
+    preserveGlobalReferences?: boolean,
   ): T {
     const transformer: ts.TransformerFactory<T> = (context) => {
+      const isGlobalReference = (identifier: ts.Identifier): boolean => {
+        if (!typeChecker) {
+          return false;
+        }
+
+        interface Ts54CompatTypeChecker extends ts.TypeChecker {
+          resolveName(
+            name: string,
+            location: ts.Node | undefined,
+            meaning: ts.SymbolFlags,
+            excludeGlobals: boolean,
+          ): ts.Symbol | undefined;
+        }
+
+        const symbol = typeChecker.getSymbolAtLocation(identifier);
+        if (!symbol) {
+          return false;
+        }
+
+        const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+        const globalSymbol = (typeChecker as Ts54CompatTypeChecker).resolveName(
+          identifier.text,
+          undefined,
+          tsSymbolFlagsAll,
+          false,
+        );
+        return !!globalSymbol && globalSymbol === symbol;
+      };
+
       const visit: ts.Visitor = (current) => {
         if (qualifiedNameMap && ts.isQualifiedName(current)) {
           const left = current.left;
@@ -69,6 +114,9 @@ export class AstPrinter {
         if (ts.isIdentifier(current)) {
           const parent = (current as Omit<ts.Node, "parent"> & { parent?: ts.Node }).parent;
           if (parent && ts.isModuleDeclaration(parent) && parent.name === current) {
+            return current;
+          }
+          if (preserveGlobalReferences && isGlobalReference(current)) {
             return current;
           }
           const renamed = renameMap?.get(current.text);

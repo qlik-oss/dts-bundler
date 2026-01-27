@@ -56,7 +56,7 @@ function bundle(
   const analyzer = new DependencyAnalyzer(registry, parser.importMap, entryFile);
   analyzer.analyze();
 
-  const normalizer = new NameNormalizer(registry, entryFile);
+  const normalizer = new NameNormalizer(registry, entryFile, collector.getTypeChecker());
   normalizer.normalize();
 
   const shaker = new TreeShaker(registry, {

@@ -11,9 +11,7 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-- names-collision-across-files - Critical collision handling
 - names-collision-with-globals - Global name collision
-- simple-tree-shaking - Basic tree shaking
 - export-declaration-merging - Declaration merging
 - inline-declare-global - Opposite of existing test
 - import()-type - Dynamic import types

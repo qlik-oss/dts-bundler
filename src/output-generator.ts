@@ -587,6 +587,8 @@ export class OutputGenerator {
       const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, {
         renameMap,
         qualifiedNameMap,
+        typeChecker: this.options.typeChecker,
+        preserveGlobalReferences: true,
       });
       const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
       lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
