@@ -14,6 +14,7 @@ export class DeclarationCollector {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
   private options: { inlineDeclareGlobals: boolean; inlineDeclareExternals: boolean };
+  private defaultExportCounter = 0;
 
   constructor(
     registry: TypeRegistry,
@@ -32,6 +33,11 @@ export class DeclarationCollector {
     onDefaultExportName: (name: string) => void,
   ): void {
     for (const statement of sourceFile.statements) {
+      if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+        this.parseExportAssignment(statement, filePath, sourceFile, isEntry, onDefaultExportName);
+        continue;
+      }
+
       if (!isDeclaration(statement)) {
         continue;
       }
@@ -87,6 +93,7 @@ export class DeclarationCollector {
       };
 
       const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+
       this.registry.register(declaration);
       return;
     }
@@ -128,7 +135,12 @@ export class DeclarationCollector {
     }
 
     const name = getDeclarationName(statement);
-    if (!name) return;
+    if (!name) {
+      if (hasDefaultModifier(statement)) {
+        this.registerAnonymousDefaultDeclaration(statement, filePath, sourceFile, isEntry, onDefaultExportName);
+      }
+      return;
+    }
 
     const hasExport = hasExportModifier(statement);
     const hasDefaultExport = hasDefaultModifier(statement);
@@ -147,13 +159,137 @@ export class DeclarationCollector {
       wasOriginallyExported,
     };
 
-    if (isEntry && hasDefaultExport) {
-      exportInfo.kind = ExportKind.Default;
-      onDefaultExportName(name);
+    if (hasDefaultExport) {
+      exportInfo.kind = isEntry ? ExportKind.Default : ExportKind.DefaultOnly;
+      wasOriginallyExported = true;
+      if (isEntry) {
+        onDefaultExportName(name);
+      }
     }
 
-    const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+    const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, {
+      ...exportInfo,
+      wasOriginallyExported,
+    });
     this.registry.register(declaration);
+  }
+
+  private parseExportAssignment(
+    statement: ts.ExportAssignment,
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    isEntry: boolean,
+    onDefaultExportName: (name: string) => void,
+  ): void {
+    if (ts.isIdentifier(statement.expression)) {
+      return;
+    }
+
+    const syntheticName = this.getSyntheticDefaultExportName();
+    const exportInfo: ExportInfo = {
+      kind: isEntry ? ExportKind.Default : ExportKind.DefaultOnly,
+      wasOriginallyExported: true,
+    };
+
+    const declarationNode = DeclarationCollector.createDefaultExportVariable(statement, syntheticName);
+    const declaration = new TypeDeclaration(syntheticName, filePath, declarationNode, sourceFile, exportInfo);
+
+    if (ts.isVariableStatement(declarationNode)) {
+      const varDecl = declarationNode.declarationList.declarations[0];
+      declaration.variableDeclaration = varDecl;
+    }
+
+    this.registry.register(declaration);
+
+    if (isEntry) {
+      onDefaultExportName(syntheticName);
+    }
+  }
+
+  private registerAnonymousDefaultDeclaration(
+    statement: ts.Statement,
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    isEntry: boolean,
+    onDefaultExportName: (name: string) => void,
+  ): void {
+    if (!ts.isClassDeclaration(statement) && !ts.isFunctionDeclaration(statement)) {
+      return;
+    }
+
+    const syntheticName = this.getSyntheticDefaultExportName();
+    const exportInfo: ExportInfo = {
+      kind: isEntry ? ExportKind.Default : ExportKind.DefaultOnly,
+      wasOriginallyExported: true,
+    };
+
+    let namedNode: ts.Statement;
+
+    if (ts.isClassDeclaration(statement)) {
+      const modifiers = DeclarationCollector.stripDefaultModifiers(statement);
+      namedNode = ts.factory.updateClassDeclaration(
+        statement,
+        modifiers,
+        ts.factory.createIdentifier(syntheticName),
+        statement.typeParameters,
+        statement.heritageClauses,
+        statement.members,
+      );
+    } else {
+      const modifiers = DeclarationCollector.stripDefaultModifiers(statement);
+      namedNode = ts.factory.updateFunctionDeclaration(
+        statement,
+        modifiers,
+        statement.asteriskToken,
+        ts.factory.createIdentifier(syntheticName),
+        statement.typeParameters,
+        statement.parameters,
+        statement.type,
+        statement.body,
+      );
+    }
+
+    ts.setTextRange(namedNode, statement);
+    const declaration = new TypeDeclaration(syntheticName, filePath, namedNode, sourceFile, exportInfo);
+    this.registry.register(declaration);
+
+    if (isEntry) {
+      onDefaultExportName(syntheticName);
+    }
+  }
+
+  private static createDefaultExportVariable(statement: ts.ExportAssignment, name: string): ts.VariableStatement {
+    const declaration = ts.factory.createVariableDeclaration(
+      ts.factory.createIdentifier(name),
+      undefined,
+      undefined,
+      statement.expression,
+    );
+    const declarationList = ts.factory.createVariableDeclarationList([declaration], ts.NodeFlags.Const);
+    const variableStatement = ts.factory.createVariableStatement(undefined, declarationList);
+    ts.setTextRange(variableStatement, statement);
+    return variableStatement;
+  }
+
+  private getSyntheticDefaultExportName(): string {
+    const current = this.defaultExportCounter;
+    this.defaultExportCounter += 1;
+    if (current === 0) {
+      return "_default";
+    }
+    return `_default$${current}`;
+  }
+
+  private static stripDefaultModifiers(statement: ts.Statement): ts.Modifier[] | undefined {
+    if (!ts.canHaveModifiers(statement)) {
+      return undefined;
+    }
+
+    const modifiers = ts.getModifiers(statement) ?? [];
+    const filtered = modifiers.filter(
+      (mod) => mod.kind !== ts.SyntaxKind.DefaultKeyword && mod.kind !== ts.SyntaxKind.ExportKeyword,
+    );
+    return filtered.length > 0 ? filtered : undefined;
   }
 
   private parseVariableStatement(

@@ -72,11 +72,20 @@ export class TypeRegistry {
       return;
     }
 
+    if (!existing.originalName && info.originalName) {
+      existing.originalName = info.originalName;
+    }
+    if (!existing.sourceFile && info.sourceFile) {
+      existing.sourceFile = info.sourceFile;
+    }
     if (!existing.externalModule && info.externalModule) {
       existing.externalModule = info.externalModule;
     }
     if (!existing.externalImportName && info.externalImportName) {
       existing.externalImportName = info.externalImportName;
+    }
+    if (!existing.exportFrom && info.exportFrom) {
+      existing.exportFrom = info.exportFrom;
     }
   }
 

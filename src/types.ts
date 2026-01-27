@@ -82,8 +82,11 @@ export interface ExportInfo {
 
 export interface ExportedNameInfo {
   name: string;
+  originalName?: string;
+  sourceFile?: string;
   externalModule?: string;
   externalImportName?: string;
+  exportFrom?: boolean;
 }
 
 export interface NamespaceExportInfo {

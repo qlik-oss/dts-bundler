@@ -1,8 +1,9 @@
 import ts from "typescript";
 import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils.js";
 import type { FileCollector } from "./file-collector.js";
+import { getLibraryName } from "./helpers/node-modules.js";
 import type { TypeRegistry } from "./registry.js";
-import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
+import { ExportKind, TypeDeclaration, type ExportInfo, type ExportedNameInfo } from "./types.js";
 
 export class ExportResolver {
   private registry: TypeRegistry;
@@ -196,7 +197,45 @@ export class ExportResolver {
                 this.registry.registerEntryNamespaceExport(filePath, exportedName);
               }
             } else {
-              this.registry.registerExportedName(filePath, { name: exportedName });
+              const resolvedOriginalName =
+                originalName === "default"
+                  ? (this.resolveDefaultExportName(resolvedPath) ?? originalName)
+                  : originalName;
+              const exportedInfo = this.findExportedNameInfo(resolvedPath, resolvedOriginalName);
+              if (exportedInfo?.externalModule && exportedInfo.externalImportName) {
+                const externalImportName =
+                  exportedName === resolvedOriginalName
+                    ? exportedInfo.externalImportName
+                    : `${ExportResolver.getExternalImportBaseName(exportedInfo.externalImportName)} as ${exportedName}`;
+                this.registry.registerExportedName(filePath, {
+                  name: exportedName,
+                  externalModule: exportedInfo.externalModule,
+                  externalImportName,
+                  exportFrom: exportedInfo.exportFrom,
+                });
+              } else {
+                this.registry.registerExportedName(filePath, {
+                  name: exportedName,
+                  sourceFile: resolvedPath,
+                  originalName: resolvedOriginalName,
+                });
+
+                const starResolved = exportedInfo
+                  ? null
+                  : this.resolveExternalStarExport(resolvedPath, resolvedOriginalName);
+                if (starResolved) {
+                  const starImportName =
+                    exportedName === resolvedOriginalName
+                      ? starResolved.importName
+                      : `${ExportResolver.getExternalImportBaseName(starResolved.importName)} as ${exportedName}`;
+                  this.registry.registerExportedName(filePath, {
+                    name: exportedName,
+                    externalModule: starResolved.moduleName,
+                    externalImportName: starImportName,
+                    exportFrom: true,
+                  });
+                }
+              }
             }
           } else if (!isInline) {
             const importName = originalName === exportedName ? originalName : `${originalName} as ${exportedName}`;
@@ -215,12 +254,27 @@ export class ExportResolver {
         const exportedName = element.name.text;
         const originalName = element.propertyName?.text || exportedName;
         const importInfo = fileImports?.get(originalName);
+        let resolvedOriginalName = originalName;
+
+        if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
+          if (importInfo.originalName === "default") {
+            resolvedOriginalName = this.resolveDefaultExportName(importInfo.sourceFile) ?? importInfo.originalName;
+          } else {
+            resolvedOriginalName = importInfo.originalName;
+          }
+        }
 
         if (importInfo && importInfo.isExternal && importInfo.sourceFile) {
           this.registry.registerExportedName(filePath, {
             name: exportedName,
             externalModule: importInfo.sourceFile,
             externalImportName: importInfo.originalName,
+          });
+        } else if (importInfo && importInfo.sourceFile) {
+          this.registry.registerExportedName(filePath, {
+            name: exportedName,
+            sourceFile: importInfo.sourceFile,
+            originalName: resolvedOriginalName,
           });
         } else {
           this.registry.registerExportedName(filePath, { name: exportedName });
@@ -276,8 +330,9 @@ export class ExportResolver {
           const declarationId = this.registry.nameIndex.get(key);
           if (declarationId) {
             const declaration = this.registry.getDeclaration(declarationId);
-            if (declaration) {
-              const isDefaultExport = exportedName === "default";
+            const isDefaultExport = exportedName === "default";
+            const isAlias = exportedName !== resolvedOriginalName && !isDefaultExport;
+            if (declaration && !isAlias) {
               declaration.exportInfo = {
                 kind: isDefaultExport ? ExportKind.Default : ExportKind.Named,
                 wasOriginallyExported: !isDefaultExport,
@@ -297,9 +352,19 @@ export class ExportResolver {
           const originalName = element.propertyName?.text || exportedName;
 
           const importInfo = fileImports?.get(originalName);
+          let resolvedOriginalName = originalName;
+          if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
+            if (importInfo.originalName === "default") {
+              resolvedOriginalName =
+                this.resolveDefaultExportNameFromRegistry(importInfo.sourceFile) ?? importInfo.originalName;
+            } else {
+              resolvedOriginalName = importInfo.originalName;
+            }
+          }
           let key: string;
           if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
-            key = `${importInfo.sourceFile}:${importInfo.originalName}`;
+            const lookupName = importInfo.originalName === "default" ? resolvedOriginalName : importInfo.originalName;
+            key = `${importInfo.sourceFile}:${lookupName}`;
           } else {
             key = `${filePath}:${originalName}`;
           }
@@ -315,7 +380,11 @@ export class ExportResolver {
           const declarationId = this.registry.nameIndex.get(key);
           if (declarationId && !moduleAugmentation) {
             const declaration = this.registry.getDeclaration(declarationId);
-            if (declaration) {
+            const isReExportedImport = Boolean(
+              importInfo && importInfo.sourceFile && importInfo.sourceFile !== filePath,
+            );
+            const isAlias = resolvedOriginalName !== exportedName;
+            if (declaration && (!isReExportedImport || !isAlias)) {
               declaration.exportInfo = {
                 kind: ExportKind.Named,
                 wasOriginallyExported: true,
@@ -325,6 +394,83 @@ export class ExportResolver {
         }
       }
     }
+  }
+
+  private resolveDefaultExportNameFromRegistry(filePath: string): string | null {
+    const declarations = this.registry.declarationsByFile.get(filePath);
+    if (!declarations) return null;
+
+    for (const declId of declarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+        return decl.name;
+      }
+      if (ts.isStatement(decl.node) && hasDefaultModifier(decl.node)) {
+        return decl.name;
+      }
+    }
+
+    return null;
+  }
+
+  private findExportedNameInfo(filePath: string, name: string): ExportedNameInfo | null {
+    const list = this.registry.exportedNamesByFile.get(filePath);
+    if (!list) return null;
+    return list.find((item) => item.name === name) ?? null;
+  }
+
+  private resolveExternalStarExport(
+    filePath: string,
+    exportName: string,
+  ): { moduleName: string; importName: string } | null {
+    const starExports = this.registry.getStarExports(filePath);
+    const externalModules = starExports
+      .map((star) => star.externalModule)
+      .filter((moduleName): moduleName is string => Boolean(moduleName));
+
+    if (externalModules.length === 0) {
+      return null;
+    }
+
+    const checker = this.fileCollector.getTypeChecker();
+    const program = this.fileCollector.getProgram();
+    const sourceFile = program.getSourceFile(filePath);
+    if (sourceFile) {
+      const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+      if (moduleSymbol) {
+        const exports = checker.getExportsOfModule(moduleSymbol);
+        const exportSymbol = exports.find((symbol) => symbol.name === exportName);
+        if (exportSymbol) {
+          // eslint-disable-next-line no-bitwise
+          const target =
+            exportSymbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
+          const declFile = target.declarations?.[0]?.getSourceFile();
+          if (declFile) {
+            const moduleName = getLibraryName(declFile.fileName);
+            if (moduleName && externalModules.includes(moduleName)) {
+              return { moduleName, importName: exportName };
+            }
+          }
+        }
+      }
+    }
+
+    const fallbackModule = externalModules[externalModules.length - 1];
+    return { moduleName: fallbackModule, importName: exportName };
+  }
+
+  private static getExternalImportBaseName(importName: string): string {
+    if (importName.startsWith("default as ")) {
+      return "default";
+    }
+    if (importName.startsWith("* as ")) {
+      return importName;
+    }
+    if (importName.includes(" as ")) {
+      return importName.split(" as ")[0].trim();
+    }
+    return importName;
   }
 
   private findModuleAugmentationDeclaration(filePath: string, name: string): TypeDeclaration | null {
@@ -391,6 +537,11 @@ export class ExportResolver {
   }
 
   private resolveDefaultExportName(resolvedPath: string): string | null {
+    const registryDefault = this.resolveDefaultExportNameFromRegistry(resolvedPath);
+    if (registryDefault) {
+      return registryDefault;
+    }
+
     const sourceFile = this.fileCollector.getProgram().getSourceFile(resolvedPath);
     if (!sourceFile) return null;
 

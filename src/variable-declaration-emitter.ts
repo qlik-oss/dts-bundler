@@ -92,7 +92,18 @@ export class VariableDeclarationEmitter {
     modifiers.push(ts.factory.createModifier(ts.SyntaxKind.DeclareKeyword));
 
     const variableStatement = ts.factory.createVariableStatement(modifiers, declarationList);
-    ts.setTextRange(variableStatement, { pos: statement.getStart(), end: statement.end });
+    const sourceFile = statement.getSourceFile();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!sourceFile) {
+      const pos = statement.pos;
+      const end = statement.end;
+      ts.setTextRange(variableStatement, { pos, end });
+      return variableStatement;
+    }
+    const start = statement.getStart(sourceFile);
+    const pos = start >= 0 ? start : 0;
+    const end = statement.end >= 0 ? statement.end : pos;
+    ts.setTextRange(variableStatement, { pos, end });
     return variableStatement;
   }
 
@@ -164,8 +175,33 @@ export class VariableDeclarationEmitter {
         continue;
       }
 
-      const type = this.checker.getTypeAtLocation(varDecl.name);
-      const typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+      let type = this.checker.getTypeAtLocation(varDecl.name);
+      let typeNode: ts.TypeNode | undefined;
+
+      if (varDecl.initializer) {
+        // eslint-disable-next-line no-bitwise
+        if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
+          type = this.checker.getTypeAtLocation(varDecl.initializer);
+        }
+
+        // eslint-disable-next-line no-bitwise
+        if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
+          if (ts.isNumericLiteral(varDecl.initializer)) {
+            typeNode = ts.factory.createLiteralTypeNode(ts.factory.createNumericLiteral(varDecl.initializer.text));
+          } else if (ts.isStringLiteral(varDecl.initializer)) {
+            typeNode = ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral(varDecl.initializer.text));
+          } else if (varDecl.initializer.kind === ts.SyntaxKind.TrueKeyword) {
+            typeNode = ts.factory.createLiteralTypeNode(ts.factory.createTrue());
+          } else if (varDecl.initializer.kind === ts.SyntaxKind.FalseKeyword) {
+            typeNode = ts.factory.createLiteralTypeNode(ts.factory.createFalse());
+          }
+        }
+      }
+
+      if (!typeNode) {
+        typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+      }
+
       newDeclarations.push(ts.factory.createVariableDeclaration(name, undefined, typeNode, undefined));
     }
 
@@ -216,12 +252,16 @@ export class VariableDeclarationEmitter {
     declarations: TypeDeclaration[],
   ): string {
     const renameMap = this.getRenameMap(declarations);
-    const printed = this.printer.printStatement(statementNode, sourceStatement.getSourceFile(), { renameMap });
-    return normalizePrintedStatement(
-      printed,
-      sourceStatement,
-      sourceStatement.getText(sourceStatement.getSourceFile()),
-    );
+    const sourceFile = sourceStatement.getSourceFile();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!sourceFile) {
+      const fallbackSource = statementNode.getSourceFile();
+      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap });
+      return normalizePrintedStatement(printed, sourceStatement, "");
+    }
+    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap });
+    const originalText = sourceStatement.getText(sourceFile);
+    return normalizePrintedStatement(printed, sourceStatement, originalText);
   }
 
   private static shouldExportDeclaration(decl: TypeDeclaration): boolean {

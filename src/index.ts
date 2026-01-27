@@ -61,6 +61,7 @@ function bundle(
 
   const shaker = new TreeShaker(registry, {
     exportReferencedTypes: options.exportReferencedTypes,
+    entryFile,
   });
   const { declarations: usedDeclarations, externalImports: usedExternals } = shaker.shake();
 
@@ -71,6 +72,7 @@ function bundle(
     entryExportEquals: parser.entryExportEquals,
     entryExportDefault: parser.entryExportDefault,
     entryExportDefaultName: parser.entryExportDefaultName,
+    entryFile,
     typeChecker: collector.getTypeChecker(),
     preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,
   });

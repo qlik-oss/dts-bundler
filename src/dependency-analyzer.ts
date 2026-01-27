@@ -1,5 +1,6 @@
 import path from "node:path";
 import ts from "typescript";
+import { hasDefaultModifier } from "./declaration-utils.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind } from "./types.js";
 
@@ -124,7 +125,11 @@ export class DependencyAnalyzer {
     for (const declId of declarations) {
       const decl = this.registry.getDeclaration(declId);
       if (!decl) continue;
-      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+      if (
+        decl.exportInfo.kind === ExportKind.Default ||
+        decl.exportInfo.kind === ExportKind.DefaultOnly ||
+        (ts.isStatement(decl.node) && hasDefaultModifier(decl.node))
+      ) {
         return decl.name;
       }
     }
@@ -167,7 +172,12 @@ export class DependencyAnalyzer {
     }
 
     const isCtsFile = (() => {
-      const ext = path.extname(node.getSourceFile().fileName).toLowerCase();
+      const sourceFile = node.getSourceFile();
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (!sourceFile) {
+        return false;
+      }
+      const ext = path.extname(sourceFile.fileName).toLowerCase();
       return ext === ".cts" || ext === ".d.cts";
     })();
 

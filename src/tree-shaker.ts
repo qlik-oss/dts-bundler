@@ -6,12 +6,14 @@ export class TreeShaker {
   private used: Set<symbol>;
   private usedExternals: Set<string>;
   private exportReferencedTypes: boolean;
+  private entryFile?: string;
 
-  constructor(registry: TypeRegistry, options: { exportReferencedTypes?: boolean } = {}) {
+  constructor(registry: TypeRegistry, options: { exportReferencedTypes?: boolean; entryFile?: string } = {}) {
     this.registry = registry;
     this.used = new Set();
     this.usedExternals = new Set();
     this.exportReferencedTypes = options.exportReferencedTypes ?? true;
+    this.entryFile = options.entryFile;
   }
 
   shake(): { declarations: Set<symbol>; externalImports: Map<string, Set<ExternalImport>> } {
@@ -25,6 +27,10 @@ export class TreeShaker {
       if (declaration.forceInclude) {
         this.markUsed(declaration.id);
       }
+    }
+
+    if (this.entryFile) {
+      this.markEntryNamedExportsUsed(this.entryFile);
     }
 
     this.markNamespaceExportsUsed();
@@ -144,7 +150,9 @@ export class TreeShaker {
         this.usedExternals.add(`${exported.externalModule}:${exported.externalImportName}`);
       }
 
-      const declId = this.registry.nameIndex.get(`${filePath}:${exported.name}`);
+      const declFile = exported.sourceFile ?? filePath;
+      const declName = exported.originalName ?? exported.name;
+      const declId = this.registry.nameIndex.get(`${declFile}:${declName}`);
       if (declId) {
         this.markUsed(declId);
       }
@@ -154,6 +162,23 @@ export class TreeShaker {
         this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles);
       } else if (namespaceInfo?.externalModule && namespaceInfo.externalImportName) {
         this.usedExternals.add(`${namespaceInfo.externalModule}:${namespaceInfo.externalImportName}`);
+      }
+    }
+  }
+
+  private markEntryNamedExportsUsed(entryFile: string): void {
+    const exportedNames = this.registry.exportedNamesByFile.get(entryFile) ?? [];
+    for (const exported of exportedNames) {
+      if (exported.externalModule && exported.externalImportName) {
+        this.usedExternals.add(`${exported.externalModule}:${exported.externalImportName}`);
+        continue;
+      }
+
+      const declFile = exported.sourceFile ?? entryFile;
+      const declName = exported.originalName ?? exported.name;
+      const declId = this.registry.nameIndex.get(`${declFile}:${declName}`);
+      if (declId) {
+        this.markUsed(declId);
       }
     }
   }

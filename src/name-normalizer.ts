@@ -38,6 +38,7 @@ export class NameNormalizer {
     }
 
     this.normalizeExternalImports();
+    this.normalizeDeclarationExternalConflicts();
   }
 
   private normalizeExternalImports(): void {
@@ -72,6 +73,33 @@ export class NameNormalizer {
           }
         }
       }
+    }
+  }
+
+  private normalizeDeclarationExternalConflicts(): void {
+    const externalNames = new Set<string>();
+
+    for (const moduleImports of this.registry.externalImports.values()) {
+      for (const externalImport of moduleImports.values()) {
+        externalNames.add(NameNormalizer.extractImportName(externalImport.normalizedName));
+      }
+    }
+
+    if (externalNames.size === 0) {
+      return;
+    }
+
+    const conflictCounters = new Map<string, number>();
+
+    for (const declaration of this.registry.declarations.values()) {
+      const current = declaration.normalizedName;
+      if (!externalNames.has(current)) {
+        continue;
+      }
+
+      const counter = conflictCounters.get(current) ?? 1;
+      conflictCounters.set(current, counter + 1);
+      declaration.normalizedName = `${current}$${counter}`;
     }
   }
 
