@@ -6,6 +6,7 @@ export interface AstPrintOptions {
   typeChecker?: ts.TypeChecker;
   preserveGlobalReferences?: boolean;
   namespaceImportNames?: Set<string>;
+  stripImportType?: (node: ts.ImportTypeNode) => boolean;
 }
 
 export class AstPrinter {
@@ -20,7 +21,7 @@ export class AstPrinter {
 
   printNode(node: ts.Node, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
-      options.renameMap || options.qualifiedNameMap
+      options.renameMap || options.qualifiedNameMap || options.stripImportType
         ? AstPrinter.applyRenameTransformer(
             node,
             options.renameMap,
@@ -28,6 +29,7 @@ export class AstPrinter {
             options.typeChecker,
             options.preserveGlobalReferences,
             options.namespaceImportNames,
+            options.stripImportType,
           )
         : node;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
@@ -35,7 +37,7 @@ export class AstPrinter {
 
   printStatement(statement: ts.Statement, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
-      options.renameMap || options.qualifiedNameMap
+      options.renameMap || options.qualifiedNameMap || options.stripImportType
         ? AstPrinter.applyRenameTransformer(
             statement,
             options.renameMap,
@@ -43,6 +45,7 @@ export class AstPrinter {
             options.typeChecker,
             options.preserveGlobalReferences,
             options.namespaceImportNames,
+            options.stripImportType,
           )
         : statement;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
@@ -55,6 +58,7 @@ export class AstPrinter {
     typeChecker?: ts.TypeChecker,
     preserveGlobalReferences?: boolean,
     namespaceImportNames?: Set<string>,
+    stripImportType?: (node: ts.ImportTypeNode) => boolean,
   ): T {
     const transformer: ts.TransformerFactory<T> = (context) => {
       const isGlobalReference = (identifier: ts.Identifier): boolean => {
@@ -87,6 +91,44 @@ export class AstPrinter {
       };
 
       const visit: ts.Visitor = (current) => {
+        if (ts.isImportTypeNode(current)) {
+          const qualifier = current.qualifier;
+          const shouldStrip = qualifier ? (stripImportType?.(current) ?? false) : false;
+          const visitedTypeArguments = current.typeArguments?.map((arg) => ts.visitNode(arg, visit) as ts.TypeNode);
+
+          if (shouldStrip && qualifier) {
+            const newQualifier = ts.visitNode(qualifier, visit) as ts.EntityName;
+            if (current.isTypeOf) {
+              const replacement = ts.factory.createTypeQueryNode(newQualifier, visitedTypeArguments);
+              ts.setTextRange(replacement, current);
+              return replacement;
+            }
+
+            const replacement = ts.factory.createTypeReferenceNode(newQualifier, visitedTypeArguments);
+            ts.setTextRange(replacement, current);
+            return replacement;
+          }
+
+          if (!current.typeArguments || !visitedTypeArguments) {
+            return current;
+          }
+
+          const hasChanges = visitedTypeArguments.some((arg, index) => arg !== current.typeArguments?.[index]);
+          if (!hasChanges) {
+            return current;
+          }
+
+          const replacement = ts.factory.createImportTypeNode(
+            current.argument,
+            current.attributes,
+            current.qualifier,
+            visitedTypeArguments,
+            current.isTypeOf,
+          );
+          ts.setTextRange(replacement, current);
+          return replacement;
+        }
+
         if (qualifiedNameMap && ts.isQualifiedName(current)) {
           const left = current.left;
           const right = current.right;
@@ -125,6 +167,14 @@ export class AstPrinter {
             if (!renamed || renamed === current.text) {
               return current;
             }
+          }
+          if (
+            parent &&
+            ts.isImportTypeNode(parent) &&
+            parent.qualifier === current &&
+            !(stripImportType?.(parent) ?? false)
+          ) {
+            return current;
           }
           if (
             namespaceImportNames &&

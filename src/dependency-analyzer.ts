@@ -1,6 +1,7 @@
 import path from "node:path";
 import ts from "typescript";
 import { hasDefaultModifier } from "./declaration-utils.js";
+import type { FileCollector } from "./file-collector.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind } from "./types.js";
 
@@ -20,6 +21,7 @@ export class DependencyAnalyzer {
     >
   >;
   private entryFile?: string;
+  private fileCollector: FileCollector;
 
   constructor(
     registry: TypeRegistry,
@@ -36,10 +38,12 @@ export class DependencyAnalyzer {
         }
       >
     >,
+    fileCollector: FileCollector,
     entryFile?: string,
   ) {
     this.registry = registry;
     this.importMap = importMap;
+    this.fileCollector = fileCollector;
     this.entryFile = entryFile;
   }
 
@@ -134,6 +138,7 @@ export class DependencyAnalyzer {
     const references = new Set<string>();
 
     this.extractTypeReferences(declaration.node, references);
+    this.trackImportTypeDependencies(declaration);
 
     for (const refName of references) {
       const importInfo = fileImports.get(refName);
@@ -228,6 +233,64 @@ export class DependencyAnalyzer {
         }
       }
     }
+  }
+
+  private trackImportTypeDependencies(declaration: {
+    node: ts.Node;
+    sourceFile: string;
+    dependencies: Set<symbol>;
+  }): void {
+    const importTypeReferences = DependencyAnalyzer.collectImportTypeReferences(declaration.node);
+    for (const ref of importTypeReferences) {
+      const resolvedPath = this.resolveImportTypeModule(declaration.sourceFile, ref.moduleName);
+      if (!resolvedPath) continue;
+
+      const leftmost = DependencyAnalyzer.getLeftmostEntityName(ref.qualifier);
+      if (!leftmost) continue;
+
+      const key = `${resolvedPath}:${leftmost}`;
+      const depIds = this.registry.getDeclarationIdsByKey(key);
+      if (depIds) {
+        for (const depId of depIds) {
+          declaration.dependencies.add(depId);
+        }
+      }
+    }
+  }
+
+  private resolveImportTypeModule(fromFile: string, moduleName: string): string | null {
+    if (!this.fileCollector.shouldInline(moduleName)) {
+      return null;
+    }
+
+    const resolvedPath = this.fileCollector.resolveImport(fromFile, moduleName);
+    if (!resolvedPath) return null;
+    if (!this.registry.declarationsByFile.has(resolvedPath)) return null;
+    return resolvedPath;
+  }
+
+  private static collectImportTypeReferences(
+    node: ts.Node,
+  ): Array<{ moduleName: string; qualifier: ts.EntityName; isTypeOf: boolean }> {
+    const refs: Array<{ moduleName: string; qualifier: ts.EntityName; isTypeOf: boolean }> = [];
+
+    const visit = (current: ts.Node): void => {
+      if (ts.isImportTypeNode(current) && current.qualifier) {
+        const argument = current.argument;
+        if (ts.isLiteralTypeNode(argument) && ts.isStringLiteral(argument.literal)) {
+          refs.push({
+            moduleName: argument.literal.text,
+            qualifier: current.qualifier,
+            isTypeOf: current.isTypeOf,
+          });
+        }
+      }
+
+      current.forEachChild(visit);
+    };
+
+    visit(node);
+    return refs;
   }
 
   private getDefaultExportName(sourceFile: string): string | null {

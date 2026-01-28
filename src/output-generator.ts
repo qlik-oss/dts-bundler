@@ -38,6 +38,10 @@ export class OutputGenerator {
     respectPreserveConstEnum?: boolean;
     entryFile?: string;
     entryImportedFiles?: Set<string>;
+    importTypeResolver?: {
+      shouldInline: (importPath: string) => boolean;
+      resolveImport: (fromFile: string, importPath: string) => string | null;
+    };
   };
 
   constructor(
@@ -60,6 +64,10 @@ export class OutputGenerator {
       respectPreserveConstEnum?: boolean;
       entryFile?: string;
       entryImportedFiles?: Set<string>;
+      importTypeResolver?: {
+        shouldInline: (importPath: string) => boolean;
+        resolveImport: (fromFile: string, importPath: string) => string | null;
+      };
     } = {},
   ) {
     this.registry = registry;
@@ -616,6 +624,7 @@ export class OutputGenerator {
         typeChecker: this.options.typeChecker,
         preserveGlobalReferences: true,
         namespaceImportNames,
+        stripImportType: (node) => this.shouldStripImportType(node, declaration.sourceFileNode),
       });
       const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
       lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
@@ -675,6 +684,29 @@ export class OutputGenerator {
     }
 
     return lines;
+  }
+
+  private shouldStripImportType(node: ts.ImportTypeNode, sourceFile: ts.SourceFile): boolean {
+    const resolver = this.options.importTypeResolver;
+    if (!resolver) return false;
+    if (!node.qualifier) return false;
+
+    const moduleName = OutputGenerator.getImportTypeModuleName(node);
+    if (!moduleName) return false;
+    if (!resolver.shouldInline(moduleName)) return false;
+
+    const resolvedPath = resolver.resolveImport(sourceFile.fileName, moduleName);
+    if (!resolvedPath) return false;
+
+    return this.registry.declarationsByFile.has(resolvedPath);
+  }
+
+  private static getImportTypeModuleName(node: ts.ImportTypeNode): string | null {
+    const argument = node.argument;
+    if (!ts.isLiteralTypeNode(argument) || !ts.isStringLiteral(argument.literal)) {
+      return null;
+    }
+    return argument.literal.text;
   }
 
   private generateExportEquals(): string[] {

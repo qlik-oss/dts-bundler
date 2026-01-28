@@ -53,7 +53,7 @@ function bundle(
   });
   parser.parseFiles(files);
 
-  const analyzer = new DependencyAnalyzer(registry, parser.importMap, entryFile);
+  const analyzer = new DependencyAnalyzer(registry, parser.importMap, collector, entryFile);
   analyzer.analyze();
 
   const normalizer = new NameNormalizer(registry, entryFile, collector.getTypeChecker());
@@ -86,6 +86,10 @@ function bundle(
     entryImportedFiles,
     typeChecker: collector.getTypeChecker(),
     preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,
+    importTypeResolver: {
+      shouldInline: collector.shouldInline.bind(collector),
+      resolveImport: collector.resolveImport.bind(collector),
+    },
   });
   return generator.generate();
 }

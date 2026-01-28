@@ -36,6 +36,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle import() type", () => {
+      const { expected, result } = runTestCase("import()-type", { inlinedLibraries: ["fake-package"] });
+      expect(result).toBe(expected);
+    });
+
     it("should handle imports from @types packages causing reference types", () => {
       const { expected, result } = runTestCase("import-from-types-cause-reference-types", {
         allowedTypesLibraries: ["node", "fake-types-lib-2"],

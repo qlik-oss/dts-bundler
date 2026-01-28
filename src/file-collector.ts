@@ -298,6 +298,23 @@ export class FileCollector {
     return resolvedFileName ?? null;
   }
 
+  private static collectImportTypeModuleSpecifiers(sourceFile: ts.SourceFile): Set<string> {
+    const modules = new Set<string>();
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportTypeNode(node)) {
+        const argument = node.argument;
+        if (ts.isLiteralTypeNode(argument) && ts.isStringLiteral(argument.literal)) {
+          modules.add(argument.literal.text);
+        }
+      }
+      node.forEachChild(visit);
+    };
+
+    visit(sourceFile);
+    return modules;
+  }
+
   collectFiles(): Map<string, CollectedFile> {
     const files = new Map<string, CollectedFile>();
     const sourceFiles = this.program.getSourceFiles();
@@ -351,6 +368,18 @@ export class FileCollector {
       const current = files.get(currentPath);
       if (!current) continue;
 
+      const enqueueResolvedFile = (importPath: string): void => {
+        const resolvedPath = this.resolveImport(currentPath, importPath);
+        if (!resolvedPath || files.has(resolvedPath)) return;
+
+        if (!fs.existsSync(resolvedPath)) return;
+        const content = fs.readFileSync(resolvedPath, "utf-8");
+        const sourceFile = ts.createSourceFile(resolvedPath, content, ts.ScriptTarget.Latest, true);
+        if (!this.shouldInlineFile(sourceFile)) return;
+        files.set(resolvedPath, createCollectedFile(sourceFile, false));
+        queue.push(resolvedPath);
+      };
+
       for (const statement of current.sourceFile.statements) {
         let moduleSpecifier: ts.Expression | undefined;
         if (ts.isImportDeclaration(statement)) {
@@ -365,16 +394,12 @@ export class FileCollector {
 
         if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) continue;
 
-        const importPath = moduleSpecifier.text;
-        const resolvedPath = this.resolveImport(currentPath, importPath);
-        if (!resolvedPath || files.has(resolvedPath)) continue;
+        enqueueResolvedFile(moduleSpecifier.text);
+      }
 
-        if (!fs.existsSync(resolvedPath)) continue;
-        const content = fs.readFileSync(resolvedPath, "utf-8");
-        const sourceFile = ts.createSourceFile(resolvedPath, content, ts.ScriptTarget.Latest, true);
-        if (!this.shouldInlineFile(sourceFile)) continue;
-        files.set(resolvedPath, createCollectedFile(sourceFile, false));
-        queue.push(resolvedPath);
+      const importTypeModules = FileCollector.collectImportTypeModuleSpecifiers(current.sourceFile);
+      for (const importPath of importTypeModules) {
+        enqueueResolvedFile(importPath);
       }
     }
 
