@@ -1483,7 +1483,11 @@ export class OutputGenerator {
       modifiersMap[ts.SyntaxKind.ConstKeyword] = false;
     }
 
-    if (OutputGenerator.shouldAddDeclareKeyword(statement)) {
+    // Add declare keyword when:
+    // 1. The statement is from a .ts file (not a .d.ts file), OR
+    // 2. We're stripping the export keyword from a .d.ts file declaration
+    const strippingExport = hadExport && !shouldAddExport;
+    if (OutputGenerator.shouldAddDeclareKeyword(statement, strippingExport)) {
       modifiersMap[ts.SyntaxKind.DeclareKeyword] = true;
     }
 
@@ -1728,27 +1732,32 @@ export class OutputGenerator {
     return ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
   }
 
-  private static shouldAddDeclareKeyword(statement: ts.Statement): boolean {
+  private static shouldAddDeclareKeyword(statement: ts.Statement, strippingExport: boolean): boolean {
+    // Only these statement types need a declare keyword at top level
+    const needsDeclareKeyword =
+      ts.isClassDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement) ||
+      ts.isModuleDeclaration(statement);
+
+    if (!needsDeclareKeyword) {
+      return false;
+    }
+
     const sourceFile = statement.getSourceFile();
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!sourceFile) {
       return true;
     }
 
+    // For .d.ts files: only add declare if we're stripping the export keyword
+    // (non-exported declarations in .d.ts files need declare to be valid at top level)
     if (sourceFile.isDeclarationFile) {
-      return false;
+      return strippingExport;
     }
 
-    if (
-      ts.isClassDeclaration(statement) ||
-      ts.isEnumDeclaration(statement) ||
-      ts.isFunctionDeclaration(statement) ||
-      ts.isModuleDeclaration(statement)
-    ) {
-      return true;
-    }
-
-    return false;
+    // For .ts files: always add declare
+    return true;
   }
 
   private static isNamespaceDeclaration(node: ts.ModuleDeclaration): boolean {

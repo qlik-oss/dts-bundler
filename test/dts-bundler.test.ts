@@ -304,6 +304,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("export-keyof-typeof-var-type");
       expect(result).toBe(expected);
     });
+
+    it("should handle non-exported abstract class as base", () => {
+      const { expected, result } = runTestCase("non-exported-abstract-class");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Name Resolution", () => {

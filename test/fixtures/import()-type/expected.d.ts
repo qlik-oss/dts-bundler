@@ -6,12 +6,12 @@ interface CustomType {
   foo: number;
   bar: string;
 }
-namespace Namespace {
+declare namespace Namespace {
   const baz: number;
 }
 declare type GenericType<T, U> = {};
 export interface Interface {}
-namespace Namespace$1 {
+declare namespace Namespace$1 {
   const baz: number;
 }
 interface MyType {
