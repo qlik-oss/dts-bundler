@@ -314,6 +314,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("non-exported-abstract-class");
       expect(result).toBe(expected);
     });
+
+    it("should handle merged namespaces across files", () => {
+      const { expected, result } = runTestCase("merged-namespaces");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Name Resolution", () => {

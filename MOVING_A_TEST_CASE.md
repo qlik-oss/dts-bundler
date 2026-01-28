@@ -10,5 +10,3 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 - any other file should be copied over as is, since they're likeley imported by the input file.
 
 ## test cases to move (maybe)
-
-- merged-namespaces - Namespace merging (complex)
