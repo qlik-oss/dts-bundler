@@ -329,21 +329,28 @@ export class ExportResolver {
           }
 
           const key = `${resolvedPath}:${resolvedOriginalName}`;
-          const declarationId = this.registry.nameIndex.get(key);
-          if (declarationId) {
-            const declaration = this.registry.getDeclaration(declarationId);
+          const declarationIds = this.registry.getDeclarationIdsByKey(key);
+          if (declarationIds) {
             const isDefaultExport = exportedName === "default";
             const isAlias = exportedName !== resolvedOriginalName && !isDefaultExport;
-            if (declaration && !isAlias) {
-              declaration.exportInfo = {
-                kind: isDefaultExport ? ExportKind.Default : ExportKind.Named,
-                wasOriginallyExported: !isDefaultExport,
-              };
+            if (!isAlias) {
+              for (const declarationId of declarationIds) {
+                const declaration = this.registry.getDeclaration(declarationId);
+                if (!declaration) continue;
+                declaration.exportInfo = {
+                  kind: isDefaultExport ? ExportKind.Default : ExportKind.Named,
+                  wasOriginallyExported: !isDefaultExport,
+                };
+              }
 
               if (isDefaultExport) {
                 onEntryExportDefaultName?.(resolvedOriginalName);
               }
             }
+          }
+
+          if (exportedName !== "default") {
+            this.markMergedExportChain(filePath, exportedName, `${filePath}:${exportedName}`, new Set());
           }
         }
       } else {
@@ -379,21 +386,109 @@ export class ExportResolver {
             };
           }
 
-          const declarationId = this.registry.nameIndex.get(key);
-          if (declarationId && !moduleAugmentation) {
-            const declaration = this.registry.getDeclaration(declarationId);
+          const declarationIds = this.registry.getDeclarationIdsByKey(key);
+          if (declarationIds && !moduleAugmentation) {
             const isReExportedImport = Boolean(
               importInfo && importInfo.sourceFile && importInfo.sourceFile !== filePath,
             );
             const isAlias = resolvedOriginalName !== exportedName;
-            if (declaration && (!isReExportedImport || !isAlias)) {
-              declaration.exportInfo = {
-                kind: ExportKind.Named,
-                wasOriginallyExported: true,
-              };
+            if (!isReExportedImport || !isAlias) {
+              for (const declarationId of declarationIds) {
+                const declaration = this.registry.getDeclaration(declarationId);
+                if (!declaration) continue;
+                declaration.exportInfo = {
+                  kind: ExportKind.Named,
+                  wasOriginallyExported: true,
+                };
+              }
             }
           }
+
+          if (!moduleAugmentation) {
+            const localKey = `${filePath}:${originalName}`;
+            const localDeclarationIds = this.registry.getDeclarationIdsByKey(localKey);
+            if (localDeclarationIds) {
+              for (const declarationId of localDeclarationIds) {
+                const declaration = this.registry.getDeclaration(declarationId);
+                if (!declaration) continue;
+                declaration.exportInfo = {
+                  kind: ExportKind.Named,
+                  wasOriginallyExported: true,
+                };
+              }
+            }
+          }
+
+          if (exportedName !== "default") {
+            this.markMergedExportChain(filePath, exportedName, `${filePath}:${exportedName}`, new Set());
+          }
         }
+      }
+    }
+  }
+
+  private markMergedExportChain(
+    filePath: string,
+    name: string,
+    mergeGroup: string,
+    visited: Set<string>,
+    mergeActive = false,
+  ): void {
+    const key = `${filePath}:${name}`;
+    if (visited.has(key)) return;
+    visited.add(key);
+
+    const exported = this.registry.exportedNamesByFile.get(filePath) ?? [];
+    const hasReExport = exported.some((info) => info.name === name && Boolean(info.sourceFile));
+    const declarationIds = this.registry.getDeclarationIdsByKey(key);
+    const hasLocalDeclaration = Boolean(declarationIds && declarationIds.size > 0);
+    const isMergePoint = hasLocalDeclaration && hasReExport;
+    const nextMergeActive = mergeActive || isMergePoint;
+    if (declarationIds) {
+      for (const declarationId of declarationIds) {
+        const declaration = this.registry.getDeclaration(declarationId);
+        if (!declaration) continue;
+        if (nextMergeActive) {
+          declaration.mergeGroup = mergeGroup;
+        }
+        if (
+          nextMergeActive &&
+          declaration.exportInfo.kind === ExportKind.NotExported &&
+          !declaration.exportInfo.wasOriginallyExported
+        ) {
+          declaration.exportInfo = {
+            kind: ExportKind.Named,
+            wasOriginallyExported: true,
+          };
+        }
+      }
+    }
+
+    for (const info of exported) {
+      if (info.name !== name) continue;
+      if (info.sourceFile) {
+        const originalName = info.originalName ?? info.name;
+        if (isMergePoint) {
+          this.addFileDependency(filePath, info.sourceFile);
+        }
+        this.markMergedExportChain(info.sourceFile, originalName, mergeGroup, visited, nextMergeActive);
+      }
+    }
+  }
+
+  private addFileDependency(sourceFile: string, targetFile: string): void {
+    const sourceDeclarations = this.registry.declarationsByFile.get(sourceFile);
+    const targetDeclarations = this.registry.declarationsByFile.get(targetFile);
+    if (!sourceDeclarations || !targetDeclarations) {
+      return;
+    }
+
+    for (const sourceId of sourceDeclarations) {
+      const sourceDecl = this.registry.getDeclaration(sourceId);
+      if (!sourceDecl) continue;
+      for (const targetId of targetDeclarations) {
+        if (sourceId === targetId) continue;
+        sourceDecl.dependencies.add(targetId);
       }
     }
   }
@@ -602,22 +697,24 @@ export class ExportResolver {
       key = `${filePath}:${exportedName}`;
     }
 
-    const declarationId = this.registry.nameIndex.get(key);
-    if (!declarationId) return;
+    const declarationIds = this.registry.getDeclarationIdsByKey(key);
+    if (!declarationIds) return;
 
-    const declaration = this.registry.getDeclaration(declarationId);
-    if (!declaration) return;
+    for (const declId of declarationIds) {
+      const declaration = this.registry.getDeclaration(declId);
+      if (!declaration) continue;
 
-    if (isEntry) {
-      declaration.exportInfo = {
-        kind: ExportKind.Equals,
-        wasOriginallyExported: declaration.exportInfo.wasOriginallyExported,
-      };
-    } else {
-      declaration.exportInfo = {
-        kind: declaration.exportInfo.kind,
-        wasOriginallyExported: true,
-      };
+      if (isEntry) {
+        declaration.exportInfo = {
+          kind: ExportKind.Equals,
+          wasOriginallyExported: declaration.exportInfo.wasOriginallyExported,
+        };
+      } else {
+        declaration.exportInfo = {
+          kind: declaration.exportInfo.kind,
+          wasOriginallyExported: true,
+        };
+      }
     }
   }
 
@@ -646,10 +743,11 @@ export class ExportResolver {
     if (ts.isIdentifier(expression)) {
       const exportedName = expression.text;
       const key = `${filePath}:${exportedName}`;
-      const declarationId = this.registry.nameIndex.get(key);
-      if (declarationId) {
-        const declaration = this.registry.getDeclaration(declarationId);
-        if (declaration) {
+      const declarationIds = this.registry.getDeclarationIdsByKey(key);
+      if (declarationIds) {
+        for (const declId of declarationIds) {
+          const declaration = this.registry.getDeclaration(declId);
+          if (!declaration) continue;
           const wasExported =
             declaration.exportInfo.kind !== ExportKind.NotExported || declaration.exportInfo.wasOriginallyExported;
 

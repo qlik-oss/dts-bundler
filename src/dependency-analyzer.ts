@@ -66,11 +66,13 @@ export class DependencyAnalyzer {
     for (const [, importInfo] of fileImports.entries()) {
       if (!importInfo.isExternal && importInfo.aliasName && entryTypeRefs.has(importInfo.aliasName)) {
         const key = `${importInfo.sourceFile}:${importInfo.originalName}`;
-        const declId = this.registry.nameIndex.get(key);
-        if (declId) {
-          const decl = this.registry.getDeclaration(declId);
-          if (decl) {
-            decl.normalizedName = importInfo.aliasName;
+        const declIds = this.registry.getDeclarationIdsByKey(key);
+        if (declIds) {
+          for (const declId of declIds) {
+            const decl = this.registry.getDeclaration(declId);
+            if (decl) {
+              decl.normalizedName = importInfo.aliasName;
+            }
           }
         }
       }
@@ -146,9 +148,11 @@ export class DependencyAnalyzer {
           if (memberNames.size > 0) {
             for (const memberName of memberNames) {
               const key = `${importInfo.sourceFile}:${memberName}`;
-              const depId = this.registry.nameIndex.get(key);
-              if (depId) {
-                declaration.dependencies.add(depId);
+              const depIds = this.registry.getDeclarationIdsByKey(key);
+              if (depIds) {
+                for (const depId of depIds) {
+                  declaration.dependencies.add(depId);
+                }
               }
             }
           } else {
@@ -179,8 +183,8 @@ export class DependencyAnalyzer {
 
           const importedKey = `${importInfo.sourceFile}:${refName}`;
           const originalKey = `${importInfo.sourceFile}:${originalName}`;
-          const hasImportedDecl = this.registry.nameIndex.has(importedKey);
-          const hasOriginalDecl = this.registry.nameIndex.has(originalKey);
+          const hasImportedDecl = this.registry.hasDeclarationKey(importedKey);
+          const hasOriginalDecl = this.registry.hasDeclarationKey(originalKey);
 
           if (importInfo.aliasName || refName !== originalName) {
             const aliasEntry: { sourceFile: string; originalName: string; qualifiedName?: string } = {
@@ -196,26 +200,31 @@ export class DependencyAnalyzer {
           }
 
           const key = `${importInfo.sourceFile}:${originalName}`;
-          const depId = this.registry.nameIndex.get(key);
-          if (depId) {
-            declaration.dependencies.add(depId);
+          const depIds = this.registry.getDeclarationIdsByKey(key);
+          if (depIds) {
+            for (const depId of depIds) {
+              declaration.dependencies.add(depId);
+            }
           }
         }
       } else {
         const localKey = `${declaration.sourceFile}:${refName}`;
-        const localId = this.registry.nameIndex.get(localKey);
-        if (localId && localId !== declaration.id) {
-          const localDecl = this.registry.getDeclaration(localId);
-          if (localDecl && ts.isModuleDeclaration(localDecl.node)) {
-            const sourceFile = localDecl.sourceFileNode;
-            const hasExportEquals = sourceFile.statements.some(
-              (statement) => ts.isExportAssignment(statement) && statement.isExportEquals,
-            );
-            if (!hasExportEquals) {
-              continue;
+        const localIds = this.registry.getDeclarationIdsByKey(localKey);
+        if (localIds) {
+          for (const localId of localIds) {
+            if (localId === declaration.id) continue;
+            const localDecl = this.registry.getDeclaration(localId);
+            if (localDecl && ts.isModuleDeclaration(localDecl.node)) {
+              const sourceFile = localDecl.sourceFileNode;
+              const hasExportEquals = sourceFile.statements.some(
+                (statement) => ts.isExportAssignment(statement) && statement.isExportEquals,
+              );
+              if (!hasExportEquals) {
+                continue;
+              }
             }
+            declaration.dependencies.add(localId);
           }
-          declaration.dependencies.add(localId);
         }
       }
     }

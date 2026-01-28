@@ -584,6 +584,10 @@ export class OutputGenerator {
         declaration.exportInfo.kind === ExportKind.DefaultOnly && !isTypeOnlyDeclaration;
       const suppressExportKeywordForDefault =
         (declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier) || suppressDefaultOnlyExport;
+      const shouldExportMergeGroup =
+        declaration.mergeGroup !== null &&
+        declaration.exportInfo.kind === ExportKind.NotExported &&
+        !declaration.exportInfo.wasOriginallyExported;
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
@@ -592,7 +596,8 @@ export class OutputGenerator {
         !suppressExportForAlias &&
         (declaration.exportInfo.kind === ExportKind.Named ||
           declaration.exportInfo.wasOriginallyExported ||
-          shouldExportDefaultOnlyType);
+          shouldExportDefaultOnlyType ||
+          shouldExportMergeGroup);
 
       const transformedStatement = OutputGenerator.transformStatementForOutput(
         declaration,
@@ -600,6 +605,7 @@ export class OutputGenerator {
         suppressDefaultKeyword,
         stripConstEnum,
         this.options.typeChecker,
+        declaration.mergeGroup !== null,
       );
       const renameMap = this.buildRenameMap(declaration);
       const qualifiedNameMap = this.buildQualifiedNameMap(declaration);
@@ -1105,7 +1111,7 @@ export class OutputGenerator {
         const parts = info.qualifiedName.split(".");
         const root = parts[0];
         const key = `${info.sourceFile}:${root}`;
-        const depId = this.registry.nameIndex.get(key);
+        const depId = this.registry.getFirstDeclarationIdByKey(key);
         const depDecl = depId ? this.registry.getDeclaration(depId) : null;
         const normalizedRoot = depDecl?.normalizedName ?? root;
         const normalizedQualified = [normalizedRoot, ...parts.slice(1)].join(".");
@@ -1116,7 +1122,7 @@ export class OutputGenerator {
       }
 
       const key = `${info.sourceFile}:${info.originalName}`;
-      const depId = this.registry.nameIndex.get(key);
+      const depId = this.registry.getFirstDeclarationIdByKey(key);
       if (!depId) continue;
       const depDecl = this.registry.getDeclaration(depId);
       if (!depDecl) continue;
@@ -1128,7 +1134,7 @@ export class OutputGenerator {
 
     const localRefs = OutputGenerator.collectLocalTypeReferences(declaration.node);
     for (const refName of localRefs) {
-      const localId = this.registry.nameIndex.get(`${declaration.sourceFile}:${refName}`);
+      const localId = this.registry.getFirstDeclarationIdByKey(`${declaration.sourceFile}:${refName}`);
       if (!localId) continue;
       const localDecl = this.registry.getDeclaration(localId);
       if (!localDecl) continue;
@@ -1222,7 +1228,7 @@ export class OutputGenerator {
 
       const defaultName = this.getDefaultExportName(nsInfo.sourceFile);
       if (defaultName) {
-        const defaultId = this.registry.nameIndex.get(`${nsInfo.sourceFile}:${defaultName}`);
+        const defaultId = this.registry.getFirstDeclarationIdByKey(`${nsInfo.sourceFile}:${defaultName}`);
         const defaultDecl = defaultId ? this.registry.getDeclaration(defaultId) : null;
         const normalizedDefault = defaultDecl?.normalizedName ?? defaultName;
         qualifiedNameMap.set(`${nsInfo.namespaceName}.default`, normalizedDefault);
@@ -1365,11 +1371,12 @@ export class OutputGenerator {
     suppressExportForDefault: boolean,
     stripConstEnum: boolean,
     typeChecker?: ts.TypeChecker,
+    forceExport = false,
   ): ts.Statement {
     let statement = declaration.node as ts.Statement;
     const modifiersMap = modifiersToMap(getModifiers(statement));
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
-    const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
+    const shouldForceExport = shouldHaveExport && (forceExport || OutputGenerator.shouldForceExport(statement));
     const shouldExportDefaultOnlyType =
       declaration.exportInfo.kind === ExportKind.DefaultOnly &&
       (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement));

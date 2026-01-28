@@ -151,6 +151,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle export declaration merging", () => {
+      const { expected, result } = runTestCase("export-declaration-merging", { exportReferencedTypes: false });
+      expect(result).toBe(expected);
+    });
+
     it("should not export referenced types when disabled", () => {
       const { expected, result } = runTestCase("export-default-no-export-referenced-types", {
         exportReferencedTypes: false,

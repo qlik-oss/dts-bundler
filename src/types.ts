@@ -127,6 +127,7 @@ export class TypeDeclaration {
   public importAliases: Map<string, { sourceFile: string; originalName: string; qualifiedName?: string }>; // Track alias -> original mapping
   public variableDeclaration?: ts.VariableDeclaration;
   public forceInclude: boolean;
+  public mergeGroup: string | null;
   private text: string | null;
 
   constructor(
@@ -148,6 +149,7 @@ export class TypeDeclaration {
     this.namespaceDependencies = new Set();
     this.importAliases = new Map();
     this.forceInclude = false;
+    this.mergeGroup = null;
     this.text = null;
   }
 

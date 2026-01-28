@@ -83,21 +83,25 @@ const shouldSkipEntryExport = (
     return false;
   }
 
-  const declId = registry.nameIndex.get(`${sourceFile}:${originalName}`);
-  if (!declId) {
+  const declIds = registry.getDeclarationIds(sourceFile, originalName);
+  if (!declIds || declIds.size === 0) {
     return false;
   }
 
-  const decl = registry.getDeclaration(declId);
-  if (!decl) {
-    return false;
+  for (const declId of declIds) {
+    const decl = registry.getDeclaration(declId);
+    if (!decl) {
+      return false;
+    }
+    if (decl.normalizedName !== decl.name) {
+      return false;
+    }
+    if (decl.exportInfo.kind !== ExportKind.Named && !decl.exportInfo.wasOriginallyExported) {
+      return false;
+    }
   }
 
-  if (decl.normalizedName !== decl.name) {
-    return false;
-  }
-
-  return decl.exportInfo.kind === ExportKind.Named || decl.exportInfo.wasOriginallyExported;
+  return true;
 };
 
 export const buildEntryExportData = (params: {
@@ -184,7 +188,7 @@ export const buildEntryExportData = (params: {
       exported,
       params.entryAliasMap,
     );
-    const declId = params.registry.nameIndex.get(`${sourceFile}:${originalName}`);
+    const declId = params.registry.getFirstDeclarationIdByKey(`${sourceFile}:${originalName}`);
     const decl = declId ? params.registry.getDeclaration(declId) : null;
     const normalizedOriginal =
       decl?.normalizedName ??

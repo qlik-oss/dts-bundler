@@ -43,10 +43,15 @@ export class NameNormalizer {
         const allInterfacesOrModules = declarations.every(
           (decl) => ts.isInterfaceDeclaration(decl.node) || ts.isModuleDeclaration(decl.node),
         );
+        const mergeGroup = declarations[0]?.mergeGroup ?? null;
+        const allSameMergeGroup = mergeGroup !== null && declarations.every((decl) => decl.mergeGroup === mergeGroup);
         if (hasInlineAugmentation && allInterfaces) {
           continue;
         }
         if (hasModuleDeclaration && hasInterfaceDeclaration && allInterfacesOrModules) {
+          continue;
+        }
+        if (allSameMergeGroup) {
           continue;
         }
         const grouped = new Map<

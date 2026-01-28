@@ -11,7 +11,7 @@ import { ExportKind, ExternalImport } from "./types.js";
 export class TypeRegistry {
   public declarations: Map<symbol, TypeDeclaration>;
   public declarationsByFile: Map<string, Set<symbol>>;
-  public nameIndex: Map<string, symbol>;
+  public nameIndex: Map<string, Set<symbol>>;
   public externalImports: Map<string, Map<string, ExternalImport>>;
   public namespaceImports: Map<string, { namespaceName: string; sourceFile: string }>;
   public exportedNamesByFile: Map<string, ExportedNameInfo[]>;
@@ -42,7 +42,12 @@ export class TypeRegistry {
     this.declarationsByFile.get(declaration.sourceFile)?.add(declaration.id);
 
     const key = `${declaration.sourceFile}:${declaration.name}`;
-    this.nameIndex.set(key, declaration.id);
+    const existing = this.nameIndex.get(key);
+    if (existing) {
+      existing.add(declaration.id);
+    } else {
+      this.nameIndex.set(key, new Set([declaration.id]));
+    }
   }
 
   registerExternal(
@@ -135,11 +140,31 @@ export class TypeRegistry {
 
   lookup(name: string, fromFile: string): TypeDeclaration | null {
     const localKey = `${fromFile}:${name}`;
-    if (this.nameIndex.has(localKey)) {
-      const id = this.nameIndex.get(localKey) as symbol;
-      return this.declarations.get(id) ?? null;
+    const ids = this.nameIndex.get(localKey);
+    if (ids && ids.size > 0) {
+      const id = ids.values().next().value as symbol | undefined;
+      return id ? (this.declarations.get(id) ?? null) : null;
     }
     return null;
+  }
+
+  getDeclarationIdsByKey(key: string): Set<symbol> | null {
+    return this.nameIndex.get(key) ?? null;
+  }
+
+  getDeclarationIds(sourceFile: string, name: string): Set<symbol> | null {
+    return this.getDeclarationIdsByKey(`${sourceFile}:${name}`);
+  }
+
+  hasDeclarationKey(key: string): boolean {
+    const ids = this.nameIndex.get(key);
+    return Boolean(ids && ids.size > 0);
+  }
+
+  getFirstDeclarationIdByKey(key: string): symbol | null {
+    const ids = this.nameIndex.get(key);
+    if (!ids || ids.size === 0) return null;
+    return ids.values().next().value as symbol | null;
   }
 
   getDeclaration(id: symbol): TypeDeclaration | undefined {
