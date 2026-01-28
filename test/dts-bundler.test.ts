@@ -289,6 +289,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("globalThis");
       expect(result).toBe(expected);
     });
+
+    it("should handle labelled tuples", () => {
+      const { expected, result } = runTestCase("labelled-tuples");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Name Resolution", () => {

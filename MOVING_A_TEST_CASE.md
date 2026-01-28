@@ -11,8 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-- import()-type - Dynamic import types
-- labelled-tuples - Modern TypeScript feature
 - export-keyof-typeof-var-type - typeof/keyof handling
 - import-variables - Variable imports
 - non-exported-abstract-class - Abstract class handling
