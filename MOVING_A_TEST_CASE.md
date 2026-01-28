@@ -11,7 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-- export-keyof-typeof-var-type - typeof/keyof handling
 - import-variables - Variable imports
 - non-exported-abstract-class - Abstract class handling
 - strip-export-from-non-exported-class - Export keyword stripping

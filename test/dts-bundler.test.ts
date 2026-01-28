@@ -294,6 +294,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("labelled-tuples");
       expect(result).toBe(expected);
     });
+
+    it("should handle keyof typeof variable type", () => {
+      const { expected, result } = runTestCase("export-keyof-typeof-var-type");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Name Resolution", () => {
