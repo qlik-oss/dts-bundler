@@ -68,6 +68,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("mixed-imports");
       expect(result).toBe(expected);
     });
+
+    it("should handle importing variables from external packages", () => {
+      const { expected, result } = runTestCase("import-variables");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Library Management", () => {
