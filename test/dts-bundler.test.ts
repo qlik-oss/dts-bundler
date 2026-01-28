@@ -208,6 +208,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("dont-inline-declare-global", { inlineDeclareGlobals: false });
       expect(result).toBe(expected);
     });
+
+    it("should inline declare global when enabled", () => {
+      const { expected, result } = runTestCase("inline-declare-global", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Configuration Options", () => {

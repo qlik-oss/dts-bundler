@@ -11,7 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-- inline-declare-global - Opposite of existing test
 - import()-type - Dynamic import types
 - labelled-tuples - Modern TypeScript feature
 - export-keyof-typeof-var-type - typeof/keyof handling
