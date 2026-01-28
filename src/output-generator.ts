@@ -1502,18 +1502,34 @@ export class OutputGenerator {
   private static createOutputTransformer(): ts.TransformerFactory<ts.Statement> {
     return (context) => {
       const visit: ts.Visitor = (node) => {
+        if (ts.isParameter(node) && node.initializer) {
+          const questionToken = node.questionToken ?? ts.factory.createToken(ts.SyntaxKind.QuestionToken);
+          const updated = ts.factory.updateParameterDeclaration(
+            node,
+            node.modifiers,
+            node.dotDotDotToken,
+            node.name,
+            questionToken,
+            node.type,
+            undefined,
+          );
+          ts.setTextRange(updated, node);
+          return updated;
+        }
+
         if (OutputGenerator.shouldStripNamespaceMemberExport(node)) {
           return OutputGenerator.stripExportFromStatement(node as ts.Statement, false);
         }
 
         if (ts.isFunctionDeclaration(node) && node.body) {
+          const parameters = node.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
           const updated = ts.factory.updateFunctionDeclaration(
             node,
             node.modifiers,
             node.asteriskToken,
             node.name,
             node.typeParameters,
-            node.parameters,
+            parameters,
             node.type,
             undefined,
           );
@@ -1587,6 +1603,7 @@ export class OutputGenerator {
       const filteredModifiers = OutputGenerator.stripAccessModifiers(modifiers);
       if (filteredModifiers !== modifiers) {
         if (ts.isMethodDeclaration(member)) {
+          const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
           const updated = ts.factory.updateMethodDeclaration(
             member,
             filteredModifiers,
@@ -1594,7 +1611,7 @@ export class OutputGenerator {
             member.name,
             member.questionToken,
             member.typeParameters,
-            member.parameters,
+            parameters,
             member.type,
             undefined,
           );
@@ -1604,6 +1621,7 @@ export class OutputGenerator {
       }
 
       if (ts.isMethodDeclaration(member) && member.body) {
+        const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
         const updated = ts.factory.updateMethodDeclaration(
           member,
           filteredModifiers,
@@ -1611,7 +1629,7 @@ export class OutputGenerator {
           member.name,
           member.questionToken,
           member.typeParameters,
-          member.parameters,
+          parameters,
           member.type,
           undefined,
         );
@@ -1620,12 +1638,8 @@ export class OutputGenerator {
       }
 
       if (ts.isConstructorDeclaration(member) && member.body) {
-        const updated = ts.factory.updateConstructorDeclaration(
-          member,
-          filteredModifiers,
-          member.parameters,
-          undefined,
-        );
+        const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
+        const updated = ts.factory.updateConstructorDeclaration(member, filteredModifiers, parameters, undefined);
         ts.setTextRange(updated, member);
         return updated;
       }
@@ -1635,7 +1649,7 @@ export class OutputGenerator {
           member,
           filteredModifiers,
           member.name,
-          member.parameters,
+          member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
           member.type,
           undefined,
         );
@@ -1648,7 +1662,7 @@ export class OutputGenerator {
           member,
           filteredModifiers,
           member.name,
-          member.parameters,
+          member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
           undefined,
         );
         ts.setTextRange(updated, member);
@@ -1657,6 +1671,25 @@ export class OutputGenerator {
     }
 
     return member;
+  }
+
+  private static stripParameterInitializer(parameter: ts.ParameterDeclaration): ts.ParameterDeclaration {
+    if (!parameter.initializer) {
+      return parameter;
+    }
+
+    const questionToken = parameter.questionToken ?? ts.factory.createToken(ts.SyntaxKind.QuestionToken);
+    const updated = ts.factory.updateParameterDeclaration(
+      parameter,
+      parameter.modifiers,
+      parameter.dotDotDotToken,
+      parameter.name,
+      questionToken,
+      parameter.type,
+      undefined,
+    );
+    ts.setTextRange(updated, parameter);
+    return updated;
   }
 
   private static stripExportFromStatement(statement: ts.Statement, preserveNamespaceExport: boolean): ts.Statement {

@@ -295,6 +295,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle function parameter destructuring with defaults", () => {
+      const { expected, result } = runTestCase("primitive-generation");
+      expect(result).toBe(expected);
+    });
+
     it("should handle labelled tuples", () => {
       const { expected, result } = runTestCase("labelled-tuples");
       expect(result).toBe(expected);

@@ -11,6 +11,4 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-- strip-export-from-non-exported-class - Export keyword stripping
-- primitive-generation - Function primitives
 - merged-namespaces - Namespace merging (complex)

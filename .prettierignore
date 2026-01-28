@@ -12,4 +12,3 @@ test/fixtures/**/expected.d.ts
 
 # special case
 test/fixtures/import-type-from-deps/module-with-import-type.d.ts
-
