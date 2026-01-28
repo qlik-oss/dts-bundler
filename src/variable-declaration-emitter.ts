@@ -251,6 +251,16 @@ export class VariableDeclarationEmitter {
       return false;
     }
 
+    const list = decl.parent as ts.Node | undefined;
+    if (!list || !ts.isVariableDeclarationList(list)) {
+      return false;
+    }
+    // Only preserve initializers for const declarations
+    // eslint-disable-next-line no-bitwise
+    if ((list.flags & ts.NodeFlags.Const) === 0) {
+      return false;
+    }
+
     const type = checker.getTypeAtLocation(decl.initializer);
 
     if (type.isLiteral()) {

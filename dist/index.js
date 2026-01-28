@@ -1466,15 +1466,20 @@ var NameNormalizer = class NameNormalizer {
 	registry;
 	nameCounter;
 	entryFile;
-	constructor(registry, entryFile) {
+	typeChecker;
+	constructor(registry, entryFile, typeChecker) {
 		this.registry = registry;
 		this.nameCounter = /* @__PURE__ */ new Map();
 		this.entryFile = entryFile;
+		this.typeChecker = typeChecker;
 	}
 	normalize() {
 		const byName = /* @__PURE__ */ new Map();
 		const entrySourceOrder = this.getEntrySourceOrder();
-		const entryNameSourceOrder = this.getEntryNameSourceOrder();
+		const entryBasenameOrder = this.getEntryBasenameOrder();
+		const entryExportedSources = this.getEntryExportedSources();
+		const exportEqualsFiles = this.getExportEqualsFiles();
+		const globalReferencedNames = this.collectGlobalReferencedNames();
 		for (const declaration of this.registry.declarations.values()) {
 			const name = declaration.normalizedName;
 			if (!byName.has(name)) byName.set(name, []);
@@ -1498,26 +1503,32 @@ var NameNormalizer = class NameNormalizer {
 						declarations: [decl],
 						firstIndex: index,
 						exported: isExported,
-						hasExportEquals: decl.exportInfo.kind === ExportKind.Equals
+						entryExported: entryExportedSources.has(decl.sourceFile),
+						hasExportEquals: exportEqualsFiles.has(decl.sourceFile),
+						moduleOnly: ts.isModuleDeclaration(decl.node)
 					});
 					return;
 				}
 				group.declarations.push(decl);
 				if (isExported) group.exported = true;
-				if (decl.exportInfo.kind === ExportKind.Equals) group.hasExportEquals = true;
+				if (entryExportedSources.has(decl.sourceFile)) group.entryExported = true;
+				if (!ts.isModuleDeclaration(decl.node)) group.moduleOnly = false;
 			});
 			const orderedGroups = Array.from(grouped.values()).sort((a, b) => {
-				if (a.exported !== b.exported) return a.exported ? -1 : 1;
+				if (a.entryExported !== b.entryExported) return a.entryExported ? -1 : 1;
+				if (!a.entryExported && !b.entryExported && a.exported !== b.exported) return a.exported ? -1 : 1;
 				if (a.hasExportEquals !== b.hasExportEquals) return a.hasExportEquals ? 1 : -1;
-				const nameOrder = entryNameSourceOrder.get(name);
-				const aNameOrder = nameOrder?.get(a.sourceFile);
-				const bNameOrder = nameOrder?.get(b.sourceFile);
-				if (aNameOrder !== void 0 && bNameOrder !== void 0 && aNameOrder !== bNameOrder) return aNameOrder - bNameOrder;
+				if (a.moduleOnly !== b.moduleOnly) return a.moduleOnly ? 1 : -1;
 				const aEntryOrder = entrySourceOrder.get(a.sourceFile);
 				const bEntryOrder = entrySourceOrder.get(b.sourceFile);
 				if (aEntryOrder !== void 0 && bEntryOrder !== void 0 && aEntryOrder !== bEntryOrder) return aEntryOrder - bEntryOrder;
 				if (aEntryOrder !== void 0 && bEntryOrder === void 0) return -1;
 				if (aEntryOrder === void 0 && bEntryOrder !== void 0) return 1;
+				const aBase = entryBasenameOrder.get(path.basename(a.sourceFile, path.extname(a.sourceFile)));
+				const bBase = entryBasenameOrder.get(path.basename(b.sourceFile, path.extname(b.sourceFile)));
+				if (aBase !== void 0 && bBase !== void 0 && aBase !== bBase) return aBase - bBase;
+				const pathOrder = a.sourceFile.localeCompare(b.sourceFile);
+				if (pathOrder !== 0) return pathOrder;
 				return a.firstIndex - b.firstIndex;
 			});
 			for (let i = 1; i < orderedGroups.length; i++) {
@@ -1527,6 +1538,7 @@ var NameNormalizer = class NameNormalizer {
 				for (const decl of orderedGroups[i].declarations) decl.normalizedName = normalized;
 			}
 		}
+		this.normalizeGlobalDeclarationConflicts(globalReferencedNames);
 		this.normalizeExternalImports();
 		this.normalizeExternalNamespaceImports();
 		const protectedExternalNames = this.getProtectedExternalNames();
@@ -1552,19 +1564,91 @@ var NameNormalizer = class NameNormalizer {
 			if (!info.sourceFile) return;
 			if (!order.has(info.sourceFile)) order.set(info.sourceFile, index);
 		});
+		try {
+			const entryDir = path.dirname(this.entryFile);
+			const sourceText = fs.readFileSync(this.entryFile, "utf8");
+			const sourceFile = ts.createSourceFile(this.entryFile, sourceText, ts.ScriptTarget.Latest, true);
+			let stmtIndex = order.size;
+			const registerModulePath = (modulePath) => {
+				if (!modulePath.startsWith(".")) return;
+				const resolved = this.resolveSourceFileFromRegistry(entryDir, modulePath);
+				if (resolved && !order.has(resolved)) {
+					order.set(resolved, stmtIndex);
+					stmtIndex += 1;
+				}
+			};
+			for (const statement of sourceFile.statements) {
+				if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) registerModulePath(statement.moduleSpecifier.text);
+				if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) registerModulePath(statement.moduleSpecifier.text);
+			}
+		} catch {}
 		return order;
 	}
-	getEntryNameSourceOrder() {
-		const orderByName = /* @__PURE__ */ new Map();
-		if (!this.entryFile) return orderByName;
-		(this.registry.exportedNamesByFile.get(this.entryFile) ?? []).forEach((info, index) => {
-			if (!info.sourceFile) return;
-			const originalName = info.originalName ?? info.name;
-			const perName = orderByName.get(originalName) ?? /* @__PURE__ */ new Map();
-			if (!perName.has(info.sourceFile)) perName.set(info.sourceFile, index);
-			orderByName.set(originalName, perName);
-		});
-		return orderByName;
+	resolveSourceFileFromRegistry(entryDir, modulePath) {
+		const basePath = path.resolve(entryDir, modulePath);
+		const candidates = [
+			basePath,
+			`${basePath}.ts`,
+			`${basePath}.d.ts`,
+			`${basePath}.mts`,
+			`${basePath}.cts`,
+			path.join(basePath, "index.ts"),
+			path.join(basePath, "index.d.ts"),
+			path.join(basePath, "index.mts"),
+			path.join(basePath, "index.cts")
+		];
+		for (const candidate of candidates) if (this.registry.declarationsByFile.has(candidate)) return candidate;
+		const normalizedBase = basePath.replace(/\\/g, "/");
+		for (const filePath of this.registry.declarationsByFile.keys()) {
+			const normalizedPath = filePath.replace(/\\/g, "/");
+			if (normalizedPath === normalizedBase) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.ts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.d.ts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.mts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.cts`)) return filePath;
+		}
+		return null;
+	}
+	getEntryBasenameOrder() {
+		const order = /* @__PURE__ */ new Map();
+		if (!this.entryFile) return order;
+		try {
+			const sourceText = fs.readFileSync(this.entryFile, "utf8");
+			const sourceFile = ts.createSourceFile(this.entryFile, sourceText, ts.ScriptTarget.Latest, true);
+			let stmtIndex = 0;
+			const registerModule = (modulePath) => {
+				if (!modulePath.startsWith(".")) return;
+				const base = path.basename(modulePath);
+				if (!order.has(base)) {
+					order.set(base, stmtIndex);
+					stmtIndex += 1;
+				}
+			};
+			for (const statement of sourceFile.statements) {
+				if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) registerModule(statement.moduleSpecifier.text);
+				if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) registerModule(statement.moduleSpecifier.text);
+			}
+		} catch {}
+		return order;
+	}
+	getEntryExportedSources() {
+		const sources = /* @__PURE__ */ new Set();
+		if (!this.entryFile) return sources;
+		const exported = this.registry.exportedNamesByFile.get(this.entryFile) ?? [];
+		for (const info of exported) if (info.sourceFile) sources.add(info.sourceFile);
+		else sources.add(this.entryFile);
+		return sources;
+	}
+	getExportEqualsFiles() {
+		const files = /* @__PURE__ */ new Set();
+		for (const [filePath, declarations] of this.registry.declarationsByFile.entries()) {
+			const declId = declarations.values().next().value;
+			if (!declId) continue;
+			const decl = this.registry.getDeclaration(declId);
+			if (!decl) continue;
+			if (decl.sourceFileNode.statements.some((statement) => ts.isExportAssignment(statement) && statement.isExportEquals)) files.add(filePath);
+		}
+		return files;
 	}
 	normalizeExternalImports() {
 		const importNameCounts = /* @__PURE__ */ new Map();
@@ -1646,6 +1730,70 @@ var NameNormalizer = class NameNormalizer {
 		if (importStr.includes(" as ")) return importStr.split(" as ")[1].trim();
 		return importStr;
 	}
+	normalizeGlobalDeclarationConflicts(globalReferencedNames) {
+		if (!this.typeChecker || globalReferencedNames.size === 0) return;
+		const usedNames = /* @__PURE__ */ new Set();
+		for (const declaration of this.registry.declarations.values()) usedNames.add(declaration.normalizedName);
+		for (const declaration of this.registry.declarations.values()) {
+			const current = declaration.normalizedName;
+			if (!globalReferencedNames.has(current)) continue;
+			if (!this.isGlobalName(current)) continue;
+			if (NameNormalizer.isWithinGlobalAugmentation(declaration.node)) continue;
+			let counter = 1;
+			let candidate = `${current}$${counter}`;
+			while (usedNames.has(candidate) || this.isGlobalName(candidate)) {
+				counter += 1;
+				candidate = `${current}$${counter}`;
+			}
+			declaration.normalizedName = candidate;
+			usedNames.add(candidate);
+		}
+	}
+	isGlobalName(name) {
+		if (!this.typeChecker) return false;
+		return this.typeChecker.resolveName(name, void 0, -1, false) !== void 0;
+	}
+	collectGlobalReferencedNames() {
+		const globalNames = /* @__PURE__ */ new Set();
+		if (!this.typeChecker) return globalNames;
+		const resolveGlobal = (name) => {
+			return this.typeChecker.resolveName(name, void 0, -1, false);
+		};
+		const checkName = (nameNode) => {
+			const name = nameNode.text;
+			const symbol = this.typeChecker?.getSymbolAtLocation(nameNode);
+			if (!symbol) return;
+			const globalSymbol = resolveGlobal(name);
+			if (globalSymbol && globalSymbol === symbol) globalNames.add(name);
+		};
+		const visit = (node) => {
+			if (ts.isTypeReferenceNode(node)) {
+				const typeName = node.typeName;
+				if (ts.isIdentifier(typeName)) checkName(typeName);
+				else if (ts.isQualifiedName(typeName)) {
+					const leftmost = NameNormalizer.getLeftmostIdentifier(typeName);
+					if (leftmost) checkName(leftmost);
+				}
+			}
+			if (ts.isTypeQueryNode(node)) {
+				const exprName = node.exprName;
+				const leftmost = NameNormalizer.getLeftmostIdentifier(exprName);
+				if (leftmost) checkName(leftmost);
+			}
+			node.forEachChild(visit);
+		};
+		for (const declaration of this.registry.declarations.values()) visit(declaration.node);
+		return globalNames;
+	}
+	static getLeftmostIdentifier(entity) {
+		let current = entity;
+		while (ts.isQualifiedName(current)) current = current.left;
+		return ts.isIdentifier(current) ? current : null;
+	}
+	static isWithinGlobalAugmentation(node) {
+		for (let current = node; !ts.isSourceFile(current); current = current.parent) if (isDeclareGlobal(current)) return true;
+		return false;
+	}
 };
 
 //#endregion
@@ -1701,15 +1849,22 @@ var AstPrinter = class AstPrinter {
 		});
 	}
 	printNode(node, sourceFile, options = {}) {
-		const transformed = options.renameMap || options.qualifiedNameMap ? AstPrinter.applyRenameTransformer(node, options.renameMap, options.qualifiedNameMap) : node;
+		const transformed = options.renameMap || options.qualifiedNameMap ? AstPrinter.applyRenameTransformer(node, options.renameMap, options.qualifiedNameMap, options.typeChecker, options.preserveGlobalReferences, options.namespaceImportNames) : node;
 		return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
 	}
 	printStatement(statement, sourceFile, options = {}) {
-		const transformed = options.renameMap || options.qualifiedNameMap ? AstPrinter.applyRenameTransformer(statement, options.renameMap, options.qualifiedNameMap) : statement;
+		const transformed = options.renameMap || options.qualifiedNameMap ? AstPrinter.applyRenameTransformer(statement, options.renameMap, options.qualifiedNameMap, options.typeChecker, options.preserveGlobalReferences, options.namespaceImportNames) : statement;
 		return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
 	}
-	static applyRenameTransformer(node, renameMap, qualifiedNameMap) {
+	static applyRenameTransformer(node, renameMap, qualifiedNameMap, typeChecker, preserveGlobalReferences, namespaceImportNames) {
 		const transformer = (context) => {
+			const isGlobalReference = (identifier) => {
+				if (!typeChecker) return false;
+				const symbol = typeChecker.getSymbolAtLocation(identifier);
+				if (!symbol) return false;
+				const globalSymbol = typeChecker.resolveName(identifier.text, void 0, -1, false);
+				return !!globalSymbol && globalSymbol === symbol;
+			};
 			const visit = (current) => {
 				if (qualifiedNameMap && ts.isQualifiedName(current)) {
 					const left = current.left;
@@ -1739,7 +1894,16 @@ var AstPrinter = class AstPrinter {
 				}
 				if (ts.isIdentifier(current)) {
 					const parent = current.parent;
-					if (parent && ts.isModuleDeclaration(parent) && parent.name === current) return current;
+					if (parent && ts.isModuleDeclaration(parent) && parent.name === current) {
+						if (current.text === "global") return current;
+						const renamed = renameMap?.get(current.text);
+						if (!renamed || renamed === current.text) return current;
+					}
+					if (namespaceImportNames && parent && (ts.isQualifiedName(parent) && parent.right === current || ts.isPropertyAccessExpression(parent) && parent.name === current)) {
+						const left = ts.isQualifiedName(parent) ? parent.left : parent.expression;
+						if (ts.isIdentifier(left) && namespaceImportNames.has(left.text)) return current;
+					}
+					if (preserveGlobalReferences && isGlobalReference(current)) return current;
 					const renamed = renameMap?.get(current.text);
 					if (renamed && renamed !== current.text) {
 						if (renamed.includes(".")) {
@@ -1858,9 +2022,10 @@ const collectDeclarationExternalImports = (registry, usedDeclarations) => {
 	}
 	return externalImports;
 };
-const resolveEntryExportOriginalName = (registry, entryFile, exported) => {
-	const sourceFile = exported.sourceFile ?? entryFile;
-	let originalName = exported.originalName ?? exported.name;
+const resolveEntryExportOriginalName = (registry, entryFile, exported, aliasMap) => {
+	const aliasInfo = !exported.originalName || !exported.sourceFile ? aliasMap?.get(exported.name) ?? null : null;
+	const sourceFile = aliasInfo?.sourceFile ?? exported.sourceFile ?? entryFile;
+	let originalName = aliasInfo?.originalName ?? exported.originalName ?? exported.name;
 	if (originalName === "default" && exported.sourceFile) {
 		const resolvedDefault = resolveDefaultExportNameFromRegistry(registry, exported.sourceFile);
 		if (resolvedDefault) originalName = resolvedDefault;
@@ -1878,13 +2043,15 @@ const resolveEntryExportOriginalName = (registry, entryFile, exported) => {
 		originalName
 	};
 };
-const shouldSkipEntryExport = (registry, entryFile, exported) => {
-	const { sourceFile, originalName } = resolveEntryExportOriginalName(registry, entryFile, exported);
+const shouldSkipEntryExport = (registry, entryFile, exported, aliasMap, nameMap) => {
+	const { sourceFile, originalName } = resolveEntryExportOriginalName(registry, entryFile, exported, aliasMap);
+	if ((nameMap?.get(`${sourceFile}:${originalName}`) ?? nameMap?.get(`${sourceFile.replace(/\\/g, "/")}:${originalName}`) ?? nameMap?.get(`${path.resolve(sourceFile)}:${originalName}`) ?? nameMap?.get(`${path.resolve(sourceFile).replace(/\\/g, "/")}:${originalName}`) ?? (fs.existsSync(sourceFile) ? nameMap?.get(`${fs.realpathSync(sourceFile)}:${originalName}`) : void 0) ?? originalName) !== exported.name) return false;
 	if (originalName !== exported.name) return false;
 	const declId = registry.nameIndex.get(`${sourceFile}:${originalName}`);
 	if (!declId) return false;
 	const decl = registry.getDeclaration(declId);
 	if (!decl) return false;
+	if (decl.normalizedName !== decl.name) return false;
 	return decl.exportInfo.kind === ExportKind.Named || decl.exportInfo.wasOriginallyExported;
 };
 const buildEntryExportData = (params) => {
@@ -1902,6 +2069,16 @@ const buildEntryExportData = (params) => {
 	};
 	const declarationExternalImports = collectDeclarationExternalImports(params.registry, params.usedDeclarations);
 	const exportedNames = params.registry.exportedNamesByFile.get(entryFile) ?? [];
+	const exportedNameSet = new Set(exportedNames.map((item) => item.name));
+	if (params.entryAliasMap) for (const [name, info] of params.entryAliasMap.entries()) {
+		if (exportedNameSet.has(name)) continue;
+		exportedNames.push({
+			name,
+			originalName: info.originalName,
+			sourceFile: info.sourceFile
+		});
+		exportedNameSet.add(name);
+	}
 	const namespaceExports = new Set(params.registry.entryNamespaceExports.filter((entry) => entry.sourceFile === entryFile).map((entry) => entry.name));
 	const moduleAugmentations = /* @__PURE__ */ new Set();
 	const entryDeclarations = params.registry.declarationsByFile.get(entryFile);
@@ -1931,10 +2108,11 @@ const buildEntryExportData = (params) => {
 			}
 			continue;
 		}
-		const { sourceFile, originalName } = resolveEntryExportOriginalName(params.registry, entryFile, exported);
-		const normalizedOriginal = params.nameMap.get(`${sourceFile}:${originalName}`) ?? originalName;
+		const { sourceFile, originalName } = resolveEntryExportOriginalName(params.registry, entryFile, exported, params.entryAliasMap);
+		const declId = params.registry.nameIndex.get(`${sourceFile}:${originalName}`);
+		const normalizedOriginal = (declId ? params.registry.getDeclaration(declId) : null)?.normalizedName ?? params.nameMap.get(`${sourceFile}:${originalName}`) ?? params.nameMap.get(`${sourceFile.replace(/\\/g, "/")}:${originalName}`) ?? params.nameMap.get(`${path.resolve(sourceFile)}:${originalName}`) ?? params.nameMap.get(`${path.resolve(sourceFile).replace(/\\/g, "/")}:${originalName}`) ?? (fs.existsSync(sourceFile) ? params.nameMap.get(`${fs.realpathSync(sourceFile)}:${originalName}`) : void 0) ?? originalName;
 		const exportItem = normalizedOriginal === exported.name ? normalizedOriginal : `${normalizedOriginal} as ${exported.name}`;
-		if (shouldSkipEntryExport(params.registry, entryFile, exported)) continue;
+		if (shouldSkipEntryExport(params.registry, entryFile, exported, params.entryAliasMap, params.nameMap)) continue;
 		if (!exportListSet.has(exportItem)) {
 			exportListSet.add(exportItem);
 			exportListItems.push(exportItem);
@@ -2171,6 +2349,10 @@ var VariableDeclarationEmitter = class VariableDeclarationEmitter {
 	static shouldKeepInitializer(decl, checker) {
 		if (!decl.initializer) return false;
 		if (decl.type) return false;
+		const list = decl.parent;
+		if (list && ts.isVariableDeclarationList(list)) {
+			if ((list.flags & ts.NodeFlags.Const) === 0) return false;
+		}
 		const type = checker.getTypeAtLocation(decl.initializer);
 		if (type.isLiteral()) return true;
 		if (type.isUnion()) return type.types.every((member) => member.isLiteral());
@@ -2289,6 +2471,7 @@ var OutputGenerator = class OutputGenerator {
 			const primaryDefault = defaultImports.find((imp) => imp.isDefaultImport) ?? null;
 			const hasDefaultImport = Boolean(primaryDefault);
 			const namedListOrdered = nonNamespaceImports.filter((imp) => imp !== primaryDefault).map((imp) => imp.normalizedName);
+			const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
 			if (hasDefaultImport) {
 				const defaultName = primaryDefault?.normalizedName.substring(11) ?? "";
 				if (namedListOrdered.length > 0) if (namedListOrdered.length > 1) {
@@ -2297,10 +2480,12 @@ var OutputGenerator = class OutputGenerator {
 				} else lines.push(`import ${typePrefix}${defaultName}, { ${namedListOrdered[0]} } from "${moduleName}";`);
 				else lines.push(`import ${typePrefix}${defaultName} from "${moduleName}";`);
 			} else if (defaultImports.length > 0 || namedImports.length > 0) {
-				if (namedListOrdered.length > 1) {
+				if (namedListOrdered.length > 1) if (preferSingleLineNamed) lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
+				else {
 					const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
 					lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
-				} else if (namedListOrdered.length === 1) lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
+				}
+				else if (namedListOrdered.length === 1) lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
 			}
 		}
 		return lines;
@@ -2334,9 +2519,37 @@ var OutputGenerator = class OutputGenerator {
 			entryFile: this.options.entryFile,
 			nameMap: this.nameMap,
 			getNormalizedExternalImportName: this.getNormalizedExternalImportName.bind(this),
-			extractImportName: OutputGenerator.extractImportName
+			extractImportName: OutputGenerator.extractImportName,
+			entryAliasMap: this.getEntryExportAliasMap()
 		});
 		return this.entryExportData;
+	}
+	getEntryExportAliasMap() {
+		const aliasMap = /* @__PURE__ */ new Map();
+		const entryFile = this.options.entryFile;
+		if (!entryFile) return aliasMap;
+		try {
+			const entryDir = path.dirname(entryFile);
+			const sourceText = fs.readFileSync(entryFile, "utf8");
+			const sourceFile = ts.createSourceFile(entryFile, sourceText, ts.ScriptTarget.Latest, true);
+			for (const statement of sourceFile.statements) {
+				if (!ts.isExportDeclaration(statement)) continue;
+				if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+				if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+				const modulePath = statement.moduleSpecifier.text;
+				const sourcePath = this.resolveSourceFileFromRegistry(entryDir, modulePath);
+				if (!sourcePath) continue;
+				for (const element of statement.exportClause.elements) {
+					const exportedName = element.name.text;
+					const originalName = element.propertyName?.text ?? exportedName;
+					aliasMap.set(exportedName, {
+						sourceFile: sourcePath,
+						originalName
+					});
+				}
+			}
+		} catch {}
+		return aliasMap;
 	}
 	filterExternalImports(excluded, required) {
 		const result = /* @__PURE__ */ new Map();
@@ -2356,6 +2569,31 @@ var OutputGenerator = class OutputGenerator {
 			if (externalImport) addImport(moduleName, externalImport);
 		}
 		return result;
+	}
+	resolveSourceFileFromRegistry(entryDir, modulePath) {
+		const basePath = path.resolve(entryDir, modulePath);
+		const candidates = [
+			basePath,
+			`${basePath}.ts`,
+			`${basePath}.d.ts`,
+			`${basePath}.mts`,
+			`${basePath}.cts`,
+			path.join(basePath, "index.ts"),
+			path.join(basePath, "index.d.ts"),
+			path.join(basePath, "index.mts"),
+			path.join(basePath, "index.cts")
+		];
+		for (const candidate of candidates) if (this.registry.declarationsByFile.has(candidate)) return candidate;
+		const normalizedBase = basePath.replace(/\\/g, "/");
+		for (const filePath of this.registry.declarationsByFile.keys()) {
+			const normalizedPath = filePath.replace(/\\/g, "/");
+			if (normalizedPath === normalizedBase) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.ts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.d.ts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.mts`)) return filePath;
+			if (normalizedPath.endsWith(`${normalizedBase}.cts`)) return filePath;
+		}
+		return null;
 	}
 	static buildExportFromLine(moduleName, items) {
 		const unique = Array.from(new Set(items));
@@ -2392,6 +2630,7 @@ var OutputGenerator = class OutputGenerator {
 		const primaryDefault = defaultImports.find((imp) => imp.isDefaultImport) ?? null;
 		const hasDefaultImport = Boolean(primaryDefault);
 		const namedListOrdered = nonNamespaceImports.filter((imp) => imp !== primaryDefault).map((imp) => imp.normalizedName).sort((a, b) => OutputGenerator.extractImportName(a).localeCompare(OutputGenerator.extractImportName(b)));
+		const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
 		if (hasDefaultImport) {
 			const defaultName = primaryDefault?.normalizedName.substring(11) ?? "";
 			if (namedListOrdered.length > 0) if (namedListOrdered.length > 1) {
@@ -2400,10 +2639,12 @@ var OutputGenerator = class OutputGenerator {
 			} else lines.push(`import ${typePrefix}${defaultName}, { ${namedListOrdered[0]} } from "${moduleName}";`);
 			else lines.push(`import ${typePrefix}${defaultName} from "${moduleName}";`);
 		} else if (defaultImports.length > 0 || namedImports.length > 0) {
-			if (namedListOrdered.length > 1) {
+			if (namedListOrdered.length > 1) if (preferSingleLineNamed) lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
+			else {
 				const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
 				lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
-			} else if (namedListOrdered.length === 1) lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
+			}
+			else if (namedListOrdered.length === 1) lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
 		}
 		return lines;
 	}
@@ -2412,6 +2653,7 @@ var OutputGenerator = class OutputGenerator {
 	}
 	generateDeclarations() {
 		const lines = [];
+		const aliasExportedNames = this.getAliasExportedNames();
 		const sorted = this.topologicalSort();
 		const ordered = this.options.sortNodes ? [...sorted].sort((a, b) => {
 			const rank = OutputGenerator.getSortRank(a) - OutputGenerator.getSortRank(b);
@@ -2458,16 +2700,22 @@ var OutputGenerator = class OutputGenerator {
 			const suppressDefaultKeyword = (declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly) && hasDefaultModifier;
 			const suppressExportForModuleAugmentation = ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
 			const stripConstEnum = this.shouldStripConstEnum(declaration);
+			const suppressExportForAlias = aliasExportedNames.has(declaration.normalizedName);
 			const isTypeOnlyDeclaration = ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
+			const shouldExportDefaultOnlyType = declaration.exportInfo.kind === ExportKind.DefaultOnly && isTypeOnlyDeclaration;
 			const suppressDefaultOnlyExport = declaration.exportInfo.kind === ExportKind.DefaultOnly && !isTypeOnlyDeclaration;
 			const suppressExportKeywordForDefault = declaration.exportInfo.kind === ExportKind.Default && hasDefaultModifier || suppressDefaultOnlyExport;
-			const shouldHaveExport = declaration.exportInfo.kind !== ExportKind.Equals && !suppressExportKeywordForDefault && !suppressExportForModuleAugmentation && (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
+			const shouldHaveExport = declaration.exportInfo.kind !== ExportKind.Equals && !suppressExportKeywordForDefault && !suppressExportForModuleAugmentation && !suppressExportForAlias && (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported || shouldExportDefaultOnlyType);
 			const transformedStatement = OutputGenerator.transformStatementForOutput(declaration, shouldHaveExport, suppressDefaultKeyword, stripConstEnum, this.options.typeChecker);
 			const renameMap = this.buildRenameMap(declaration);
 			const qualifiedNameMap = this.buildQualifiedNameMap(declaration);
+			const namespaceImportNames = this.buildNamespaceImportNames(declaration);
 			const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, {
 				renameMap,
-				qualifiedNameMap
+				qualifiedNameMap,
+				typeChecker: this.options.typeChecker,
+				preserveGlobalReferences: true,
+				namespaceImportNames
 			});
 			const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
 			lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
@@ -2727,6 +2975,20 @@ var OutputGenerator = class OutputGenerator {
 		for (const declaration of declarations) for (const [name, normalized] of this.buildRenameMap(declaration)) merged.set(name, normalized);
 		return merged;
 	}
+	getAliasExportedNames() {
+		const aliasNames = /* @__PURE__ */ new Set();
+		const { exportListItems } = this.getEntryExportData();
+		for (const item of exportListItems) {
+			const parts = item.split(" as ");
+			if (parts.length === 2) aliasNames.add(parts[0].trim());
+		}
+		return aliasNames;
+	}
+	buildNamespaceImportNames(declaration) {
+		const names = /* @__PURE__ */ new Set();
+		for (const importNames of declaration.externalDependencies.values()) for (const importName of importNames) if (importName.startsWith("* as ")) names.add(OutputGenerator.extractImportName(importName));
+		return names;
+	}
 	buildQualifiedNameMap(declaration) {
 		const qualifiedNameMap = /* @__PURE__ */ new Map();
 		const valueAliases = this.namespaceValueAliasesByFile.get(declaration.sourceFile) ?? /* @__PURE__ */ new Set();
@@ -2834,7 +3096,9 @@ var OutputGenerator = class OutputGenerator {
 		const modifiersMap = modifiersToMap(getModifiers(statement));
 		const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
 		const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
-		modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
+		const shouldExportDefaultOnlyType = declaration.exportInfo.kind === ExportKind.DefaultOnly && (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement));
+		const shouldAddExport = shouldHaveExport && (hadExport || shouldForceExport || shouldExportDefaultOnlyType);
+		modifiersMap[ts.SyntaxKind.ExportKeyword] = shouldAddExport;
 		if (suppressExportForDefault) modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
 		if (ts.isEnumDeclaration(statement) && typeChecker) {
 			let nextNumericValue = 0;
@@ -2863,6 +3127,13 @@ var OutputGenerator = class OutputGenerator {
 				return member;
 			});
 			statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
+		}
+		if (ts.isFunctionDeclaration(statement) && !statement.type) {
+			if (!(declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly)) {
+				const updated = ts.factory.updateFunctionDeclaration(statement, statement.modifiers, statement.asteriskToken, statement.name, statement.typeParameters, statement.parameters, ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword), statement.body);
+				ts.setTextRange(updated, statement);
+				statement = updated;
+			}
 		}
 		if (stripConstEnum) modifiersMap[ts.SyntaxKind.ConstKeyword] = false;
 		if (OutputGenerator.shouldAddDeclareKeyword(statement)) modifiersMap[ts.SyntaxKind.DeclareKeyword] = true;
@@ -2971,6 +3242,7 @@ var OutputGenerator = class OutputGenerator {
 	}
 	static shouldPreserveJsDoc(declaration, shouldHaveExport) {
 		if (shouldHaveExport) return true;
+		if (declaration.exportInfo.wasOriginallyExported) return true;
 		if (declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly) return true;
 		if (OutputGenerator.isConstEnumDeclaration(declaration.node)) return true;
 		return ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
@@ -3243,7 +3515,7 @@ function bundle(entry, inlinedLibraries = [], options = {}) {
 	});
 	parser.parseFiles(files);
 	new DependencyAnalyzer(registry, parser.importMap, entryFile).analyze();
-	new NameNormalizer(registry, entryFile).normalize();
+	new NameNormalizer(registry, entryFile, collector.getTypeChecker()).normalize();
 	const { declarations: usedDeclarations, externalImports: usedExternals } = new TreeShaker(registry, {
 		exportReferencedTypes: options.exportReferencedTypes,
 		entryFile

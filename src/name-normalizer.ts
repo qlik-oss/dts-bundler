@@ -22,6 +22,8 @@ export class NameNormalizer {
     const byName = new Map<string, TypeDeclaration[]>();
     const entrySourceOrder = this.getEntrySourceOrder();
     const entryBasenameOrder = this.getEntryBasenameOrder();
+    const entryExportedSources = this.getEntryExportedSources();
+    const exportEqualsFiles = this.getExportEqualsFiles();
     const globalReferencedNames = this.collectGlobalReferencedNames();
 
     for (const declaration of this.registry.declarations.values()) {
@@ -54,6 +56,7 @@ export class NameNormalizer {
             declarations: TypeDeclaration[];
             firstIndex: number;
             exported: boolean;
+            entryExported: boolean;
             hasExportEquals: boolean;
             moduleOnly: boolean;
           }
@@ -68,7 +71,8 @@ export class NameNormalizer {
               declarations: [decl],
               firstIndex: index,
               exported: isExported,
-              hasExportEquals: decl.exportInfo.kind === ExportKind.Equals,
+              entryExported: entryExportedSources.has(decl.sourceFile),
+              hasExportEquals: exportEqualsFiles.has(decl.sourceFile),
               moduleOnly: ts.isModuleDeclaration(decl.node),
             });
             return;
@@ -77,8 +81,8 @@ export class NameNormalizer {
           if (isExported) {
             group.exported = true;
           }
-          if (decl.exportInfo.kind === ExportKind.Equals) {
-            group.hasExportEquals = true;
+          if (entryExportedSources.has(decl.sourceFile)) {
+            group.entryExported = true;
           }
           if (!ts.isModuleDeclaration(decl.node)) {
             group.moduleOnly = false;
@@ -86,7 +90,10 @@ export class NameNormalizer {
         });
 
         const orderedGroups = Array.from(grouped.values()).sort((a, b) => {
-          if (a.exported !== b.exported) {
+          if (a.entryExported !== b.entryExported) {
+            return a.entryExported ? -1 : 1;
+          }
+          if (!a.entryExported && !b.entryExported && a.exported !== b.exported) {
             return a.exported ? -1 : 1;
           }
           if (a.hasExportEquals !== b.hasExportEquals) {
@@ -295,6 +302,44 @@ export class NameNormalizer {
     }
 
     return order;
+  }
+
+  private getEntryExportedSources(): Set<string> {
+    const sources = new Set<string>();
+    if (!this.entryFile) {
+      return sources;
+    }
+
+    const exported = this.registry.exportedNamesByFile.get(this.entryFile) ?? [];
+    for (const info of exported) {
+      if (info.sourceFile) {
+        sources.add(info.sourceFile);
+      } else {
+        sources.add(this.entryFile);
+      }
+    }
+
+    return sources;
+  }
+
+  private getExportEqualsFiles(): Set<string> {
+    const files = new Set<string>();
+
+    for (const [filePath, declarations] of this.registry.declarationsByFile.entries()) {
+      const declId = declarations.values().next().value as symbol | undefined;
+      if (!declId) continue;
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      const sourceFile = decl.sourceFileNode;
+      const hasExportEquals = sourceFile.statements.some(
+        (statement) => ts.isExportAssignment(statement) && statement.isExportEquals,
+      );
+      if (hasExportEquals) {
+        files.add(filePath);
+      }
+    }
+
+    return files;
   }
 
   private normalizeExternalImports(): void {

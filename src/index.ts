@@ -65,6 +65,16 @@ function bundle(
   });
   const { declarations: usedDeclarations, externalImports: usedExternals } = shaker.shake();
 
+  const entryImportedFiles = new Set<string>();
+  const entryImports = parser.importMap.get(entryFile);
+  if (entryImports) {
+    for (const importInfo of entryImports.values()) {
+      if (!importInfo.isExternal && importInfo.sourceFile) {
+        entryImportedFiles.add(importInfo.sourceFile);
+      }
+    }
+  }
+
   const generator = new OutputGenerator(registry, usedDeclarations, usedExternals, {
     ...options,
     includeEmptyExport,
@@ -73,6 +83,7 @@ function bundle(
     entryExportDefault: parser.entryExportDefault,
     entryExportDefaultName: parser.entryExportDefaultName,
     entryFile,
+    entryImportedFiles,
     typeChecker: collector.getTypeChecker(),
     preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,
   });

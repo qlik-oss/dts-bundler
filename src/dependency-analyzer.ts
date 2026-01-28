@@ -141,11 +141,23 @@ export class DependencyAnalyzer {
         if (!importInfo.isExternal && importInfo.originalName.startsWith("* as ")) {
           // Track this namespace dependency
           declaration.namespaceDependencies.add(refName);
-          // Mark the namespace as used by adding all declarations from its source file as dependencies
-          const sourceFileDecls = this.registry.declarationsByFile.get(importInfo.sourceFile);
-          if (sourceFileDecls) {
-            for (const declId of sourceFileDecls) {
-              declaration.dependencies.add(declId);
+
+          const memberNames = DependencyAnalyzer.collectNamespaceMemberReferences(declaration.node, refName);
+          if (memberNames.size > 0) {
+            for (const memberName of memberNames) {
+              const key = `${importInfo.sourceFile}:${memberName}`;
+              const depId = this.registry.nameIndex.get(key);
+              if (depId) {
+                declaration.dependencies.add(depId);
+              }
+            }
+          } else {
+            // Fallback: include all declarations from the namespace source file
+            const sourceFileDecls = this.registry.declarationsByFile.get(importInfo.sourceFile);
+            if (sourceFileDecls) {
+              for (const declId of sourceFileDecls) {
+                declaration.dependencies.add(declId);
+              }
             }
           }
         } else if (importInfo.isExternal) {
@@ -193,6 +205,16 @@ export class DependencyAnalyzer {
         const localKey = `${declaration.sourceFile}:${refName}`;
         const localId = this.registry.nameIndex.get(localKey);
         if (localId && localId !== declaration.id) {
+          const localDecl = this.registry.getDeclaration(localId);
+          if (localDecl && ts.isModuleDeclaration(localDecl.node)) {
+            const sourceFile = localDecl.sourceFileNode;
+            const hasExportEquals = sourceFile.statements.some(
+              (statement) => ts.isExportAssignment(statement) && statement.isExportEquals,
+            );
+            if (!hasExportEquals) {
+              continue;
+            }
+          }
           declaration.dependencies.add(localId);
         }
       }
@@ -298,6 +320,82 @@ export class DependencyAnalyzer {
     if (ts.isIdentifier(current)) {
       references.add(current.text);
     }
+  }
+
+  private static collectNamespaceMemberReferences(node: ts.Node, namespaceName: string): Set<string> {
+    const members = new Set<string>();
+
+    const visit = (child: ts.Node): void => {
+      if (ts.isTypeReferenceNode(child)) {
+        const typeName = child.typeName;
+        if (ts.isQualifiedName(typeName)) {
+          const member = DependencyAnalyzer.getFirstQualifiedMember(typeName, namespaceName);
+          if (member) {
+            members.add(member);
+          }
+        }
+      }
+
+      if (ts.isTypeQueryNode(child)) {
+        const exprName = child.exprName;
+        if (ts.isQualifiedName(exprName)) {
+          const member = DependencyAnalyzer.getFirstQualifiedMember(exprName, namespaceName);
+          if (member) {
+            members.add(member);
+          }
+        } else if (ts.isPropertyAccessExpression(exprName)) {
+          const member = DependencyAnalyzer.getFirstPropertyAccessMember(exprName, namespaceName);
+          if (member) {
+            members.add(member);
+          }
+        }
+      }
+
+      if (ts.isPropertyAccessExpression(child)) {
+        const member = DependencyAnalyzer.getFirstPropertyAccessMember(child, namespaceName);
+        if (member) {
+          members.add(member);
+        }
+      }
+
+      child.forEachChild(visit);
+    };
+
+    visit(node);
+    return members;
+  }
+
+  private static getFirstQualifiedMember(qualifiedName: ts.QualifiedName, namespaceName: string): string | null {
+    const parts: string[] = [];
+    let current: ts.EntityName = qualifiedName;
+    while (ts.isQualifiedName(current)) {
+      parts.unshift(current.right.text);
+      current = current.left;
+    }
+
+    if (ts.isIdentifier(current) && current.text === namespaceName) {
+      return parts[0] ?? null;
+    }
+
+    return null;
+  }
+
+  private static getFirstPropertyAccessMember(
+    propAccess: ts.PropertyAccessExpression,
+    namespaceName: string,
+  ): string | null {
+    const parts: string[] = [];
+    let current: ts.Expression = propAccess;
+    while (ts.isPropertyAccessExpression(current)) {
+      parts.unshift(current.name.text);
+      current = current.expression;
+    }
+
+    if (ts.isIdentifier(current) && current.text === namespaceName) {
+      return parts[0] ?? null;
+    }
+
+    return null;
   }
 
   private static extractPropertyAccess(propAccess: ts.PropertyAccessExpression, references: Set<string>): void {

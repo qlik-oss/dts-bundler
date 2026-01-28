@@ -156,6 +156,7 @@ export class TreeShaker {
       if (declId) {
         this.markUsed(declId);
       }
+      this.markSameNameDeclarationsUsed(declFile, declName);
 
       const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
       if (namespaceInfo?.targetFile) {
@@ -179,6 +180,15 @@ export class TreeShaker {
       const declId = this.registry.nameIndex.get(`${declFile}:${declName}`);
       if (declId) {
         this.markUsed(declId);
+      }
+      this.markSameNameDeclarationsUsed(declFile, declName);
+    }
+  }
+
+  private markSameNameDeclarationsUsed(sourceFile: string, name: string): void {
+    for (const decl of this.registry.declarations.values()) {
+      if (decl.sourceFile === sourceFile && decl.name === name) {
+        this.markUsed(decl.id);
       }
     }
   }

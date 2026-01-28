@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import ts from "typescript";
 import type { TypeRegistry } from "../registry.js";
 import { ExportKind } from "../types.js";
@@ -62,8 +64,20 @@ const shouldSkipEntryExport = (
   entryFile: string,
   exported: { name: string; originalName?: string; sourceFile?: string },
   aliasMap?: Map<string, { sourceFile: string; originalName: string }>,
+  nameMap?: Map<string, string>,
 ): boolean => {
   const { sourceFile, originalName } = resolveEntryExportOriginalName(registry, entryFile, exported, aliasMap);
+  const normalizedOriginal =
+    nameMap?.get(`${sourceFile}:${originalName}`) ??
+    nameMap?.get(`${sourceFile.replace(/\\/g, "/")}:${originalName}`) ??
+    nameMap?.get(`${path.resolve(sourceFile)}:${originalName}`) ??
+    nameMap?.get(`${path.resolve(sourceFile).replace(/\\/g, "/")}:${originalName}`) ??
+    (fs.existsSync(sourceFile) ? nameMap?.get(`${fs.realpathSync(sourceFile)}:${originalName}`) : undefined) ??
+    originalName;
+
+  if (normalizedOriginal !== exported.name) {
+    return false;
+  }
 
   if (originalName !== exported.name) {
     return false;
@@ -76,6 +90,10 @@ const shouldSkipEntryExport = (
 
   const decl = registry.getDeclaration(declId);
   if (!decl) {
+    return false;
+  }
+
+  if (decl.normalizedName !== decl.name) {
     return false;
   }
 
@@ -104,6 +122,14 @@ export const buildEntryExportData = (params: {
 
   const declarationExternalImports = collectDeclarationExternalImports(params.registry, params.usedDeclarations);
   const exportedNames = params.registry.exportedNamesByFile.get(entryFile) ?? [];
+  const exportedNameSet = new Set(exportedNames.map((item) => item.name));
+  if (params.entryAliasMap) {
+    for (const [name, info] of params.entryAliasMap.entries()) {
+      if (exportedNameSet.has(name)) continue;
+      exportedNames.push({ name, originalName: info.originalName, sourceFile: info.sourceFile });
+      exportedNameSet.add(name);
+    }
+  }
   const namespaceExports = new Set(
     params.registry.entryNamespaceExports.filter((entry) => entry.sourceFile === entryFile).map((entry) => entry.name),
   );
@@ -158,11 +184,20 @@ export const buildEntryExportData = (params: {
       exported,
       params.entryAliasMap,
     );
-    const normalizedOriginal = params.nameMap.get(`${sourceFile}:${originalName}`) ?? originalName;
+    const declId = params.registry.nameIndex.get(`${sourceFile}:${originalName}`);
+    const decl = declId ? params.registry.getDeclaration(declId) : null;
+    const normalizedOriginal =
+      decl?.normalizedName ??
+      params.nameMap.get(`${sourceFile}:${originalName}`) ??
+      params.nameMap.get(`${sourceFile.replace(/\\/g, "/")}:${originalName}`) ??
+      params.nameMap.get(`${path.resolve(sourceFile)}:${originalName}`) ??
+      params.nameMap.get(`${path.resolve(sourceFile).replace(/\\/g, "/")}:${originalName}`) ??
+      (fs.existsSync(sourceFile) ? params.nameMap.get(`${fs.realpathSync(sourceFile)}:${originalName}`) : undefined) ??
+      originalName;
     const exportItem =
       normalizedOriginal === exported.name ? normalizedOriginal : `${normalizedOriginal} as ${exported.name}`;
 
-    if (shouldSkipEntryExport(params.registry, entryFile, exported, params.entryAliasMap)) {
+    if (shouldSkipEntryExport(params.registry, entryFile, exported, params.entryAliasMap, params.nameMap)) {
       continue;
     }
 

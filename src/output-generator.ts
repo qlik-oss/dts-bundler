@@ -37,6 +37,7 @@ export class OutputGenerator {
     preserveConstEnums?: boolean;
     respectPreserveConstEnum?: boolean;
     entryFile?: string;
+    entryImportedFiles?: Set<string>;
   };
 
   constructor(
@@ -58,6 +59,7 @@ export class OutputGenerator {
       preserveConstEnums?: boolean;
       respectPreserveConstEnum?: boolean;
       entryFile?: string;
+      entryImportedFiles?: Set<string>;
     } = {},
   ) {
     this.registry = registry;
@@ -200,6 +202,7 @@ export class OutputGenerator {
       const namedListOrdered = nonNamespaceImports
         .filter((imp) => imp !== primaryDefault)
         .map((imp) => imp.normalizedName);
+      const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
 
       if (hasDefaultImport) {
         const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";
@@ -215,8 +218,12 @@ export class OutputGenerator {
         }
       } else if (defaultImports.length > 0 || namedImports.length > 0) {
         if (namedListOrdered.length > 1) {
-          const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
-          lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
+          if (preferSingleLineNamed) {
+            lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
+          } else {
+            const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
+            lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
+          }
         } else if (namedListOrdered.length === 1) {
           lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
         }
@@ -457,6 +464,7 @@ export class OutputGenerator {
       .filter((imp) => imp !== primaryDefault)
       .map((imp) => imp.normalizedName)
       .sort((a, b) => OutputGenerator.extractImportName(a).localeCompare(OutputGenerator.extractImportName(b)));
+    const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
 
     if (hasDefaultImport) {
       const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";
@@ -472,8 +480,12 @@ export class OutputGenerator {
       }
     } else if (defaultImports.length > 0 || namedImports.length > 0) {
       if (namedListOrdered.length > 1) {
-        const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
-        lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
+        if (preferSingleLineNamed) {
+          lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
+        } else {
+          const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
+          lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
+        }
       } else if (namedListOrdered.length === 1) {
         lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
       }
@@ -490,6 +502,7 @@ export class OutputGenerator {
 
   private generateDeclarations(): string[] {
     const lines: string[] = [];
+    const aliasExportedNames = this.getAliasExportedNames();
 
     const sorted = this.topologicalSort();
     const ordered = this.options.sortNodes
@@ -561,9 +574,12 @@ export class OutputGenerator {
       const suppressExportForModuleAugmentation =
         ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
       const stripConstEnum = this.shouldStripConstEnum(declaration);
+      const suppressExportForAlias = aliasExportedNames.has(declaration.normalizedName);
 
       const isTypeOnlyDeclaration =
         ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
+      const shouldExportDefaultOnlyType =
+        declaration.exportInfo.kind === ExportKind.DefaultOnly && isTypeOnlyDeclaration;
       const suppressDefaultOnlyExport =
         declaration.exportInfo.kind === ExportKind.DefaultOnly && !isTypeOnlyDeclaration;
       const suppressExportKeywordForDefault =
@@ -573,7 +589,10 @@ export class OutputGenerator {
         declaration.exportInfo.kind !== ExportKind.Equals &&
         !suppressExportKeywordForDefault &&
         !suppressExportForModuleAugmentation &&
-        (declaration.exportInfo.kind === ExportKind.Named || declaration.exportInfo.wasOriginallyExported);
+        !suppressExportForAlias &&
+        (declaration.exportInfo.kind === ExportKind.Named ||
+          declaration.exportInfo.wasOriginallyExported ||
+          shouldExportDefaultOnlyType);
 
       const transformedStatement = OutputGenerator.transformStatementForOutput(
         declaration,
@@ -584,11 +603,13 @@ export class OutputGenerator {
       );
       const renameMap = this.buildRenameMap(declaration);
       const qualifiedNameMap = this.buildQualifiedNameMap(declaration);
+      const namespaceImportNames = OutputGenerator.buildNamespaceImportNames(declaration);
       const printed = this.astPrinter.printStatement(transformedStatement, declaration.sourceFileNode, {
         renameMap,
         qualifiedNameMap,
         typeChecker: this.options.typeChecker,
         preserveGlobalReferences: true,
+        namespaceImportNames,
       });
       const preserveJsDoc = OutputGenerator.shouldPreserveJsDoc(declaration, shouldHaveExport);
       lines.push(normalizePrintedStatement(printed, declaration.node, declaration.getText(), { preserveJsDoc }));
@@ -936,6 +957,11 @@ export class OutputGenerator {
     const visited = new Set<symbol>();
     const visiting = new Set<symbol>();
 
+    const isExportEqualsFile = (declaration: TypeDeclaration): boolean =>
+      declaration.sourceFileNode.statements.some(
+        (statement) => ts.isExportAssignment(statement) && statement.isExportEquals,
+      );
+
     const visit = (id: symbol): void => {
       if (visited.has(id)) return;
       if (visiting.has(id)) {
@@ -959,23 +985,88 @@ export class OutputGenerator {
     };
 
     const used = Array.from(this.usedDeclarations);
-    const exported = used.filter((id) => {
-      const decl = this.registry.getDeclaration(id);
-      return decl && decl.exportInfo.kind !== ExportKind.NotExported;
-    });
-    const nonExported = used.filter((id) => {
-      const decl = this.registry.getDeclaration(id);
-      return decl && decl.exportInfo.kind === ExportKind.NotExported;
+    const entryImportedFiles = this.options.entryImportedFiles ?? new Set<string>();
+    const indexById = new Map<symbol, number>();
+    used.forEach((id, index) => indexById.set(id, index));
+
+    const ordered = [...used].sort((a, b) => {
+      const declA = this.registry.getDeclaration(a);
+      const declB = this.registry.getDeclaration(b);
+      if (!declA || !declB) return 0;
+
+      const aEntry = entryImportedFiles.has(declA.sourceFile);
+      const bEntry = entryImportedFiles.has(declB.sourceFile);
+      if (aEntry !== bEntry) return aEntry ? -1 : 1;
+
+      const aExported = declA.exportInfo.kind !== ExportKind.NotExported || isExportEqualsFile(declA);
+      const bExported = declB.exportInfo.kind !== ExportKind.NotExported || isExportEqualsFile(declB);
+      if (aExported !== bExported) return aExported ? 1 : -1;
+
+      return (indexById.get(a) ?? 0) - (indexById.get(b) ?? 0);
     });
 
-    for (const id of nonExported) {
-      visit(id);
-    }
-    for (const id of exported) {
+    // Ordering adjustments are handled after sorting.
+
+    for (const id of ordered) {
       visit(id);
     }
 
-    return sorted;
+    return this.adjustDeclarationOrderByFile(sorted);
+  }
+
+  private adjustDeclarationOrderByFile(declarations: TypeDeclaration[]): TypeDeclaration[] {
+    if (declarations.length === 0) {
+      return declarations;
+    }
+
+    const entryFile = this.options.entryFile;
+    const byFile = new Map<string, TypeDeclaration[]>();
+    for (const decl of declarations) {
+      const list = byFile.get(decl.sourceFile) ?? [];
+      list.push(decl);
+      byFile.set(decl.sourceFile, list);
+    }
+
+    const defaultExportAssignmentFiles = new Set<string>();
+    for (const [file, list] of byFile.entries()) {
+      if (entryFile && file === entryFile) {
+        continue;
+      }
+      const sourceFileNode = list[0].sourceFileNode;
+      const hasDefaultExportAssignment = sourceFileNode.statements.some(
+        (statement) =>
+          ts.isExportAssignment(statement) && !statement.isExportEquals && ts.isIdentifier(statement.expression),
+      );
+      if (hasDefaultExportAssignment) {
+        defaultExportAssignmentFiles.add(file);
+      }
+    }
+
+    if (defaultExportAssignmentFiles.size === 0) {
+      return declarations;
+    }
+
+    const result: TypeDeclaration[] = [];
+    for (const decl of declarations) {
+      if (!defaultExportAssignmentFiles.has(decl.sourceFile)) {
+        result.push(decl);
+        continue;
+      }
+
+      const list = byFile.get(decl.sourceFile);
+      if (!list || list.length === 0) continue;
+
+      const sortedList = [...list].sort((a, b) => {
+        const posDiff = a.node.pos - b.node.pos;
+        if (posDiff !== 0) return posDiff;
+        return declarations.indexOf(a) - declarations.indexOf(b);
+      });
+
+      result.push(...sortedList);
+      list.length = 0;
+    }
+
+    return result;
   }
 
   private buildRenameMap(declaration: TypeDeclaration): Map<string, string> {
@@ -1035,7 +1126,44 @@ export class OutputGenerator {
       }
     }
 
+    const localRefs = OutputGenerator.collectLocalTypeReferences(declaration.node);
+    for (const refName of localRefs) {
+      const localId = this.registry.nameIndex.get(`${declaration.sourceFile}:${refName}`);
+      if (!localId) continue;
+      const localDecl = this.registry.getDeclaration(localId);
+      if (!localDecl) continue;
+      if (localDecl.name !== localDecl.normalizedName) {
+        renameMap.set(localDecl.name, localDecl.normalizedName);
+      }
+    }
+
     return renameMap;
+  }
+
+  private static collectLocalTypeReferences(node: ts.Node): Set<string> {
+    const refs = new Set<string>();
+
+    const visit = (current: ts.Node): void => {
+      if (ts.isTypeReferenceNode(current)) {
+        const typeName = current.typeName;
+        if (ts.isIdentifier(typeName)) {
+          refs.add(typeName.text);
+        } else if (ts.isQualifiedName(typeName)) {
+          const leftmost = OutputGenerator.getLeftmostEntityName(typeName);
+          if (leftmost) refs.add(leftmost);
+        }
+      }
+
+      if (ts.isTypeQueryNode(current)) {
+        const leftmost = OutputGenerator.getLeftmostEntityName(current.exprName);
+        if (leftmost) refs.add(leftmost);
+      }
+
+      current.forEachChild(visit);
+    };
+
+    visit(node);
+    return refs;
   }
 
   private buildRenameMapForDeclarations(declarations: TypeDeclaration[]): Map<string, string> {
@@ -1047,6 +1175,30 @@ export class OutputGenerator {
     }
 
     return merged;
+  }
+
+  private getAliasExportedNames(): Set<string> {
+    const aliasNames = new Set<string>();
+    const { exportListItems } = this.getEntryExportData();
+    for (const item of exportListItems) {
+      const parts = item.split(" as ");
+      if (parts.length === 2) {
+        aliasNames.add(parts[0].trim());
+      }
+    }
+    return aliasNames;
+  }
+
+  private static buildNamespaceImportNames(declaration: TypeDeclaration): Set<string> {
+    const names = new Set<string>();
+    for (const importNames of declaration.externalDependencies.values()) {
+      for (const importName of importNames) {
+        if (importName.startsWith("* as ")) {
+          names.add(OutputGenerator.extractImportName(importName));
+        }
+      }
+    }
+    return names;
   }
 
   private buildQualifiedNameMap(declaration: TypeDeclaration): Map<string, string> {
@@ -1218,7 +1370,11 @@ export class OutputGenerator {
     const modifiersMap = modifiersToMap(getModifiers(statement));
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
     const shouldForceExport = shouldHaveExport && OutputGenerator.shouldForceExport(statement);
-    modifiersMap[ts.SyntaxKind.ExportKeyword] = (hadExport || shouldForceExport) && shouldHaveExport;
+    const shouldExportDefaultOnlyType =
+      declaration.exportInfo.kind === ExportKind.DefaultOnly &&
+      (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement));
+    const shouldAddExport = shouldHaveExport && (hadExport || shouldForceExport || shouldExportDefaultOnlyType);
+    modifiersMap[ts.SyntaxKind.ExportKeyword] = shouldAddExport;
     if (suppressExportForDefault) {
       modifiersMap[ts.SyntaxKind.DefaultKeyword] = false;
     }
@@ -1263,6 +1419,25 @@ export class OutputGenerator {
       });
 
       statement = ts.factory.updateEnumDeclaration(statement, statement.modifiers, statement.name, members);
+    }
+
+    if (ts.isFunctionDeclaration(statement) && !statement.type) {
+      const isDefaultExport =
+        declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly;
+      if (!isDefaultExport) {
+        const updated = ts.factory.updateFunctionDeclaration(
+          statement,
+          statement.modifiers,
+          statement.asteriskToken,
+          statement.name,
+          statement.typeParameters,
+          statement.parameters,
+          ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword),
+          statement.body,
+        );
+        ts.setTextRange(updated, statement);
+        statement = updated;
+      }
     }
 
     if (stripConstEnum) {
@@ -1496,6 +1671,10 @@ export class OutputGenerator {
 
   private static shouldPreserveJsDoc(declaration: TypeDeclaration, shouldHaveExport: boolean): boolean {
     if (shouldHaveExport) {
+      return true;
+    }
+
+    if (declaration.exportInfo.wasOriginallyExported) {
       return true;
     }
 

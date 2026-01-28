@@ -5,6 +5,7 @@ export interface AstPrintOptions {
   qualifiedNameMap?: Map<string, string>;
   typeChecker?: ts.TypeChecker;
   preserveGlobalReferences?: boolean;
+  namespaceImportNames?: Set<string>;
 }
 
 export class AstPrinter {
@@ -26,6 +27,7 @@ export class AstPrinter {
             options.qualifiedNameMap,
             options.typeChecker,
             options.preserveGlobalReferences,
+            options.namespaceImportNames,
           )
         : node;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
@@ -40,6 +42,7 @@ export class AstPrinter {
             options.qualifiedNameMap,
             options.typeChecker,
             options.preserveGlobalReferences,
+            options.namespaceImportNames,
           )
         : statement;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
@@ -51,6 +54,7 @@ export class AstPrinter {
     qualifiedNameMap?: Map<string, string>,
     typeChecker?: ts.TypeChecker,
     preserveGlobalReferences?: boolean,
+    namespaceImportNames?: Set<string>,
   ): T {
     const transformer: ts.TransformerFactory<T> = (context) => {
       const isGlobalReference = (identifier: ts.Identifier): boolean => {
@@ -114,7 +118,24 @@ export class AstPrinter {
         if (ts.isIdentifier(current)) {
           const parent = (current as Omit<ts.Node, "parent"> & { parent?: ts.Node }).parent;
           if (parent && ts.isModuleDeclaration(parent) && parent.name === current) {
-            return current;
+            if (current.text === "global") {
+              return current;
+            }
+            const renamed = renameMap?.get(current.text);
+            if (!renamed || renamed === current.text) {
+              return current;
+            }
+          }
+          if (
+            namespaceImportNames &&
+            parent &&
+            ((ts.isQualifiedName(parent) && parent.right === current) ||
+              (ts.isPropertyAccessExpression(parent) && parent.name === current))
+          ) {
+            const left = ts.isQualifiedName(parent) ? parent.left : parent.expression;
+            if (ts.isIdentifier(left) && namespaceImportNames.has(left.text)) {
+              return current;
+            }
           }
           if (preserveGlobalReferences && isGlobalReference(current)) {
             return current;
