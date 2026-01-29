@@ -213,6 +213,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("re-export-star-member");
       expect(result).toBe(expected);
     });
+
+    it("should handle re-export without statements (namespace re-export)", () => {
+      const { expected, result } = runTestCase("re-export-without-statements");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Module Formats", () => {
