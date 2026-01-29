@@ -36,6 +36,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should inline local type-only imports", () => {
+      const { expected, result } = runTestCase("local-type-imports-inline");
+      expect(result).toBe(expected);
+    });
+
     it("should handle import() type", () => {
       const { expected, result } = runTestCase("import()-type", { inlinedLibraries: ["fake-package"] });
       expect(result).toBe(expected);
@@ -219,8 +224,20 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should preserve declare global when enabled (simple case)", () => {
+      const { expected, result } = runTestCase("declare-global-preserved", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
     it("should inline declare global when enabled", () => {
       const { expected, result } = runTestCase("inline-declare-global", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline local types used in declare global", () => {
+      const { expected, result } = runTestCase("declare-global-with-local-imports", {
+        inlineDeclareGlobals: true,
+      });
       expect(result).toBe(expected);
     });
   });

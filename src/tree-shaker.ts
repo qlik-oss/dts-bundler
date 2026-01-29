@@ -51,7 +51,8 @@ export class TreeShaker {
     const declaration = this.registry.getDeclaration(declarationId);
     if (!declaration) return;
 
-    if (this.exportReferencedTypes) {
+    const shouldIncludeDependencies = this.exportReferencedTypes || declaration.dependencies.size > 0;
+    if (shouldIncludeDependencies) {
       for (const depId of declaration.dependencies) {
         this.markUsed(depId);
       }

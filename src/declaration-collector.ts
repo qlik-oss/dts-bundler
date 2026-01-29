@@ -172,6 +172,9 @@ export class DeclarationCollector {
       ...exportInfo,
       wasOriginallyExported,
     });
+    if (declareGlobal && this.options.inlineDeclareGlobals) {
+      declaration.forceInclude = true;
+    }
     this.registry.register(declaration);
   }
 

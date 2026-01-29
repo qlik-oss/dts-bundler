@@ -258,6 +258,11 @@ export class FileCollector {
         }
       }
 
+      const resolvedByTs = this.resolveModuleSpecifier(fromFile, importPath);
+      if (resolvedByTs && fs.existsSync(resolvedByTs) && fs.statSync(resolvedByTs).isFile()) {
+        return resolvedByTs;
+      }
+
       return null;
     }
 
