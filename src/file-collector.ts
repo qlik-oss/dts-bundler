@@ -252,7 +252,7 @@ export class FileCollector {
       for (const base of basePaths) {
         for (const ext of extensions) {
           const fullPath = base + ext;
-          if (fs.existsSync(fullPath)) {
+          if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
             return fullPath;
           }
         }
@@ -372,7 +372,7 @@ export class FileCollector {
         const resolvedPath = this.resolveImport(currentPath, importPath);
         if (!resolvedPath || files.has(resolvedPath)) return;
 
-        if (!fs.existsSync(resolvedPath)) return;
+        if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) return;
         const content = fs.readFileSync(resolvedPath, "utf-8");
         const sourceFile = ts.createSourceFile(resolvedPath, content, ts.ScriptTarget.Latest, true);
         if (!this.shouldInlineFile(sourceFile)) return;

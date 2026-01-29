@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DeclarationParser } from "./declaration-parser.js";
 import { DependencyAnalyzer } from "./dependency-analyzer.js";
 import { FileCollector } from "./file-collector.js";
@@ -174,7 +175,18 @@ function parseArgs(): { entry: string | null; output: string | null; inlinedLibr
   return options;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const __filename = fileURLToPath(import.meta.url);
+
+function isRunAsCli(): boolean {
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+  } catch {
+    return false;
+  }
+}
+
+if (isRunAsCli()) {
   const options = parseArgs();
 
   console.log(`Bundling types from ${path.resolve(options.entry as string)}...`);
