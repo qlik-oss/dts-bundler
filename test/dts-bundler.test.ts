@@ -199,6 +199,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle re-export as default of unnamed class", () => {
+      const { expected, result } = runTestCase("re-export-as-default-of-unnamed-class");
+      expect(result).toBe(expected);
+    });
+
     it("should handle re-exporting members from star", () => {
       const { expected, result } = runTestCase("re-export-star-member");
       expect(result).toBe(expected);

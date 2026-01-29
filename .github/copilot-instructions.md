@@ -16,6 +16,8 @@ When implementing test cases in this repository, follow these strict rules:
    - `pnpm test` - ensure no regressions
    - `pnpm lint` - code style compliance
    - `pnpm check-types` - TypeScript type safety
+   - `pnpm build` - successful build
+   - `pnpm format:write` - to auto-format code
 
 ### Red Flags
 
