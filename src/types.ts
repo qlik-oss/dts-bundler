@@ -71,6 +71,7 @@ export interface ImportInfo {
 export enum ExportKind {
   NotExported = "NOT_EXPORTED",
   Named = "NAMED",
+  NamedAndDefault = "NAMED_AND_DEFAULT",
   Default = "DEFAULT",
   DefaultOnly = "DEFAULT_ONLY",
   Equals = "EQUALS",

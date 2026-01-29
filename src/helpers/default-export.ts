@@ -12,7 +12,11 @@ export const resolveDefaultExportNameFromRegistry = (registry: TypeRegistry, fil
   for (const declId of declarations) {
     const decl = registry.getDeclaration(declId);
     if (!decl) continue;
-    if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+    if (
+      decl.exportInfo.kind === ExportKind.Default ||
+      decl.exportInfo.kind === ExportKind.DefaultOnly ||
+      decl.exportInfo.kind === ExportKind.NamedAndDefault
+    ) {
       return decl.name;
     }
     if (ts.isStatement(decl.node) && hasDefaultModifier(decl.node)) {

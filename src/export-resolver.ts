@@ -343,9 +343,20 @@ export class ExportResolver {
               for (const declarationId of declarationIds) {
                 const declaration = this.registry.getDeclaration(declarationId);
                 if (!declaration) continue;
+                const nextKind = isDefaultExport ? ExportKind.Default : ExportKind.Named;
+                const currentKind = declaration.exportInfo.kind;
+                const mergedDefault =
+                  nextKind === ExportKind.Default &&
+                  (currentKind === ExportKind.Named || currentKind === ExportKind.NamedAndDefault);
+                const mergedNamed =
+                  nextKind === ExportKind.Named &&
+                  (currentKind === ExportKind.Default ||
+                    currentKind === ExportKind.DefaultOnly ||
+                    currentKind === ExportKind.NamedAndDefault);
+
                 declaration.exportInfo = {
-                  kind: isDefaultExport ? ExportKind.Default : ExportKind.Named,
-                  wasOriginallyExported: !isDefaultExport,
+                  kind: mergedDefault || mergedNamed ? ExportKind.NamedAndDefault : nextKind,
+                  wasOriginallyExported: declaration.exportInfo.wasOriginallyExported || !isDefaultExport,
                 };
               }
 
@@ -405,8 +416,15 @@ export class ExportResolver {
               for (const declarationId of declarationIds) {
                 const declaration = this.registry.getDeclaration(declarationId);
                 if (!declaration) continue;
+                const currentKind = declaration.exportInfo.kind;
+                const nextKind =
+                  currentKind === ExportKind.Default ||
+                  currentKind === ExportKind.DefaultOnly ||
+                  currentKind === ExportKind.NamedAndDefault
+                    ? ExportKind.NamedAndDefault
+                    : ExportKind.Named;
                 declaration.exportInfo = {
-                  kind: ExportKind.Named,
+                  kind: nextKind,
                   wasOriginallyExported: true,
                 };
               }
@@ -420,8 +438,15 @@ export class ExportResolver {
               for (const declarationId of localDeclarationIds) {
                 const declaration = this.registry.getDeclaration(declarationId);
                 if (!declaration) continue;
+                const currentKind = declaration.exportInfo.kind;
+                const nextKind =
+                  currentKind === ExportKind.Default ||
+                  currentKind === ExportKind.DefaultOnly ||
+                  currentKind === ExportKind.NamedAndDefault
+                    ? ExportKind.NamedAndDefault
+                    : ExportKind.Named;
                 declaration.exportInfo = {
-                  kind: ExportKind.Named,
+                  kind: nextKind,
                   wasOriginallyExported: true,
                 };
               }
@@ -819,9 +844,20 @@ export class ExportResolver {
           if (!declaration) continue;
           const wasExported =
             declaration.exportInfo.kind !== ExportKind.NotExported || declaration.exportInfo.wasOriginallyExported;
+          const currentKind = declaration.exportInfo.kind;
+          let nextKind: ExportKind;
+          if (wasExported) {
+            if (currentKind === ExportKind.Named || currentKind === ExportKind.NamedAndDefault) {
+              nextKind = ExportKind.NamedAndDefault;
+            } else {
+              nextKind = ExportKind.Default;
+            }
+          } else {
+            nextKind = ExportKind.DefaultOnly;
+          }
 
           declaration.exportInfo = {
-            kind: wasExported ? ExportKind.Default : ExportKind.DefaultOnly,
+            kind: nextKind,
             wasOriginallyExported: declaration.exportInfo.wasOriginallyExported,
           };
         }

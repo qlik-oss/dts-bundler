@@ -239,7 +239,7 @@ export class VariableDeclarationEmitter {
       return false;
     }
 
-    return kind === ExportKind.Named || decl.exportInfo.wasOriginallyExported;
+    return kind === ExportKind.Named || kind === ExportKind.NamedAndDefault || decl.exportInfo.wasOriginallyExported;
   }
 
   private static shouldKeepInitializer(decl: ts.VariableDeclaration, checker: ts.TypeChecker): boolean {

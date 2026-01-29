@@ -579,7 +579,8 @@ export class OutputGenerator {
         (ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword) ?? false);
       const suppressDefaultKeyword =
         (declaration.exportInfo.kind === ExportKind.Default ||
-          declaration.exportInfo.kind === ExportKind.DefaultOnly) &&
+          declaration.exportInfo.kind === ExportKind.DefaultOnly ||
+          declaration.exportInfo.kind === ExportKind.NamedAndDefault) &&
         hasDefaultModifier;
       const suppressExportForModuleAugmentation =
         ts.isInterfaceDeclaration(declaration.node) && exportedModuleAugmentations.has(declaration.name);
@@ -605,6 +606,7 @@ export class OutputGenerator {
         !suppressExportForModuleAugmentation &&
         !suppressExportForAlias &&
         (declaration.exportInfo.kind === ExportKind.Named ||
+          declaration.exportInfo.kind === ExportKind.NamedAndDefault ||
           declaration.exportInfo.wasOriginallyExported ||
           shouldExportDefaultOnlyType ||
           shouldExportMergeGroup);
@@ -1340,7 +1342,11 @@ export class OutputGenerator {
     for (const declId of declarations) {
       const decl = this.registry.getDeclaration(declId);
       if (!decl) continue;
-      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+      if (
+        decl.exportInfo.kind === ExportKind.Default ||
+        decl.exportInfo.kind === ExportKind.DefaultOnly ||
+        decl.exportInfo.kind === ExportKind.NamedAndDefault
+      ) {
         return decl.name;
       }
       if (ts.isStatement(decl.node) && ts.canHaveModifiers(decl.node)) {

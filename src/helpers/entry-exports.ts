@@ -96,7 +96,11 @@ const shouldSkipEntryExport = (
     if (decl.normalizedName !== decl.name) {
       return false;
     }
-    if (decl.exportInfo.kind !== ExportKind.Named && !decl.exportInfo.wasOriginallyExported) {
+    if (
+      decl.exportInfo.kind !== ExportKind.Named &&
+      decl.exportInfo.kind !== ExportKind.NamedAndDefault &&
+      !decl.exportInfo.wasOriginallyExported
+    ) {
       return false;
     }
   }
