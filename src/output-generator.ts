@@ -30,6 +30,7 @@ export class OutputGenerator {
     allowedTypesLibraries?: string[];
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
+    detectedTypesLibraries?: Set<string>;
     entryExportEquals?: ts.ExportAssignment | null;
     entryExportDefault?: ts.ExportAssignment | null;
     entryExportDefaultName?: string | null;
@@ -56,6 +57,7 @@ export class OutputGenerator {
       allowedTypesLibraries?: string[];
       importedLibraries?: string[];
       referencedTypes?: Set<string>;
+      detectedTypesLibraries?: Set<string>;
       entryExportEquals?: ts.ExportAssignment | null;
       entryExportDefault?: ts.ExportAssignment | null;
       entryExportDefaultName?: string | null;
@@ -1378,20 +1380,28 @@ export class OutputGenerator {
 
   private generateReferenceDirectives(): string[] {
     const directives: string[] = [];
-    const { referencedTypes, allowedTypesLibraries } = this.options;
+    const { referencedTypes, allowedTypesLibraries, detectedTypesLibraries } = this.options;
+    const typesToReference = new Set<string>();
 
-    if (!referencedTypes || referencedTypes.size === 0 || !allowedTypesLibraries) {
-      return directives;
+    if (referencedTypes && allowedTypesLibraries) {
+      for (const typeName of referencedTypes) {
+        if (allowedTypesLibraries.includes(typeName)) {
+          typesToReference.add(typeName);
+        }
+      }
     }
 
-    // Generate triple-slash directives for types that are both:
-    // 1. Referenced with preserve="true" in source files
-    // 2. Listed in allowedTypesLibraries
-    const sortedTypes = Array.from(referencedTypes).sort();
-    for (const typeName of sortedTypes) {
-      if (allowedTypesLibraries.includes(typeName)) {
-        directives.push(`/// <reference types="${typeName}" />`);
+    if (detectedTypesLibraries) {
+      for (const typeName of detectedTypesLibraries) {
+        if (!allowedTypesLibraries || allowedTypesLibraries.includes(typeName)) {
+          typesToReference.add(typeName);
+        }
       }
+    }
+
+    const sortedTypes = Array.from(typesToReference).sort();
+    for (const typeName of sortedTypes) {
+      directives.push(`/// <reference types="${typeName}" />`);
     }
 
     return directives;

@@ -55,6 +55,7 @@ export class TypeRegistry {
     importName: string,
     isTypeOnly: boolean,
     isDefaultImport = false,
+    typesLibraryName: string | null = null,
   ): ExternalImport {
     if (!this.externalImports.has(moduleName)) {
       this.externalImports.set(moduleName, new Map());
@@ -62,7 +63,15 @@ export class TypeRegistry {
 
     const moduleImports = this.externalImports.get(moduleName) as Map<string, ExternalImport>;
     if (!moduleImports.has(importName)) {
-      moduleImports.set(importName, new ExternalImport(moduleName, importName, isTypeOnly, isDefaultImport));
+      moduleImports.set(
+        importName,
+        new ExternalImport(moduleName, importName, isTypeOnly, isDefaultImport, typesLibraryName),
+      );
+    } else if (typesLibraryName) {
+      const existing = moduleImports.get(importName);
+      if (existing && !existing.typesLibraryName) {
+        existing.typesLibraryName = typesLibraryName;
+      }
     }
 
     return moduleImports.get(importName) as ExternalImport;

@@ -78,6 +78,10 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("import-variables");
       expect(result).toBe(expected);
     });
+    it("should handle importing from types", () => {
+      const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Library Management", () => {

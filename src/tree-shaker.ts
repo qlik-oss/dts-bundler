@@ -16,7 +16,11 @@ export class TreeShaker {
     this.entryFile = options.entryFile;
   }
 
-  shake(): { declarations: Set<symbol>; externalImports: Map<string, Set<ExternalImport>> } {
+  shake(): {
+    declarations: Set<symbol>;
+    externalImports: Map<string, Set<ExternalImport>>;
+    detectedTypesLibraries: Set<string>;
+  } {
     const exported = this.registry.getAllExported();
 
     for (const declaration of exported) {
@@ -38,7 +42,23 @@ export class TreeShaker {
     return {
       declarations: this.used,
       externalImports: this.collectUsedExternalImports(),
+      detectedTypesLibraries: this.collectDetectedTypesLibraries(),
     };
+  }
+
+  private collectDetectedTypesLibraries(): Set<string> {
+    const result = new Set<string>();
+
+    for (const [moduleName, moduleImports] of this.registry.externalImports.entries()) {
+      for (const [importName, externalImport] of moduleImports.entries()) {
+        const key = `${moduleName}:${importName}`;
+        if (this.usedExternals.has(key) && externalImport.typesLibraryName) {
+          result.add(externalImport.typesLibraryName);
+        }
+      }
+    }
+
+    return result;
   }
 
   private markUsed(declarationId: symbol): void {

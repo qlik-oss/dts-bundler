@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import { builtinModules } from "node:module";
 import path from "node:path";
 import ts from "typescript";
-import { getLibraryName } from "./helpers/node-modules.js";
+import { getLibraryName, getTypesLibraryName } from "./helpers/node-modules.js";
 import { findTsConfig, getCompilerOptions } from "./helpers/typescript-config.js";
 
 interface FileCollectorOptions {
@@ -25,6 +26,7 @@ export class FileCollector {
   private modulePathCache: Map<string, string>;
   private moduleFilesByLibrary: Map<string, string[]>;
   private moduleResolveCache: Map<string, string | null>;
+  private externalResolveCache: Map<string, { resolvedPath: string | null; typesLibraryName: string | null }>;
 
   constructor(entryFile: string, options: FileCollectorOptions = {}) {
     this.entryFile = path.resolve(entryFile);
@@ -38,6 +40,7 @@ export class FileCollector {
     this.modulePathCache = new Map();
     this.moduleFilesByLibrary = new Map();
     this.moduleResolveCache = new Map();
+    this.externalResolveCache = new Map();
     this.buildModuleCaches();
   }
 
@@ -301,6 +304,43 @@ export class FileCollector {
     const result = ts.resolveModuleName(importPath, fromFile, this.program.getCompilerOptions(), ts.sys);
     const resolvedFileName = result.resolvedModule?.resolvedFileName;
     return resolvedFileName ?? null;
+  }
+
+  resolveExternalImport(
+    fromFile: string,
+    importPath: string,
+  ): { resolvedPath: string | null; typesLibraryName: string | null } {
+    const cacheKey = `${fromFile}::${importPath}`;
+    const cached = this.externalResolveCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    let resolvedPath = this.resolveModuleSpecifier(fromFile, importPath);
+    if (!resolvedPath && importPath.startsWith(".")) {
+      resolvedPath = this.resolveImport(fromFile, importPath);
+    }
+
+    let typesLibraryName = resolvedPath ? getTypesLibraryName(resolvedPath) : null;
+    if (typesLibraryName) {
+      const importLibraryName = FileCollector.getLibraryNameFromImportPath(importPath);
+      if (typesLibraryName === importLibraryName) {
+        typesLibraryName = null;
+      }
+    }
+
+    if (!typesLibraryName && FileCollector.isNodeBuiltin(importPath)) {
+      typesLibraryName = "node";
+    }
+
+    const result = { resolvedPath: resolvedPath ?? null, typesLibraryName };
+    this.externalResolveCache.set(cacheKey, result);
+    return result;
+  }
+
+  private static isNodeBuiltin(importPath: string): boolean {
+    const normalized = importPath.startsWith("node:") ? importPath.slice(5) : importPath;
+    return builtinModules.includes(importPath) || builtinModules.includes(normalized);
   }
 
   private static collectImportTypeModuleSpecifiers(sourceFile: ts.SourceFile): Set<string> {

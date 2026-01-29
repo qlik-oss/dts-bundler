@@ -66,7 +66,8 @@ export class ExportResolver {
         );
       } else {
         const importName = `* as ${exportName}`;
-        this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+        const typesLibraryName = this.getTypesLibraryName(filePath, importPath);
+        this.registry.registerExternal(importPath, importName, statement.isTypeOnly, false, typesLibraryName);
         this.registry.registerNamespaceExport(
           filePath,
           {
@@ -151,7 +152,8 @@ export class ExportResolver {
               }
             } else {
               const importName = `* as ${exportName}`;
-              this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+              const typesLibraryName = this.getTypesLibraryName(filePath, importPath);
+              this.registry.registerExternal(importPath, importName, statement.isTypeOnly, false, typesLibraryName);
               this.registry.registerNamespaceExport(filePath, {
                 name: exportName,
                 externalModule: importPath,
@@ -241,7 +243,8 @@ export class ExportResolver {
             }
           } else if (!isInline) {
             const importName = originalName === exportedName ? originalName : `${originalName} as ${exportedName}`;
-            this.registry.registerExternal(importPath, importName, statement.isTypeOnly);
+            const typesLibraryName = this.getTypesLibraryName(filePath, importPath);
+            this.registry.registerExternal(importPath, importName, statement.isTypeOnly, false, typesLibraryName);
             this.registry.registerExportedName(filePath, {
               name: exportedName,
               externalModule: importPath,
@@ -758,5 +761,9 @@ export class ExportResolver {
         }
       }
     }
+  }
+
+  private getTypesLibraryName(fromFile: string, importPath: string): string | null {
+    return this.fileCollector.resolveExternalImport(fromFile, importPath).typesLibraryName;
   }
 }

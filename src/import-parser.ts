@@ -107,6 +107,7 @@ export class ImportParser {
       }
     } else {
       const moduleName = importPath;
+      const { typesLibraryName } = this.fileCollector.resolveExternalImport(filePath, moduleName);
 
       if (statement.importClause?.name) {
         const localName = statement.importClause.name.text;
@@ -117,7 +118,7 @@ export class ImportParser {
           aliasName: null,
           isTypeOnly,
         });
-        this.registry.registerExternal(moduleName, `default as ${localName}`, isTypeOnly, true);
+        this.registry.registerExternal(moduleName, `default as ${localName}`, isTypeOnly, true, typesLibraryName);
       }
 
       if (statement.importClause?.namedBindings) {
@@ -133,7 +134,7 @@ export class ImportParser {
               aliasName: localName !== originalName ? localName : null,
               isTypeOnly,
             });
-            this.registry.registerExternal(moduleName, importName, isTypeOnly);
+            this.registry.registerExternal(moduleName, importName, isTypeOnly, false, typesLibraryName);
           }
         } else if (ts.isNamespaceImport(statement.importClause.namedBindings)) {
           const localName = statement.importClause.namedBindings.name.text;
@@ -144,7 +145,7 @@ export class ImportParser {
             aliasName: null,
             isTypeOnly,
           });
-          this.registry.registerExternal(moduleName, `* as ${localName}`, isTypeOnly);
+          this.registry.registerExternal(moduleName, `* as ${localName}`, isTypeOnly, false, typesLibraryName);
         }
       }
     }
@@ -187,7 +188,8 @@ export class ImportParser {
         aliasName: null,
         isTypeOnly,
       });
-      this.registry.registerExternal(importPath, `= ${importName}`, isTypeOnly);
+      const { typesLibraryName } = this.fileCollector.resolveExternalImport(filePath, importPath);
+      this.registry.registerExternal(importPath, `= ${importName}`, isTypeOnly, false, typesLibraryName);
     }
   }
 }

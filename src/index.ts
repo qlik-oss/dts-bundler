@@ -64,7 +64,7 @@ function bundle(
     exportReferencedTypes: options.exportReferencedTypes,
     entryFile,
   });
-  const { declarations: usedDeclarations, externalImports: usedExternals } = shaker.shake();
+  const { declarations: usedDeclarations, externalImports: usedExternals, detectedTypesLibraries } = shaker.shake();
 
   const entryImportedFiles = new Set<string>();
   const entryImports = parser.importMap.get(entryFile);
@@ -85,6 +85,7 @@ function bundle(
     entryExportDefaultName: parser.entryExportDefaultName,
     entryFile,
     entryImportedFiles,
+    detectedTypesLibraries,
     typeChecker: collector.getTypeChecker(),
     preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,
     importTypeResolver: {

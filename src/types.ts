@@ -202,12 +202,20 @@ export class ExternalImport {
   public normalizedName: string;
   public isTypeOnly: boolean;
   public isDefaultImport: boolean;
+  public typesLibraryName: string | null;
 
-  constructor(moduleName: string, importName: string, isTypeOnly = false, isDefaultImport = false) {
+  constructor(
+    moduleName: string,
+    importName: string,
+    isTypeOnly = false,
+    isDefaultImport = false,
+    typesLibraryName: string | null = null,
+  ) {
     this.moduleName = moduleName;
     this.originalName = importName;
     this.normalizedName = importName;
     this.isTypeOnly = isTypeOnly;
     this.isDefaultImport = isDefaultImport;
+    this.typesLibraryName = typesLibraryName;
   }
 }
