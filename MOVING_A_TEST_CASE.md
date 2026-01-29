@@ -14,8 +14,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 Move These First (High Priority)
 Re-export Patterns (genuinely not covered):
 
-1. double-re-export-from-node_modules
-
 Namespace Exports:
 6. export-wrapped-with-namespace - more complex than export-wrapped-with-namespace-chain (declaration merging with interface)
 7. namespaced-import - import_ as pkg from 'pkg' used in class declarations (external package)

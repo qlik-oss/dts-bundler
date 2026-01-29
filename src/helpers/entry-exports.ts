@@ -8,6 +8,7 @@ import { findSyntheticDefaultName, resolveDefaultExportNameFromRegistry } from "
 export type EntryExportData = {
   exportFromByModule: Map<string, string[]>;
   exportListItems: string[];
+  exportListExternalDefaults: Set<string>;
   excludedExternalImports: Set<string>;
   requiredExternalImports: Set<string>;
 };
@@ -120,12 +121,19 @@ export const buildEntryExportData = (params: {
   const exportFromByModule = new Map<string, string[]>();
   const exportListItems: string[] = [];
   const exportListSet = new Set<string>();
+  const exportListExternalDefaults = new Set<string>();
   const excludedExternalImports = new Set<string>();
   const requiredExternalImports = new Set<string>();
 
   const entryFile = params.entryFile;
   if (!entryFile) {
-    return { exportFromByModule, exportListItems, excludedExternalImports, requiredExternalImports };
+    return {
+      exportFromByModule,
+      exportListItems,
+      exportListExternalDefaults,
+      excludedExternalImports,
+      requiredExternalImports,
+    };
   }
 
   const declarationExternalImports = collectDeclarationExternalImports(params.registry, params.usedDeclarations);
@@ -183,6 +191,9 @@ export const buildEntryExportData = (params: {
         exportListSet.add(exportName);
         exportListItems.push(exportName);
       }
+      if (exported.externalImportName === "default" || exported.externalImportName.startsWith("default as ")) {
+        exportListExternalDefaults.add(exportName);
+      }
       continue;
     }
 
@@ -224,5 +235,11 @@ export const buildEntryExportData = (params: {
 
   exportListItems.sort((a, b) => getExportedName(a).localeCompare(getExportedName(b)));
 
-  return { exportFromByModule, exportListItems, excludedExternalImports, requiredExternalImports };
+  return {
+    exportFromByModule,
+    exportListItems,
+    exportListExternalDefaults,
+    excludedExternalImports,
+    requiredExternalImports,
+  };
 };

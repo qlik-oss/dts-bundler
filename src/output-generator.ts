@@ -267,12 +267,17 @@ export class OutputGenerator {
   }
 
   private generateNamedExports(): string[] {
-    const { exportListItems } = this.getEntryExportData();
+    const { exportListItems, exportListExternalDefaults } = this.getEntryExportData();
     if (exportListItems.length === 0) {
       return [];
     }
 
-    if (exportListItems.length <= 3) {
+    const useMultilineForExternalDefaults =
+      exportListItems.length > 1 &&
+      exportListItems.length <= 3 &&
+      exportListExternalDefaults.size === exportListItems.length;
+
+    if (exportListItems.length <= 3 && !useMultilineForExternalDefaults) {
       return [`export { ${exportListItems.join(", ")} };`];
     }
 
@@ -475,6 +480,8 @@ export class OutputGenerator {
       .map((imp) => imp.normalizedName)
       .sort((a, b) => OutputGenerator.extractImportName(a).localeCompare(OutputGenerator.extractImportName(b)));
     const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
+    const preferSingleLineDefaultAs =
+      defaultImports.length > 0 && namedImports.length === 0 && namedListOrdered.length > 2;
 
     if (hasDefaultImport) {
       const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";
@@ -490,7 +497,7 @@ export class OutputGenerator {
       }
     } else if (defaultImports.length > 0 || namedImports.length > 0) {
       if (namedListOrdered.length > 1) {
-        if (preferSingleLineNamed) {
+        if (preferSingleLineNamed || preferSingleLineDefaultAs) {
           lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
         } else {
           const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");

@@ -54,3 +54,7 @@ The `dts-bundle-generator/` folder contains the original dts-bundle-generator pr
 - Follow the existing code style (enforced by ESLint)
 - Use proper null checks - avoid unnecessary conditionals but handle edge cases
 - Add comments for complex logic, especially AST traversal code
+
+## File Protection
+
+❌ NEVER modify `MOVING_A_TEST_CASE.md`
