@@ -201,11 +201,11 @@ export class ExportResolver {
                 this.registry.registerEntryNamespaceExport(filePath, exportedName);
               }
             } else {
+              const defaultTarget = originalName === "default" ? this.resolveDefaultExportTarget(resolvedPath) : null;
               const resolvedOriginalName =
-                originalName === "default"
-                  ? (this.resolveDefaultExportName(resolvedPath) ?? originalName)
-                  : originalName;
-              const exportedInfo = this.findExportedNameInfo(resolvedPath, resolvedOriginalName);
+                originalName === "default" ? (defaultTarget?.name ?? originalName) : originalName;
+              const resolvedSourceFile = defaultTarget?.sourceFile ?? resolvedPath;
+              const exportedInfo = this.findExportedNameInfo(resolvedSourceFile, resolvedOriginalName);
               if (exportedInfo?.externalModule && exportedInfo.externalImportName) {
                 const externalImportName =
                   exportedName === resolvedOriginalName
@@ -220,13 +220,13 @@ export class ExportResolver {
               } else {
                 this.registry.registerExportedName(filePath, {
                   name: exportedName,
-                  sourceFile: resolvedPath,
+                  sourceFile: resolvedSourceFile,
                   originalName: resolvedOriginalName,
                 });
 
                 const starResolved = exportedInfo
                   ? null
-                  : this.resolveExternalStarExport(resolvedPath, resolvedOriginalName);
+                  : this.resolveExternalStarExport(resolvedSourceFile, resolvedOriginalName);
                 if (starResolved) {
                   const starImportName =
                     exportedName === resolvedOriginalName
@@ -260,12 +260,16 @@ export class ExportResolver {
         const originalName = element.propertyName?.text || exportedName;
         const importInfo = fileImports?.get(originalName);
         let resolvedOriginalName = originalName;
+        let resolvedSourceFile: string | null = importInfo?.sourceFile ?? null;
 
         if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
           if (importInfo.originalName === "default") {
-            resolvedOriginalName = this.resolveDefaultExportName(importInfo.sourceFile) ?? importInfo.originalName;
+            const defaultTarget = this.resolveDefaultExportTarget(importInfo.sourceFile);
+            resolvedOriginalName = defaultTarget?.name ?? importInfo.originalName;
+            resolvedSourceFile = defaultTarget?.sourceFile ?? importInfo.sourceFile;
           } else {
             resolvedOriginalName = importInfo.originalName;
+            resolvedSourceFile = importInfo.sourceFile;
           }
         }
 
@@ -275,10 +279,10 @@ export class ExportResolver {
             externalModule: importInfo.sourceFile,
             externalImportName: importInfo.originalName,
           });
-        } else if (importInfo && importInfo.sourceFile) {
+        } else if (importInfo && resolvedSourceFile) {
           this.registry.registerExportedName(filePath, {
             name: exportedName,
-            sourceFile: importInfo.sourceFile,
+            sourceFile: resolvedSourceFile,
             originalName: resolvedOriginalName,
           });
         } else {
@@ -324,14 +328,13 @@ export class ExportResolver {
         for (const element of statement.exportClause.elements) {
           const exportedName = element.name.text;
           const originalName = element.propertyName?.text || exportedName;
-          let resolvedOriginalName = originalName;
-          if (originalName === "default") {
-            const defaultExportName = this.resolveDefaultExportName(resolvedPath);
-            if (!defaultExportName) continue;
-            resolvedOriginalName = defaultExportName;
-          }
+          const defaultTarget = originalName === "default" ? this.resolveDefaultExportTarget(resolvedPath) : null;
+          const resolvedOriginalName =
+            originalName === "default" ? (defaultTarget?.name ?? originalName) : originalName;
+          const resolvedSourceFile = defaultTarget?.sourceFile ?? resolvedPath;
+          if (originalName === "default" && !defaultTarget) continue;
 
-          const key = `${resolvedPath}:${resolvedOriginalName}`;
+          const key = `${resolvedSourceFile}:${resolvedOriginalName}`;
           const declarationIds = this.registry.getDeclarationIdsByKey(key);
           if (declarationIds) {
             const isDefaultExport = exportedName === "default";
@@ -365,18 +368,21 @@ export class ExportResolver {
 
           const importInfo = fileImports?.get(originalName);
           let resolvedOriginalName = originalName;
+          let resolvedSourceFile: string | null = importInfo?.sourceFile ?? null;
           if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
             if (importInfo.originalName === "default") {
-              resolvedOriginalName =
-                resolveDefaultExportNameFromRegistry(this.registry, importInfo.sourceFile) ?? importInfo.originalName;
+              const defaultTarget = this.resolveDefaultExportTarget(importInfo.sourceFile);
+              resolvedOriginalName = defaultTarget?.name ?? importInfo.originalName;
+              resolvedSourceFile = defaultTarget?.sourceFile ?? importInfo.sourceFile;
             } else {
               resolvedOriginalName = importInfo.originalName;
+              resolvedSourceFile = importInfo.sourceFile;
             }
           }
           let key: string;
-          if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
+          if (importInfo && !importInfo.isExternal && resolvedSourceFile) {
             const lookupName = importInfo.originalName === "default" ? resolvedOriginalName : importInfo.originalName;
-            key = `${importInfo.sourceFile}:${lookupName}`;
+            key = `${resolvedSourceFile}:${lookupName}`;
           } else {
             key = `${filePath}:${originalName}`;
           }
@@ -618,9 +624,21 @@ export class ExportResolver {
   }
 
   private resolveDefaultExportName(resolvedPath: string): string | null {
+    return this.resolveDefaultExportTarget(resolvedPath)?.name ?? null;
+  }
+
+  private resolveDefaultExportTarget(
+    resolvedPath: string,
+    visited: Set<string> = new Set(),
+  ): { name: string; sourceFile: string } | null {
+    if (visited.has(resolvedPath)) {
+      return null;
+    }
+    visited.add(resolvedPath);
+
     const registryDefault = resolveDefaultExportNameFromRegistry(this.registry, resolvedPath);
     if (registryDefault) {
-      return registryDefault;
+      return { name: registryDefault, sourceFile: resolvedPath };
     }
 
     const sourceFile = this.fileCollector.getProgram().getSourceFile(resolvedPath);
@@ -629,14 +647,62 @@ export class ExportResolver {
     for (const statement of sourceFile.statements) {
       if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
       if (ts.isIdentifier(statement.expression)) {
-        return statement.expression.text;
+        const identifierName = statement.expression.text;
+        const importTarget = this.resolveImportedIdentifierTarget(sourceFile, resolvedPath, identifierName, visited);
+        if (importTarget) {
+          return importTarget;
+        }
+        return { name: identifierName, sourceFile: resolvedPath };
       }
     }
 
     for (const statement of sourceFile.statements) {
       if (!hasDefaultModifier(statement)) continue;
       const name = getDeclarationName(statement);
-      if (name) return name;
+      if (name) return { name, sourceFile: resolvedPath };
+    }
+
+    return null;
+  }
+
+  private resolveImportedIdentifierTarget(
+    sourceFile: ts.SourceFile,
+    filePath: string,
+    identifierName: string,
+    visited: Set<string>,
+  ): { name: string; sourceFile: string } | null {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement)) continue;
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+
+      const importPath = statement.moduleSpecifier.text;
+      if (!this.fileCollector.shouldInline(importPath)) continue;
+      const resolvedImport = this.fileCollector.resolveImport(filePath, importPath);
+      if (!resolvedImport) continue;
+
+      const importClause = statement.importClause;
+      if (importClause?.name && importClause.name.text === identifierName) {
+        return (
+          this.resolveDefaultExportTarget(resolvedImport, visited) ?? { name: "default", sourceFile: resolvedImport }
+        );
+      }
+
+      if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
+        for (const element of importClause.namedBindings.elements) {
+          const localName = element.name.text;
+          if (localName !== identifierName) continue;
+          const originalName = element.propertyName?.text || localName;
+          if (originalName === "default") {
+            return (
+              this.resolveDefaultExportTarget(resolvedImport, visited) ?? {
+                name: "default",
+                sourceFile: resolvedImport,
+              }
+            );
+          }
+          return { name: originalName, sourceFile: resolvedImport };
+        }
+      }
     }
 
     return null;
