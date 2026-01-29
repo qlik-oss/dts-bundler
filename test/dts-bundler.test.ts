@@ -194,6 +194,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("re-export-as-namespace");
       expect(result).toBe(expected);
     });
+
+    it.skip("should handle re-exporting members from star", () => {
+      const { expected, result } = runTestCase("re-export-star-member");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Module Formats", () => {
@@ -236,6 +241,13 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should inline local types used in declare global", () => {
       const { expected, result } = runTestCase("declare-global-with-local-imports", {
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline declared globals from imports", () => {
+      const { expected, result } = runTestCase("inline-declare-global-from-imports", {
         inlineDeclareGlobals: true,
       });
       expect(result).toBe(expected);

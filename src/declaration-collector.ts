@@ -392,6 +392,9 @@ export class DeclarationCollector {
     };
 
     const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+    if (declareGlobal && this.options.inlineDeclareGlobals) {
+      declaration.forceInclude = true;
+    }
     this.registry.register(declaration);
   }
 }
