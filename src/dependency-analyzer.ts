@@ -210,6 +210,14 @@ export class DependencyAnalyzer {
             for (const depId of depIds) {
               declaration.dependencies.add(depId);
             }
+          } else {
+            const resolved = this.resolveStarExportedDeclarationIds(importInfo.sourceFile, originalName, new Set());
+            if (resolved) {
+              for (const depId of resolved.declarationIds) {
+                declaration.dependencies.add(depId);
+              }
+              importInfo.sourceFile = resolved.targetFile;
+            }
           }
         }
       } else {
@@ -479,5 +487,37 @@ export class DependencyAnalyzer {
     if (ts.isIdentifier(current)) {
       references.add(current.text);
     }
+  }
+
+  private resolveStarExportedDeclarationIds(
+    sourceFile: string,
+    name: string,
+    visited: Set<string>,
+  ): { targetFile: string; declarationIds: Set<symbol> } | null {
+    if (visited.has(sourceFile)) {
+      return null;
+    }
+
+    visited.add(sourceFile);
+
+    const starExports = this.registry.getStarExports(sourceFile);
+    for (const starExport of starExports) {
+      if (!starExport.targetFile) {
+        continue;
+      }
+
+      const key = `${starExport.targetFile}:${name}`;
+      const declarationIds = this.registry.getDeclarationIdsByKey(key);
+      if (declarationIds) {
+        return { targetFile: starExport.targetFile, declarationIds };
+      }
+
+      const nested = this.resolveStarExportedDeclarationIds(starExport.targetFile, name, visited);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
   }
 }
