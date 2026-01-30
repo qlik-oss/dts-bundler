@@ -34,7 +34,7 @@ jobs:
           VERSION=$(git describe --tags --abbrev=7 --match "v*")
           VERSION=${VERSION#v}
           echo "version is $VERSION"
-          jq --arg version "$VERSION" '{version: $version} + .' package.json > temp.json && mv temp.json package.json
+          jq --arg version "$VERSION" '.version = $version' package.json > temp.json && mv temp.json package.json
           cat package.json
           # Publish npm package (--access public required for scoped packages)
           npm publish
