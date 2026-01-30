@@ -30,7 +30,7 @@ const output = bundleDts(options);
 #### Parameters
 
 | Parameter | Type               | Description                  |
-|-----------|--------------------|------------------------------|
+| --------- | ------------------ | ---------------------------- |
 | `options` | `BundleDtsOptions` | Configuration options object |
 
 #### Returns
@@ -253,16 +253,28 @@ bundleDts({
 
 ```typescript
 // Input
-interface InternalType { id: string; }
-export interface PublicType { data: InternalType; }
+interface InternalType {
+  id: string;
+}
+export interface PublicType {
+  data: InternalType;
+}
 
 // Output with exportReferencedTypes: true
-export interface InternalType { id: string; }
-export interface PublicType { data: InternalType; }
+export interface InternalType {
+  id: string;
+}
+export interface PublicType {
+  data: InternalType;
+}
 
 // Output with exportReferencedTypes: false
-interface InternalType { id: string; }
-export interface PublicType { data: InternalType; }
+interface InternalType {
+  id: string;
+}
+export interface PublicType {
+  data: InternalType;
+}
 ```
 
 ---
@@ -368,7 +380,7 @@ bundle-types [options]
 ### CLI Options
 
 | Option               | Alias | Type     | Required | Description                                    |
-|----------------------|-------|----------|----------|------------------------------------------------|
+| -------------------- | ----- | -------- | -------- | ---------------------------------------------- |
 | `--entry`            | `-e`  | `string` | Yes      | Entry TypeScript file to bundle                |
 | `--output`           | `-o`  | `string` | Yes      | Output file path for bundled types             |
 | `--inlinedLibraries` | `-i`  | `string` | No       | Comma-separated list of npm packages to inline |

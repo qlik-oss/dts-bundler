@@ -269,19 +269,19 @@ fs.writeFileSync("./dist/bundle.d.ts", bundled);
 
 #### Options Summary
 
-| Option                     | Type       | Default     | Description                                        |
-| -------------------------- | ---------- | ----------- | -------------------------------------------------- |
-| `entry`                    | `string`   | —           | **(Required)** Entry TypeScript file path          |
-| `inlinedLibraries`         | `string[]` | `[]`        | Libraries to inline into the bundle                |
-| `allowedTypesLibraries`    | `string[]` | `undefined` | `@types/*` packages for triple-slash references    |
-| `importedLibraries`        | `string[]` | `undefined` | Libraries to keep as imports                       |
-| `inlineDeclareGlobals`     | `boolean`  | `false`     | Inline `declare global` blocks                     |
-| `inlineDeclareExternals`   | `boolean`  | `false`     | Inline `declare module` blocks                     |
-| `exportReferencedTypes`    | `boolean`  | `false`     | Auto-export referenced types                       |
-| `noBanner`                 | `boolean`  | `false`     | Exclude banner comment                             |
-| `sortNodes`                | `boolean`  | `false`     | Sort declarations alphabetically                   |
-| `umdModuleName`            | `string`   | `undefined` | UMD module name (`export as namespace`)            |
-| `respectPreserveConstEnum` | `boolean`  | `false`     | Respect tsconfig `preserveConstEnums`              |
+| Option                     | Type       | Default     | Description                                     |
+| -------------------------- | ---------- | ----------- | ----------------------------------------------- |
+| `entry`                    | `string`   | —           | **(Required)** Entry TypeScript file path       |
+| `inlinedLibraries`         | `string[]` | `[]`        | Libraries to inline into the bundle             |
+| `allowedTypesLibraries`    | `string[]` | `undefined` | `@types/*` packages for triple-slash references |
+| `importedLibraries`        | `string[]` | `undefined` | Libraries to keep as imports                    |
+| `inlineDeclareGlobals`     | `boolean`  | `false`     | Inline `declare global` blocks                  |
+| `inlineDeclareExternals`   | `boolean`  | `false`     | Inline `declare module` blocks                  |
+| `exportReferencedTypes`    | `boolean`  | `false`     | Auto-export referenced types                    |
+| `noBanner`                 | `boolean`  | `false`     | Exclude banner comment                          |
+| `sortNodes`                | `boolean`  | `false`     | Sort declarations alphabetically                |
+| `umdModuleName`            | `string`   | `undefined` | UMD module name (`export as namespace`)         |
+| `respectPreserveConstEnum` | `boolean`  | `false`     | Respect tsconfig `preserveConstEnums`           |
 
 See the [full API documentation](docs/api.md) for detailed descriptions and examples of each option.
 
