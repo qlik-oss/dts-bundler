@@ -1,5 +1,6 @@
 {
   "name": "@qlik/dts-bundler",
+  "version": "0.0.1",
   "description": "Bundle TypeScript declaration files into a single file",
   "keywords": [],
   "license": "ISC",
@@ -16,6 +17,9 @@
   "bin": {
     "bundle-types": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsdown src/index.ts --outDir dist --format esm --dts",
     "check-types": "tsc --noEmit",
