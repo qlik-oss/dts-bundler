@@ -12,3 +12,5 @@ test/fixtures/**/expected.d.ts
 
 # special case
 test/fixtures/import-type-from-deps/module-with-import-type.d.ts
+test/fixtures/export-wrapped-with-namespace/input.ts
+MOVING_A_TEST_CASE.md

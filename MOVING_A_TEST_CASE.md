@@ -14,9 +14,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 Move These First (High Priority)
 Re-export Patterns (genuinely not covered):
 
-Namespace Exports:
-7. namespaced-import - import_ as pkg from 'pkg' used in class declarations (external package)
-
 Import Patterns:
 8. import-eq-with-interop - CommonJS interop with default imports
 9. several-import-star-from-one-package

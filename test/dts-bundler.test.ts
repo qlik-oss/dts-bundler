@@ -64,6 +64,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle namespace imports used as type qualifiers", () => {
+      const { expected, result } = runTestCase("namespaced-import");
+      expect(result).toBe(expected);
+    });
+
     it("should handle default imports from node_modules", () => {
       const { expected, result } = runTestCase("import-default-from-node-modules");
       expect(result).toBe(expected);

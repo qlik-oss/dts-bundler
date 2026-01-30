@@ -1,5 +1,6 @@
-export * as MyNamespace1 from "./another-exports";
 export * as MyNamespace from "./exports";
+export * as MyNamespace1 from "./another-exports";
+export * as MyNamespace2 from "./another-exports";
 
 import { MyInt } from "./exports";
 import * as MyNamespace4 from "./one-more-exports";
