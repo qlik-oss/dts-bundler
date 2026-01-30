@@ -1,6 +1,5 @@
 {
   "name": "@qlik/dts-bundler",
-  "version": "0.0.1",
   "description": "Bundle TypeScript declaration files into a single file",
   "keywords": [],
   "license": "ISC",
