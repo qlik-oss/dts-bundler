@@ -10,7 +10,7 @@ import type { TypeRegistry } from "./registry.js";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
 import { VariableDeclarationEmitter } from "./variable-declaration-emitter.js";
 
-const version = (pkg as { version?: string }).version ?? "development";
+const version = (pkg as { version?: string }).version || "unversioned";
 
 export class OutputGenerator {
   private registry: TypeRegistry;

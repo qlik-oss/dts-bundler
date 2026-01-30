@@ -25,6 +25,8 @@ jobs:
         run: pnpm install
       - name: Run tests
         run: pnpm test
+      - name: Build
+        run: pnpm build
       - name: Set NPM Token
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_CI_TOKEN }}" > .npmrc
       - name: Set version and publish
@@ -32,9 +34,9 @@ jobs:
           VERSION=$(git describe --tags --abbrev=7 --match "v*")
           VERSION=${VERSION#v}
           echo "version is $VERSION"
-          jq --arg version "$VERSION" '.version = $version' package.json > temp.json && mv temp.json package.json
+          jq --arg version "$VERSION" '{version: $version} + .' package.json > temp.json && mv temp.json package.json
           cat package.json
-          # Publish npm package
+          # Publish npm package (--access public required for scoped packages)
           npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_CI_TOKEN }}

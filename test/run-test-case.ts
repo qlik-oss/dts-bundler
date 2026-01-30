@@ -50,7 +50,7 @@ export function runTestCase(testName: string, options: RunTestCaseOptions = {}):
   }
 
   const expectedFile = path.join(fixtureDir, "expected.d.ts");
-  const result = bundleDts({ entry: entryFile, ...options });
+  const result = bundleDts({ entry: entryFile, noBanner: true, ...options });
 
   // Auto-update expected files if UPDATE_EXPECTED env var is set
   if (process.env.UPDATE_EXPECTED) {

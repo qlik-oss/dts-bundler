@@ -1,7 +1,12 @@
 {
   "name": "@qlik/dts-bundler",
+  "version": "",
   "description": "Bundle TypeScript declaration files into a single file",
   "keywords": [],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qlik-oss/dts-bundler.git"
+  },
   "license": "ISC",
   "author": "nilzona",
   "type": "module",
@@ -14,7 +19,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "bundle-types": "./dist/index.js"
+    "bundle-types": "dist/index.js"
   },
   "files": [
     "dist"
@@ -37,7 +42,7 @@
     "@qlik/eslint-config": "^1.4.15",
     "@qlik/prettier-config": "^0.4.32",
     "@qlik/tsconfig": "^0.3.1",
-    "@types/node": "^22.13.1",
+    "@types/node": "^25.1.0",
     "eslint": "^9.39.2",
     "prettier": "^3.8.0",
     "tsdown": "^0.20.1",
@@ -46,5 +51,8 @@
   "packageManager": "pnpm@10.28.1",
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
