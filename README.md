@@ -4,14 +4,35 @@ A tool for bundling TypeScript files (`.ts` and/or `.d.ts`) by inlining local im
 
 ## Features
 
-- 🎯 **Inline local imports**: Automatically resolves and inlines all relative imports (`./` or `../`)
-- 📦 **Selective library inlining**: Optionally inline types from specific npm packages
-- 🔄 **External import consolidation**: Keeps external imports at the top of the bundled file
-- 🎨 **Type-only import handling**: Properly handles `import type` statements
-- 🔁 **Export re-export resolution**: Resolves `export * from` statements
-- 🧩 **Ambient module inlining**: Optionally inline `declare module "..."` blocks for external modules
-- 🛠️ **Dual usage**: Use as CLI tool or import as a library
-- ✨ **TypeScript support**: Full TypeScript type definitions included
+### Core Bundling
+
+- 🎯 **Inline local imports** — Automatically resolves and inlines all relative imports (`./` or `../`)
+- 📦 **Selective library inlining** — Optionally inline types from specific npm packages
+- 🔄 **External import consolidation** — Keeps external imports at the top of the bundled file
+- 🎨 **Type-only import handling** — Properly handles `import type` statements
+- 🔁 **Export re-export resolution** — Resolves `export * from` statements
+
+### Advanced Capabilities
+
+- 🧩 **Ambient module inlining** — Optionally inline `declare module "..."` blocks for external modules
+- 🌐 **`declare global` support** — Control whether `declare global` blocks are inlined or preserved
+- 🔀 **Declaration merging** — Correctly handles TypeScript declaration merging scenarios
+- 🌳 **Tree shaking** — Removes unused declarations from the output
+- 🏷️ **Name collision resolution** — Automatically resolves naming conflicts across files
+
+### Output Control
+
+- 📛 **UMD module name** — Generate UMD-compatible output with `export as namespace`
+- 🔤 **Sorted output** — Optionally sort declarations alphabetically for consistent diffs
+- 📜 **Banner control** — Include or exclude the generated banner comment
+- 🔒 **Preserve const enums** — Respect `preserveConstEnums` compiler option
+- 📚 **Triple-slash references** — Automatically add `/// <reference types="..." />` for `@types/*` packages
+
+### Developer Experience
+
+- 🛠️ **Dual usage** — Use as CLI tool or import as a library
+- ✨ **Full TypeScript support** — Complete type definitions included
+- ⚡ **Fast** — Built on the TypeScript compiler API for accurate and efficient parsing
 
 ## Installation
 
@@ -225,28 +246,13 @@ export {};
 
 ## API Reference
 
-### `bundleDts(options)`
+For complete API documentation, see the [API Reference](docs/api.md).
+
+### Quick Reference
+
+#### `bundleDts(options)`
 
 Bundle TypeScript declaration files.
-
-#### Parameters
-
-- `options` (Object):
-  - `entry` (string, required): Entry TypeScript file path
-  - `inlinedLibraries` (string[], optional): Array of library names to inline
-  - `inlineDeclareExternals` (boolean, optional): Inline `declare module "..."` blocks even when the module is external
-  - `inlineDeclareGlobals` (boolean, optional): Inline `declare global` blocks into the bundle
-
-#### Returns
-
-`string` - The bundled TypeScript declaration content
-
-#### Throws
-
-- `Error` when `entry` option is missing
-- `Error` when entry file does not exist
-
-#### Example
 
 ```typescript
 import { bundleDts } from "@qlik/dts-bundler";
@@ -260,6 +266,24 @@ const bundled = bundleDts({
 
 fs.writeFileSync("./dist/bundle.d.ts", bundled);
 ```
+
+#### Options Summary
+
+| Option                     | Type       | Default     | Description                                        |
+| -------------------------- | ---------- | ----------- | -------------------------------------------------- |
+| `entry`                    | `string`   | —           | **(Required)** Entry TypeScript file path          |
+| `inlinedLibraries`         | `string[]` | `[]`        | Libraries to inline into the bundle                |
+| `allowedTypesLibraries`    | `string[]` | `undefined` | `@types/*` packages for triple-slash references    |
+| `importedLibraries`        | `string[]` | `undefined` | Libraries to keep as imports                       |
+| `inlineDeclareGlobals`     | `boolean`  | `false`     | Inline `declare global` blocks                     |
+| `inlineDeclareExternals`   | `boolean`  | `false`     | Inline `declare module` blocks                     |
+| `exportReferencedTypes`    | `boolean`  | `false`     | Auto-export referenced types                       |
+| `noBanner`                 | `boolean`  | `false`     | Exclude banner comment                             |
+| `sortNodes`                | `boolean`  | `false`     | Sort declarations alphabetically                   |
+| `umdModuleName`            | `string`   | `undefined` | UMD module name (`export as namespace`)            |
+| `respectPreserveConstEnum` | `boolean`  | `false`     | Respect tsconfig `preserveConstEnums`              |
+
+See the [full API documentation](docs/api.md) for detailed descriptions and examples of each option.
 
 ## Tips & Best Practices
 
@@ -296,11 +320,16 @@ fs.writeFileSync("./dist/bundle.d.ts", bundled);
 
 ## Limitations
 
-- Only handles TypeScript files (`.ts`, `.tsx`, `.d.ts`)
-- Does not handle runtime JavaScript code
+- Only handles TypeScript files (`.ts`, `.tsx`, `.mts`, `.cts`, `.d.ts`, `.d.mts`, `.d.cts`)
+- Does not handle runtime JavaScript code (this is a type bundler)
 - Assumes all imported files exist and are accessible
 - Does not perform type checking (use `tsc` for that)
-- Circular dependencies may cause issues
+- Circular dependencies may cause issues in complex scenarios
+
+## Requirements
+
+- **Node.js** >= 20
+- **TypeScript** ^5.9.3 (included as a dependency)
 
 ## Troubleshooting
 
@@ -355,6 +384,11 @@ Tests use snapshots to verify bundler output. If you make changes that affect th
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Related
+
+- [API Reference](docs/api.md) — Complete API documentation
+- [TypeScript Handbook: Declaration Files](https://www.typescriptlang.org/docs/handbook/declaration-files/introduction.html)
 
 ## License
 
