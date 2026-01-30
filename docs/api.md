@@ -5,7 +5,7 @@ This document provides comprehensive documentation for `@qlik/dts-bundler`, cove
 ## Table of Contents
 
 - [JavaScript API](#javascript-api)
-  - [bundleDts()](#bundledtsoptions)
+  - [bundleTypes()](#bundledtsoptions)
   - [Options](#options)
 - [CLI Reference](#cli-reference)
   - [Commands](#commands)
@@ -17,14 +17,14 @@ This document provides comprehensive documentation for `@qlik/dts-bundler`, cove
 
 ## JavaScript API
 
-### `bundleDts(options)`
+### `bundleTypes(options)`
 
 Bundle TypeScript declaration files into a single output string.
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 
-const output = bundleDts(options);
+const output = bundleTypes(options);
 ```
 
 #### Parameters
@@ -45,10 +45,10 @@ const output = bundleDts(options);
 #### Basic Example
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
-const bundled = bundleDts({
+const bundled = bundleTypes({
   entry: "./src/index.ts",
 });
 
@@ -58,10 +58,10 @@ fs.writeFileSync("./dist/index.d.ts", bundled);
 #### Advanced Example
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
-const bundled = bundleDts({
+const bundled = bundleTypes({
   entry: "./src/index.ts",
   inlinedLibraries: ["@my-org/internal-types", "@my-org/shared"],
   allowedTypesLibraries: ["node"],
@@ -86,7 +86,7 @@ fs.writeFileSync("./dist/index.d.ts", bundled);
 The entry TypeScript file path. This is the starting point for bundling. The bundler will resolve and process all imports from this file.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/types.ts",
 });
 ```
@@ -107,7 +107,7 @@ The path can be:
 Array of npm package names whose types should be inlined into the bundle instead of remaining as external imports.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   inlinedLibraries: ["@my-org/types", "@my-org/utils"],
 });
@@ -134,7 +134,7 @@ bundleDts({
 Array of `@types/*` package names that should be referenced via triple-slash directives instead of being inlined or imported.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   allowedTypesLibraries: ["node", "react"],
 });
@@ -162,7 +162,7 @@ bundleDts({
 Array of library names that should explicitly remain as regular imports in the output, regardless of other settings.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   importedLibraries: ["react", "lodash"],
 });
@@ -183,7 +183,7 @@ bundleDts({
 Whether to inline `declare global { ... }` blocks from imported files into the bundle.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   inlineDeclareGlobals: true,
 });
@@ -214,7 +214,7 @@ declare global {
 Whether to inline `declare module "..."` blocks for external modules.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   inlineDeclareExternals: true,
 });
@@ -243,7 +243,7 @@ declare module "express" {
 Whether to automatically export types that are referenced by exported declarations but not explicitly exported themselves.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   exportReferencedTypes: true,
 });
@@ -287,7 +287,7 @@ export interface PublicType {
 Whether to exclude the generated banner comment from the output.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   noBanner: true,
 });
@@ -311,7 +311,7 @@ bundleDts({
 Whether to sort declarations alphabetically in the output.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   sortNodes: true,
 });
@@ -333,7 +333,7 @@ bundleDts({
 UMD module name to include in the output. When specified, generates a UMD-compatible declaration.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   umdModuleName: "MyLibrary",
 });
@@ -355,7 +355,7 @@ export as namespace MyLibrary;
 Whether to respect the `preserveConstEnums` setting from tsconfig.json.
 
 ```typescript
-bundleDts({
+bundleTypes({
   entry: "./src/index.ts",
   respectPreserveConstEnum: true,
 });

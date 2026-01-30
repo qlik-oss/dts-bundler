@@ -37,7 +37,7 @@ This is the first release of **@qlik/dts-bundler** — a tool for bundling TypeS
 ### Dual Usage
 
 - **CLI tool** — `bundle-types -e <entry> -o <output> [-i <libraries>]`
-- **Programmatic API** — Import `bundleDts()` directly for build pipeline integration
+- **Programmatic API** — Import `bundleTypes()` directly for build pipeline integration
 
 ## 🙏 Acknowledgments
 

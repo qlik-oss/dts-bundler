@@ -49,11 +49,11 @@ yarn add @qlik/dts-bundler
 ### As a Library
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
 // Basic usage - returns bundled content as string
-const bundledContent = bundleDts({
+const bundledContent = bundleTypes({
   entry: "./src/types.ts",
 });
 
@@ -61,7 +61,7 @@ const bundledContent = bundleDts({
 fs.writeFileSync("./dist/bundle.d.ts", bundledContent);
 
 // With inlined libraries
-const bundledWithLibs = bundleDts({
+const bundledWithLibs = bundleTypes({
   entry: "./src/types.ts",
   inlinedLibraries: ["@my-org/types", "some-package"],
   inlineDeclareExternals: true,
@@ -123,10 +123,10 @@ npm run bundle-types
 When publishing a library, bundle internal types but keep framework types external:
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
-const bundled = bundleDts({
+const bundled = bundleTypes({
   entry: "./src/index.ts",
   inlinedLibraries: ["@my-company/internal-types"],
 });
@@ -150,10 +150,10 @@ bundle-types \
 Create a single file with all types for easy distribution:
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
-const bundled = bundleDts({
+const bundled = bundleTypes({
   entry: "./src/api.types.ts",
 });
 
@@ -166,13 +166,13 @@ Integrate into your build process:
 
 ```typescript
 // build.js
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
 async function build() {
   // ... other build steps
 
-  const bundled = bundleDts({
+  const bundled = bundleTypes({
     entry: "./src/public-api.ts",
   });
 
@@ -250,15 +250,15 @@ For complete API documentation, see the [API Reference](docs/api.md).
 
 ### Quick Reference
 
-#### `bundleDts(options)`
+#### `bundleTypes(options)`
 
 Bundle TypeScript declaration files.
 
 ```typescript
-import { bundleDts } from "@qlik/dts-bundler";
+import { bundleTypes } from "@qlik/dts-bundler";
 import fs from "fs";
 
-const bundled = bundleDts({
+const bundled = bundleTypes({
   entry: "./src/types.ts",
   inlinedLibraries: ["@my-org/types"],
   inlineDeclareExternals: true,

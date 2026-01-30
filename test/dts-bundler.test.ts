@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { bundleDts } from "../src/index";
+import { bundleTypes } from "../src/index";
 import { runTestCase } from "./run-test-case";
 
 describe("TypeScript Declaration Bundler", () => {
@@ -409,11 +409,11 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Error Handling", () => {
     it("should throw error when entry is missing", () => {
       // @ts-expect-error - testing missing entry
-      expect(() => bundleDts({})).toThrow("required");
+      expect(() => bundleTypes({})).toThrow("required");
     });
 
     it("should throw error when entry file does not exist", () => {
-      expect(() => bundleDts({ entry: "nonexistent.ts" })).toThrow("does not exist");
+      expect(() => bundleTypes({ entry: "nonexistent.ts" })).toThrow("does not exist");
     });
   });
 
