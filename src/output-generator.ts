@@ -520,6 +520,7 @@ export class OutputGenerator {
   private generateDeclarations(): string[] {
     const lines: string[] = [];
     const aliasExportedNames = this.getAliasExportedNames();
+    const entryNamespaceNames = new Set(this.registry.entryNamespaceExports.map((entry) => entry.name));
 
     const sorted = this.topologicalSort();
     const ordered = this.options.sortNodes
@@ -606,12 +607,17 @@ export class OutputGenerator {
         declaration.mergeGroup !== null &&
         declaration.exportInfo.kind === ExportKind.NotExported &&
         !declaration.exportInfo.wasOriginallyExported;
+      const shouldStripExportForMergedNamespace =
+        declaration.sourceFile === this.options.entryFile &&
+        ts.isInterfaceDeclaration(declaration.node) &&
+        entryNamespaceNames.has(declaration.name);
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
         !suppressExportKeywordForDefault &&
         !suppressExportForModuleAugmentation &&
         !suppressExportForAlias &&
+        !shouldStripExportForMergedNamespace &&
         (declaration.exportInfo.kind === ExportKind.Named ||
           declaration.exportInfo.kind === ExportKind.NamedAndDefault ||
           declaration.exportInfo.wasOriginallyExported ||
@@ -868,6 +874,7 @@ export class OutputGenerator {
     }
 
     const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
+    const namespaceExports = this.registry.namespaceExportsByFile.get(info.targetFile) ?? new Map();
 
     for (const exported of exportedNames) {
       const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
@@ -876,12 +883,123 @@ export class OutputGenerator {
       }
     }
 
-    const exportList = exportedNames.map((item) => item.name);
+    const exportItems = this.buildNamespaceExportItems(info.targetFile, exportedNames, namespaceExports);
+    const exportList = exportItems
+      .sort((a, b) => {
+        if (a.rank !== b.rank) {
+          return a.rank - b.rank;
+        }
+        return a.exportedName.localeCompare(b.exportedName, undefined, { caseFirst: "upper" });
+      })
+      .map((item) => item.value);
     blocks.push(`declare namespace ${namespaceName} {`);
     if (exportList.length > 0) {
       blocks.push(`  export { ${exportList.join(", ")} };`);
     }
     blocks.push(`}`);
+  }
+
+  private buildNamespaceExportItems(
+    targetFile: string,
+    exportedNames: { name: string; originalName?: string; externalModule?: string; externalImportName?: string }[],
+    namespaceExports: Map<string, { targetFile?: string; externalModule?: string; externalImportName?: string }>,
+  ): { value: string; exportedName: string; rank: number }[] {
+    const exportItems: { value: string; exportedName: string; rank: number }[] = [];
+    const exportItemSet = new Set<string>();
+
+    const addItem = (item: { value: string; exportedName: string; rank: number }): void => {
+      if (exportItemSet.has(item.value)) return;
+      exportItemSet.add(item.value);
+      exportItems.push(item);
+    };
+
+    for (const exported of exportedNames) {
+      const item = this.getNamespaceExportItem(targetFile, exported, namespaceExports.has(exported.name));
+      if (item) {
+        addItem(item);
+      }
+    }
+
+    for (const [name, info] of namespaceExports.entries()) {
+      if (exportItemSet.has(name)) continue;
+      if (info.externalModule && info.externalImportName) {
+        const normalizedImport = this.getNormalizedExternalImportName(info.externalModule, info.externalImportName);
+        const normalizedName = OutputGenerator.extractImportName(normalizedImport);
+        const value = normalizedName === name ? name : `${normalizedName} as ${name}`;
+        addItem({ value, exportedName: name, rank: 5 });
+      } else {
+        addItem({ value: name, exportedName: name, rank: 5 });
+      }
+    }
+
+    for (const starExport of this.registry.getStarExports(targetFile)) {
+      if (!starExport.targetFile) continue;
+      const starExported = this.registry.exportedNamesByFile.get(starExport.targetFile) ?? [];
+      for (const exported of starExported) {
+        const item = this.getNamespaceExportItem(starExport.targetFile, exported, namespaceExports.has(exported.name));
+        if (item) {
+          addItem(item);
+        }
+      }
+    }
+
+    return exportItems;
+  }
+
+  private getNamespaceExportItem(
+    sourceFile: string,
+    exported: { name: string; originalName?: string; externalModule?: string; externalImportName?: string },
+    isNamespaceExport: boolean,
+  ): { value: string; exportedName: string; rank: number } | null {
+    const exportedName = exported.name;
+
+    if (exported.externalModule && exported.externalImportName) {
+      const normalizedImport = this.getNormalizedExternalImportName(
+        exported.externalModule,
+        exported.externalImportName,
+      );
+      const normalizedName = OutputGenerator.extractImportName(normalizedImport);
+      const value = normalizedName === exportedName ? exportedName : `${normalizedName} as ${exportedName}`;
+      const rank = isNamespaceExport ? 5 : 0;
+      return { value, exportedName, rank };
+    }
+
+    const originalName = exported.originalName ?? exportedName;
+    const normalizedName =
+      this.nameMap.get(`${sourceFile}:${originalName}`) ??
+      this.nameMap.get(`${sourceFile.replace(/\\/g, "/")}:${originalName}`) ??
+      this.nameMap.get(`${path.resolve(sourceFile)}:${originalName}`) ??
+      this.nameMap.get(`${path.resolve(sourceFile).replace(/\\/g, "/")}:${originalName}`) ??
+      (fs.existsSync(sourceFile) ? this.nameMap.get(`${fs.realpathSync(sourceFile)}:${originalName}`) : undefined) ??
+      originalName;
+
+    const value = normalizedName === exportedName ? exportedName : `${normalizedName} as ${exportedName}`;
+    const declId = this.registry.getFirstDeclarationIdByKey(`${sourceFile}:${originalName}`);
+    const decl = declId ? (this.registry.getDeclaration(declId) ?? null) : null;
+    const rank = OutputGenerator.getNamespaceExportRank(decl, isNamespaceExport);
+    return { value, exportedName, rank };
+  }
+
+  private static getNamespaceExportRank(decl: TypeDeclaration | null, isNamespaceExport: boolean): number {
+    if (isNamespaceExport) {
+      return 5;
+    }
+    if (!decl) {
+      return 4;
+    }
+    if (ts.isInterfaceDeclaration(decl.node)) {
+      return 1;
+    }
+    if (ts.isTypeAliasDeclaration(decl.node)) {
+      return 2;
+    }
+    if (ts.isClassDeclaration(decl.node) || ts.isEnumDeclaration(decl.node)) {
+      return 3;
+    }
+    if (ts.isFunctionDeclaration(decl.node) || ts.isVariableStatement(decl.node)) {
+      return 4;
+    }
+    return 4;
   }
 
   private getNamespaceExportDepth(

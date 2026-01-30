@@ -15,7 +15,6 @@ Move These First (High Priority)
 Re-export Patterns (genuinely not covered):
 
 Namespace Exports:
-6. export-wrapped-with-namespace - more complex than export-wrapped-with-namespace-chain (declaration merging with interface)
 7. namespaced-import - import_ as pkg from 'pkg' used in class declarations (external package)
 
 Import Patterns:

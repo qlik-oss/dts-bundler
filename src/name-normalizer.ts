@@ -324,6 +324,14 @@ export class NameNormalizer {
       }
     }
 
+    for (const entry of this.registry.entryNamespaceExports) {
+      if (entry.sourceFile !== this.entryFile) continue;
+      const info = this.registry.getNamespaceExportInfo(entry.sourceFile, entry.name);
+      if (info?.targetFile) {
+        sources.add(info.targetFile);
+      }
+    }
+
     return sources;
   }
 

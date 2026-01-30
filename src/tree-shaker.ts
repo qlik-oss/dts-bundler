@@ -166,6 +166,12 @@ export class TreeShaker {
 
     const exportedNames = this.registry.exportedNamesByFile.get(filePath) ?? [];
 
+    for (const starExport of this.registry.getStarExports(filePath)) {
+      if (starExport.targetFile) {
+        this.markModuleExportsUsed(starExport.targetFile, visitedFiles);
+      }
+    }
+
     for (const exported of exportedNames) {
       if (exported.externalModule && exported.externalImportName) {
         this.usedExternals.add(`${exported.externalModule}:${exported.externalImportName}`);

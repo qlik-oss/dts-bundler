@@ -170,6 +170,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle exports wrapped with namespace", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace", { exportReferencedTypes: false });
+      expect(result).toBe(expected);
+    });
+
     it("should handle export declaration merging", () => {
       const { expected, result } = runTestCase("export-declaration-merging", { exportReferencedTypes: false });
       expect(result).toBe(expected);

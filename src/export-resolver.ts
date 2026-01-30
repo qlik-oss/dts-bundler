@@ -262,6 +262,26 @@ export class ExportResolver {
         let resolvedOriginalName = originalName;
         let resolvedSourceFile: string | null = importInfo?.sourceFile ?? null;
 
+        if (importInfo && importInfo.originalName.startsWith("* as ") && importInfo.sourceFile) {
+          if (importInfo.isExternal) {
+            this.registry.registerNamespaceExport(filePath, {
+              name: exportedName,
+              externalModule: importInfo.sourceFile,
+              externalImportName: importInfo.originalName,
+            });
+          } else {
+            this.registry.registerNamespaceExport(filePath, {
+              name: exportedName,
+              targetFile: importInfo.sourceFile,
+            });
+          }
+
+          if (isEntry) {
+            this.registry.registerEntryNamespaceExport(filePath, exportedName);
+          }
+          continue;
+        }
+
         if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
           if (importInfo.originalName === "default") {
             const defaultTarget = this.resolveDefaultExportTarget(importInfo.sourceFile);
