@@ -1,0 +1,71 @@
+# Development Instructions for AI Assistants
+
+## Test Implementation Rules
+
+When implementing test cases in this repository, follow these strict rules:
+
+### Process
+
+1. **Analyze First**: Read and understand both `test/fixtures/[test-name]/input.ts` and `test/fixtures/[test-name]/expected.d.ts` before writing any code. Your analysis should include understanding:
+   - The TypeScript features used in the input file
+   - The bundler configuration options applied to the test
+   - The TypeScript compiler settings in the fixture's tsconfig.json
+2. **Expected Output is Reference**: Treat `expected.d.ts` files as the reference output. You may apply **non-destructive** changes when necessary due to implementation behavior (e.g., re-ordering, formatting). Do **NOT** change exported surface area or semantics.
+3. **Implementation Must Match Spec**: If tests fail, fix the implementation code in `src/`, unless a non-destructive adjustment to `expected.d.ts` is explicitly justified by ordering/formatting differences.
+4. **Validation Required**: After implementation, always run:
+   - `pnpm test` - ensure no regressions
+   - `pnpm lint` - code style compliance
+   - `pnpm check-types` - TypeScript type safety
+   - `pnpm build` - successful build
+   - `pnpm format:write` - to auto-format code
+
+### Red Flags
+
+❌ NEVER change the semantics of `test/fixtures/*/expected.d.ts`
+❌ NEVER say "let me update the expected output to match"
+❌ NEVER change test expectations without explicit discussion
+
+### Exception Handling
+
+If you genuinely believe an expected output is incorrect (violates TypeScript rules, has syntax errors, etc.):
+
+1. STOP implementation
+2. Explain the issue with evidence (TypeScript documentation, compiler behavior, etc.)
+3. Wait for human confirmation before proceeding
+
+### The Golden Rule
+
+**The expected output files are the reference. Your job is to make the implementation match the spec, except for non-destructive ordering/formatting adjustments when needed.**
+
+## Moving a Test Case
+
+When moving a test case from dts-bundle-generator to this repo:
+
+- `config.ts` → Convert to options passed into `runTestCase(...)`. Do **not** copy this file.
+- `output.d.ts` → Copy to `test/fixtures/<test-name>/expected.d.ts` and **remove** `export {}` unless the input explicitly has it. Preserve only exports defined by the input.
+- `input.ts` → Copy intact to `test/fixtures/<test-name>/input.ts`.
+- `index.spec.js` → Do **not** copy.
+- `tsconfig.json` → Copy into the fixture folder.
+- Any other files → Copy as-is (they are dependencies of the input).
+
+## Reference Code - Do Not Modify
+
+The `dts-bundle-generator/` folder contains the original dts-bundle-generator project for reference purposes only.
+
+**NEVER modify any files in `dts-bundle-generator/`**
+
+- This code is for reference and comparison
+- Our implementation in `src/` is a clean rewrite
+- Use it to understand patterns but don't copy-paste
+- Don't update or "fix" anything in this folder
+
+## Code Quality Standards
+
+- All code must pass TypeScript strict mode checks
+- Follow the existing code style (enforced by ESLint)
+- Use proper null checks - avoid unnecessary conditionals but handle edge cases
+- Add comments for complex logic, especially AST traversal code
+
+## File Protection
+
+❌ NEVER modify `MOVING_A_TEST_CASE.md`
