@@ -1,4 +1,4 @@
-import { Interface } from "fake-package";
+import type { Interface } from "fake-package";
 
 interface SubOptions {}
 interface FooOptions {

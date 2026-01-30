@@ -1,6 +1,6 @@
 import type { Config } from "another-package";
 import type { Config as Config_1 } from "external-package";
-import { OtherLib } from "other-lib";
+import type { OtherLib } from "other-lib";
 import type { Config as Config_2 } from "third-package";
 
 type AnotherLocalHelper = {

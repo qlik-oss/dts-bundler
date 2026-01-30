@@ -136,9 +136,17 @@ export class DependencyAnalyzer {
   }): void {
     const fileImports = this.importMap.get(declaration.sourceFile) ?? new Map();
     const references = new Set<string>();
+    const valueReferences = new Set<string>();
 
-    this.extractTypeReferences(declaration.node, references);
+    this.extractTypeReferences(declaration.node, references, valueReferences);
     this.trackImportTypeDependencies(declaration);
+
+    for (const refName of valueReferences) {
+      const importInfo = fileImports.get(refName);
+      if (importInfo?.isExternal && importInfo.sourceFile) {
+        this.registry.markExternalValueUsage(importInfo.sourceFile, importInfo.originalName);
+      }
+    }
 
     for (const refName of references) {
       const importInfo = fileImports.get(refName);
@@ -320,15 +328,23 @@ export class DependencyAnalyzer {
     return null;
   }
 
-  private extractTypeReferences(node: ts.Node, references: Set<string>): void {
+  private extractTypeReferences(node: ts.Node, references: Set<string>, valueReferences?: Set<string>): void {
+    const addReference = (name: string): void => {
+      references.add(name);
+    };
+    const addValueReference = (name: string): void => {
+      references.add(name);
+      valueReferences?.add(name);
+    };
+
     if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
-      references.add(node.name.text);
+      addReference(node.name.text);
     }
 
     if (ts.isTypeReferenceNode(node)) {
       const typeName = node.typeName;
       if (ts.isIdentifier(typeName)) {
-        references.add(typeName.text);
+        addReference(typeName.text);
       } else if (ts.isQualifiedName(typeName)) {
         DependencyAnalyzer.extractQualifiedName(typeName, references);
       }
@@ -338,15 +354,19 @@ export class DependencyAnalyzer {
     if (ts.isTypeQueryNode(node)) {
       const exprName = node.exprName;
       if (ts.isIdentifier(exprName)) {
-        references.add(exprName.text);
+        addValueReference(exprName.text);
       } else if (ts.isQualifiedName(exprName)) {
         DependencyAnalyzer.extractQualifiedName(exprName, references);
+        const leftmost = DependencyAnalyzer.getLeftmostEntityName(exprName);
+        if (leftmost) {
+          addValueReference(leftmost);
+        }
       }
     }
 
     // Handle variable declarations with initializers (e.g., const Lib = lib)
     if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.initializer)) {
-      references.add(node.initializer.text);
+      addValueReference(node.initializer.text);
     }
 
     // Handle property access expressions (e.g., Foo.Bar)
@@ -369,10 +389,18 @@ export class DependencyAnalyzer {
         for (const clause of node.heritageClauses) {
           for (const type of clause.types) {
             if (ts.isIdentifier(type.expression)) {
-              references.add(type.expression.text);
+              if (ts.isClassDeclaration(node)) {
+                addValueReference(type.expression.text);
+              } else {
+                addReference(type.expression.text);
+              }
             } else if (ts.isPropertyAccessExpression(type.expression)) {
               // Handle qualified names like MyModule.SomeCoolInterface
               DependencyAnalyzer.extractPropertyAccess(type.expression, references);
+              const leftmost = DependencyAnalyzer.getLeftmostPropertyAccessRoot(type.expression);
+              if (leftmost && ts.isClassDeclaration(node)) {
+                addValueReference(leftmost);
+              }
             }
           }
         }
@@ -384,7 +412,7 @@ export class DependencyAnalyzer {
     }
 
     node.forEachChild((child) => {
-      this.extractTypeReferences(child, references);
+      this.extractTypeReferences(child, references, valueReferences);
     });
 
     if (isCtsFile) {
@@ -487,6 +515,14 @@ export class DependencyAnalyzer {
     if (ts.isIdentifier(current)) {
       references.add(current.text);
     }
+  }
+
+  private static getLeftmostPropertyAccessRoot(propAccess: ts.PropertyAccessExpression): string | null {
+    let current: ts.Expression = propAccess;
+    while (ts.isPropertyAccessExpression(current)) {
+      current = current.expression;
+    }
+    return ts.isIdentifier(current) ? current.text : null;
   }
 
   private resolveStarExportedDeclarationIds(

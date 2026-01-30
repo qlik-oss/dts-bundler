@@ -2,14 +2,14 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { bundleTypes } from "../src/index";
-import type { BundleDtsOptions } from "../src/types";
+import type { BundleTypesOptions } from "../src/types";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testDir = path.join(__dirname, "fixtures");
 
 // make this type partial from BundleDtsOptions without entry
-export type RunTestCaseOptions = Omit<Partial<BundleDtsOptions>, "entry">;
+export type RunTestCaseOptions = Omit<Partial<BundleTypesOptions>, "entry">;
 
 export type ExptectedResult = {
   expected: string;

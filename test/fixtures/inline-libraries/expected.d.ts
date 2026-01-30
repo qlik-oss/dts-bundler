@@ -1,4 +1,4 @@
-import { OtherLib } from "other-lib";
+import type { OtherLib } from "other-lib";
 
 /**
  * A Local helper type for internal use.

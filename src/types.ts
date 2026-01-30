@@ -1,6 +1,6 @@
 import type ts from "typescript";
 
-export interface BundleDtsOptions {
+export interface BundleTypesOptions {
   /**
    * Entry TypeScript file path
    */
@@ -89,6 +89,7 @@ export interface ExportedNameInfo {
   externalModule?: string;
   externalImportName?: string;
   exportFrom?: boolean;
+  isTypeOnly?: boolean;
 }
 
 export interface NamespaceExportInfo {
@@ -122,6 +123,7 @@ export class TypeDeclaration {
   public node: ts.Node;
   public sourceFileNode: ts.SourceFile;
   public exportInfo: ExportInfo;
+  public isTypeOnly: boolean;
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
@@ -145,6 +147,7 @@ export class TypeDeclaration {
     this.node = node;
     this.sourceFileNode = sourceFileNode;
     this.exportInfo = exportInfo;
+    this.isTypeOnly = false;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();
@@ -203,6 +206,7 @@ export class ExternalImport {
   public normalizedName: string;
   public isTypeOnly: boolean;
   public isDefaultImport: boolean;
+  public isValueUsage: boolean;
   public typesLibraryName: string | null;
 
   constructor(
@@ -217,6 +221,7 @@ export class ExternalImport {
     this.normalizedName = importName;
     this.isTypeOnly = isTypeOnly;
     this.isDefaultImport = isDefaultImport;
+    this.isValueUsage = false;
     this.typesLibraryName = typesLibraryName;
   }
 }

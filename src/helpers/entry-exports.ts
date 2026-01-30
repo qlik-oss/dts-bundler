@@ -7,7 +7,9 @@ import { findSyntheticDefaultName, resolveDefaultExportNameFromRegistry } from "
 
 export type EntryExportData = {
   exportFromByModule: Map<string, string[]>;
+  exportFromTypeOnlyByModule: Map<string, Set<string>>;
   exportListItems: string[];
+  exportListTypeOnlyItems: Set<string>;
   exportListExternalDefaults: Set<string>;
   excludedExternalImports: Set<string>;
   requiredExternalImports: Set<string>;
@@ -119,7 +121,9 @@ export const buildEntryExportData = (params: {
   entryAliasMap?: Map<string, { sourceFile: string; originalName: string }>;
 }): EntryExportData => {
   const exportFromByModule = new Map<string, string[]>();
+  const exportFromTypeOnlyByModule = new Map<string, Set<string>>();
   const exportListItems: string[] = [];
+  const exportListTypeOnlyItems = new Set<string>();
   const exportListSet = new Set<string>();
   const exportListExternalDefaults = new Set<string>();
   const excludedExternalImports = new Set<string>();
@@ -129,7 +133,9 @@ export const buildEntryExportData = (params: {
   if (!entryFile) {
     return {
       exportFromByModule,
+      exportFromTypeOnlyByModule,
       exportListItems,
+      exportListTypeOnlyItems,
       exportListExternalDefaults,
       excludedExternalImports,
       requiredExternalImports,
@@ -177,10 +183,17 @@ export const buildEntryExportData = (params: {
       const importName = params.getNormalizedExternalImportName(exported.externalModule, exported.externalImportName);
       const importKey = `${exported.externalModule}:${exported.externalImportName}`;
 
+      const typeOnlyExternal = exported.isTypeOnly === true;
+
       if (exported.exportFrom && !declarationExternalImports.has(importKey)) {
         const list = exportFromByModule.get(exported.externalModule) ?? [];
         list.push(importName);
         exportFromByModule.set(exported.externalModule, list);
+        if (typeOnlyExternal) {
+          const typeOnlySet = exportFromTypeOnlyByModule.get(exported.externalModule) ?? new Set<string>();
+          typeOnlySet.add(importName);
+          exportFromTypeOnlyByModule.set(exported.externalModule, typeOnlySet);
+        }
         excludedExternalImports.add(importKey);
         continue;
       }
@@ -190,6 +203,11 @@ export const buildEntryExportData = (params: {
       if (!exportListSet.has(exportName)) {
         exportListSet.add(exportName);
         exportListItems.push(exportName);
+        if (typeOnlyExternal) {
+          exportListTypeOnlyItems.add(exportName);
+        } else {
+          params.registry.markExternalValueUsage(exported.externalModule, exported.externalImportName);
+        }
       }
       if (exported.externalImportName === "default" || exported.externalImportName.startsWith("default as ")) {
         exportListExternalDefaults.add(exportName);
@@ -203,8 +221,14 @@ export const buildEntryExportData = (params: {
       exported,
       params.entryAliasMap,
     );
-    const declId = params.registry.getFirstDeclarationIdByKey(`${sourceFile}:${originalName}`);
-    const decl = declId ? params.registry.getDeclaration(declId) : null;
+    const declIds = params.registry.getDeclarationIds(sourceFile, originalName);
+    const decls = declIds
+      ? Array.from(declIds)
+          .map((id) => params.registry.getDeclaration(id))
+          .filter(Boolean)
+      : [];
+    const isTypeOnlyDeclaration = decls.length > 0 ? decls.every((decl) => Boolean(decl && decl.isTypeOnly)) : false;
+    const decl = decls[0] ?? null;
     const normalizedOriginal =
       decl?.normalizedName ??
       params.nameMap.get(`${sourceFile}:${originalName}`) ??
@@ -223,6 +247,9 @@ export const buildEntryExportData = (params: {
     if (!exportListSet.has(exportItem)) {
       exportListSet.add(exportItem);
       exportListItems.push(exportItem);
+      if (isTypeOnlyDeclaration) {
+        exportListTypeOnlyItems.add(exportItem);
+      }
     }
   }
 
@@ -237,7 +264,9 @@ export const buildEntryExportData = (params: {
 
   return {
     exportFromByModule,
+    exportFromTypeOnlyByModule,
     exportListItems,
+    exportListTypeOnlyItems,
     exportListExternalDefaults,
     excludedExternalImports,
     requiredExternalImports,

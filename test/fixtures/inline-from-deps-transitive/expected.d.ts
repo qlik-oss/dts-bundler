@@ -1,5 +1,5 @@
-import { Path } from "fake-path";
-import { InterfaceFromTypesPackage } from "fake-types-lib";
+import type { Path } from "fake-path";
+import type { InterfaceFromTypesPackage } from "fake-types-lib";
 
 export interface File {
   path: Path;
