@@ -10,8 +10,8 @@ When implementing test cases in this repository, follow these strict rules:
    - The TypeScript features used in the input file
    - The bundler configuration options applied to the test
    - The TypeScript compiler settings in the fixture's tsconfig.json
-2. **Expected Output is Sacred**: You are FORBIDDEN from modifying `expected.d.ts` files to make tests pass
-3. **Implementation Must Match Spec**: If tests fail, fix the implementation code in `src/`, never the test expectations
+2. **Expected Output is Reference**: Treat `expected.d.ts` files as the reference output. You may apply **non-destructive** changes when necessary due to implementation behavior (e.g., re-ordering, formatting). Do **NOT** change exported surface area or semantics.
+3. **Implementation Must Match Spec**: If tests fail, fix the implementation code in `src/`, unless a non-destructive adjustment to `expected.d.ts` is explicitly justified by ordering/formatting differences.
 4. **Validation Required**: After implementation, always run:
    - `pnpm test` - ensure no regressions
    - `pnpm lint` - code style compliance
@@ -21,7 +21,7 @@ When implementing test cases in this repository, follow these strict rules:
 
 ### Red Flags
 
-❌ NEVER modify files in `test/fixtures/*/expected.d.ts`
+❌ NEVER change the semantics of `test/fixtures/*/expected.d.ts`
 ❌ NEVER say "let me update the expected output to match"
 ❌ NEVER change test expectations without explicit discussion
 
@@ -35,7 +35,18 @@ If you genuinely believe an expected output is incorrect (violates TypeScript ru
 
 ### The Golden Rule
 
-**The expected output files are the specification. Your job is to make the implementation match the spec, not the other way around.**
+**The expected output files are the reference. Your job is to make the implementation match the spec, except for non-destructive ordering/formatting adjustments when needed.**
+
+## Moving a Test Case
+
+When moving a test case from dts-bundle-generator to this repo:
+
+- `config.ts` → Convert to options passed into `runTestCase(...)`. Do **not** copy this file.
+- `output.d.ts` → Copy to `test/fixtures/<test-name>/expected.d.ts` and **remove** `export {}` unless the input explicitly has it. Preserve only exports defined by the input.
+- `input.ts` → Copy intact to `test/fixtures/<test-name>/input.ts`.
+- `index.spec.js` → Do **not** copy.
+- `tsconfig.json` → Copy into the fixture folder.
+- Any other files → Copy as-is (they are dependencies of the input).
 
 ## Reference Code - Do Not Modify
 
