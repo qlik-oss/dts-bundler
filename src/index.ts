@@ -101,7 +101,7 @@ function bundle(
  * @param options - Bundling options
  * @returns The bundled TypeScript declaration content
  */
-export function bundleDts(options: BundleDtsOptions): string {
+export function bundleTypes(options: BundleDtsOptions): string {
   const {
     entry,
     inlinedLibraries = [],
@@ -193,7 +193,7 @@ if (isRunAsCli()) {
   console.log(`Bundling types from ${path.resolve(options.entry as string)}...`);
 
   try {
-    const bundledContent = bundleDts({
+    const bundledContent = bundleTypes({
       entry: options.entry as string,
       inlinedLibraries: options.inlinedLibraries,
     });

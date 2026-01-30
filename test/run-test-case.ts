@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { bundleDts } from "../src/index";
+import { bundleTypes } from "../src/index";
 import type { BundleDtsOptions } from "../src/types";
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -19,7 +19,7 @@ export type ExptectedResult = {
 /**
  * Helper function to run a test case
  * @param {string} testName - Name of the test case (folder in fixtures/)
- * @param {object} options - Options to pass to bundleDts
+ * @param {object} options - Options to pass to bundleTypes
  */
 export function runTestCase(testName: string, options: RunTestCaseOptions = {}): ExptectedResult {
   const fixtureDir = path.join(testDir, testName);
@@ -50,7 +50,7 @@ export function runTestCase(testName: string, options: RunTestCaseOptions = {}):
   }
 
   const expectedFile = path.join(fixtureDir, "expected.d.ts");
-  const result = bundleDts({ entry: entryFile, noBanner: true, ...options });
+  const result = bundleTypes({ entry: entryFile, noBanner: true, ...options });
 
   // Auto-update expected files if UPDATE_EXPECTED env var is set
   if (process.env.UPDATE_EXPECTED) {
