@@ -1,4 +1,4 @@
-import * as fakePackage from "fake-package";
+import type * as fakePackage from "fake-package";
 
 export declare class MyClass {
   static func(): fakePackage.InterfaceWithFields;

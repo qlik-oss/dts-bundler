@@ -94,6 +94,7 @@ export class DeclarationCollector {
       };
 
       const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+      declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(moduleDecl);
 
       this.registry.register(declaration);
       return;
@@ -114,6 +115,7 @@ export class DeclarationCollector {
       };
 
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+      declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(statement);
       declaration.forceInclude = true;
       this.registry.register(declaration);
     }
@@ -172,6 +174,7 @@ export class DeclarationCollector {
       ...exportInfo,
       wasOriginallyExported,
     });
+    declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(statement);
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
@@ -197,6 +200,7 @@ export class DeclarationCollector {
 
     const declarationNode = DeclarationCollector.createDefaultExportVariable(statement, syntheticName);
     const declaration = new TypeDeclaration(syntheticName, filePath, declarationNode, sourceFile, exportInfo);
+    declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(declarationNode);
 
     if (ts.isVariableStatement(declarationNode)) {
       const varDecl = declarationNode.declarationList.declarations[0];
@@ -255,6 +259,7 @@ export class DeclarationCollector {
 
     ts.setTextRange(namedNode, statement);
     const declaration = new TypeDeclaration(syntheticName, filePath, namedNode, sourceFile, exportInfo);
+    declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(namedNode);
     this.registry.register(declaration);
 
     if (isEntry) {
@@ -332,6 +337,7 @@ export class DeclarationCollector {
         };
 
         const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+        declaration.isTypeOnly = false;
         const synthetic = ts.factory.createVariableDeclaration(identifier, undefined, undefined, element.initializer);
         ts.setTextRange(synthetic, element);
         declaration.variableDeclaration = synthetic;
@@ -360,6 +366,7 @@ export class DeclarationCollector {
       };
 
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
+      declaration.isTypeOnly = false;
       declaration.variableDeclaration = varDecl;
       this.registry.register(declaration);
     }
@@ -392,9 +399,14 @@ export class DeclarationCollector {
     };
 
     const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
+    declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(moduleDecl);
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
     this.registry.register(declaration);
+  }
+
+  private static isTypeOnlyDeclaration(node: ts.Node): boolean {
+    return ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node);
   }
 }

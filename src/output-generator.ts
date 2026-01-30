@@ -185,7 +185,7 @@ export class OutputGenerator {
       // Emit ES6 imports if any
       if (esImports.length === 0) continue;
 
-      const isTypeOnly = esImports.every((imp) => imp.isTypeOnly);
+      const isTypeOnly = esImports.every((imp) => !imp.isValueUsage);
       const typePrefix = isTypeOnly ? "type " : "";
 
       const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
@@ -197,7 +197,7 @@ export class OutputGenerator {
           continue;
         }
         emittedNamespaces.add(namespaceImport.normalizedName);
-        const namespacePrefix = namespaceImport.isTypeOnly ? "type " : "";
+        const namespacePrefix = namespaceImport.isValueUsage ? "" : "type ";
         lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
       }
 
@@ -244,14 +244,17 @@ export class OutputGenerator {
   }
 
   private generateExternalPrelude(): { lines: string[] } {
-    const { exportFromByModule, excludedExternalImports, requiredExternalImports } = this.getEntryExportData();
+    const { exportFromByModule, exportFromTypeOnlyByModule, excludedExternalImports, requiredExternalImports } =
+      this.getEntryExportData();
 
     const filteredExternals = this.filterExternalImports(excludedExternalImports, requiredExternalImports);
     const lines: string[] = [];
 
     for (const [moduleName, exportItems] of exportFromByModule.entries()) {
       if (exportItems.length > 0) {
-        lines.push(OutputGenerator.buildExportFromLine(moduleName, exportItems));
+        const typeOnlySet = exportFromTypeOnlyByModule.get(moduleName) ?? new Set<string>();
+        const isTypeOnlyExport = exportItems.every((item) => typeOnlySet.has(item));
+        lines.push(OutputGenerator.buildExportFromLine(moduleName, exportItems, isTypeOnlyExport));
       }
     }
 
@@ -267,10 +270,13 @@ export class OutputGenerator {
   }
 
   private generateNamedExports(): string[] {
-    const { exportListItems, exportListExternalDefaults } = this.getEntryExportData();
+    const { exportListItems, exportListTypeOnlyItems, exportListExternalDefaults } = this.getEntryExportData();
     if (exportListItems.length === 0) {
       return [];
     }
+
+    const isTypeOnlyExport = exportListItems.every((item) => exportListTypeOnlyItems.has(item));
+    const exportPrefix = isTypeOnlyExport ? "export type" : "export";
 
     const useMultilineForExternalDefaults =
       exportListItems.length > 1 &&
@@ -278,10 +284,10 @@ export class OutputGenerator {
       exportListExternalDefaults.size === exportListItems.length;
 
     if (exportListItems.length <= 3 && !useMultilineForExternalDefaults) {
-      return [`export { ${exportListItems.join(", ")} };`];
+      return [`${exportPrefix} { ${exportListItems.join(", ")} };`];
     }
 
-    const lines = ["export {"];
+    const lines = [`${exportPrefix} {`];
     for (const item of exportListItems) {
       lines.push(`  ${item},`);
     }
@@ -416,21 +422,27 @@ export class OutputGenerator {
     return null;
   }
 
-  private static buildExportFromLine(moduleName: string, items: string[]): string {
+  private static buildExportFromLine(moduleName: string, items: string[], isTypeOnly = false): string {
     const unique = Array.from(new Set(items));
     if (unique.length === 1) {
-      return `export { ${unique[0]} } from "${moduleName}";`;
+      const typePrefix = isTypeOnly ? "type " : "";
+      return `export ${typePrefix}{ ${unique[0]} } from "${moduleName}";`;
     }
 
     if (unique.length <= 2) {
-      return `export { ${unique.join(", ")} } from "${moduleName}";`;
+      const typePrefix = isTypeOnly ? "type " : "";
+      return `export ${typePrefix}{ ${unique.join(", ")} } from "${moduleName}";`;
     }
 
     const lines = ["export {"];
     for (const item of unique) {
       lines.push(`  ${item},`);
     }
+    const typePrefix = isTypeOnly ? "type " : "";
     lines.push(`} from "${moduleName}";`);
+    if (typePrefix) {
+      lines[0] = `export ${typePrefix}{`;
+    }
     return lines.join("\n");
   }
 
@@ -451,7 +463,7 @@ export class OutputGenerator {
     // Emit ES6 imports if any
     if (esImports.length === 0) return lines;
 
-    const isTypeOnly = esImports.every((imp) => imp.isTypeOnly);
+    const isTypeOnly = esImports.every((imp) => !imp.isValueUsage);
     const typePrefix = isTypeOnly ? "type " : "";
 
     const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
@@ -463,7 +475,7 @@ export class OutputGenerator {
         continue;
       }
       emittedNamespaces.add(namespaceImport.normalizedName);
-      const namespacePrefix = namespaceImport.isTypeOnly ? "type " : "";
+      const namespacePrefix = namespaceImport.isValueUsage ? "" : "type ";
       lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
     }
 

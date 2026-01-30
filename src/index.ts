@@ -10,7 +10,7 @@ import { NameNormalizer } from "./name-normalizer.js";
 import { OutputGenerator } from "./output-generator.js";
 import { TypeRegistry } from "./registry.js";
 import { TreeShaker } from "./tree-shaker.js";
-import type { BundleDtsOptions } from "./types.js";
+import type { BundleTypesOptions } from "./types.js";
 
 function bundle(
   entry: string,
@@ -101,7 +101,7 @@ function bundle(
  * @param options - Bundling options
  * @returns The bundled TypeScript declaration content
  */
-export function bundleTypes(options: BundleDtsOptions): string {
+export function bundleTypes(options: BundleTypesOptions): string {
   const {
     entry,
     inlinedLibraries = [],

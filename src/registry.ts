@@ -72,9 +72,20 @@ export class TypeRegistry {
       if (existing && !existing.typesLibraryName) {
         existing.typesLibraryName = typesLibraryName;
       }
+      if (existing && !isTypeOnly) {
+        existing.isTypeOnly = false;
+      }
     }
 
     return moduleImports.get(importName) as ExternalImport;
+  }
+
+  markExternalValueUsage(moduleName: string, importName: string): void {
+    const moduleImports = this.externalImports.get(moduleName);
+    const existing = moduleImports?.get(importName) ?? null;
+    if (existing) {
+      existing.isValueUsage = true;
+    }
   }
 
   registerExportedName(filePath: string, info: ExportedNameInfo): void {
@@ -101,6 +112,13 @@ export class TypeRegistry {
     if (!existing.exportFrom && info.exportFrom) {
       existing.exportFrom = info.exportFrom;
     }
+    if (info.isTypeOnly !== undefined) {
+      if (existing.isTypeOnly === undefined) {
+        existing.isTypeOnly = info.isTypeOnly;
+      } else {
+        existing.isTypeOnly = existing.isTypeOnly && info.isTypeOnly;
+      }
+    }
   }
 
   registerNamespaceExport(filePath: string, info: NamespaceExportInfo, registerExportedName = true): void {
@@ -117,6 +135,10 @@ export class TypeRegistry {
         externalModule: info.externalModule,
         externalImportName: info.externalImportName,
       });
+    }
+
+    if (info.externalModule && info.externalImportName) {
+      this.markExternalValueUsage(info.externalModule, info.externalImportName);
     }
   }
 

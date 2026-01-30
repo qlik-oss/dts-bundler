@@ -94,16 +94,17 @@ export class ExportResolver {
 
     for (const statement of sourceFile.statements) {
       if (isDeclaration(statement) && hasExportModifier(statement)) {
+        const isTypeOnlyDeclaration = ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement);
         if (ts.isVariableStatement(statement)) {
           for (const declaration of statement.declarationList.declarations) {
             if (ts.isIdentifier(declaration.name)) {
-              this.registry.registerExportedName(filePath, { name: declaration.name.text });
+              this.registry.registerExportedName(filePath, { name: declaration.name.text, isTypeOnly: false });
               continue;
             }
 
             if (ts.isObjectBindingPattern(declaration.name) || ts.isArrayBindingPattern(declaration.name)) {
               for (const identifier of collectBindingIdentifiersFromName(declaration.name)) {
-                this.registry.registerExportedName(filePath, { name: identifier.text });
+                this.registry.registerExportedName(filePath, { name: identifier.text, isTypeOnly: false });
               }
             }
           }
@@ -112,7 +113,7 @@ export class ExportResolver {
 
         const name = getDeclarationName(statement);
         if (name) {
-          this.registry.registerExportedName(filePath, { name });
+          this.registry.registerExportedName(filePath, { name, isTypeOnly: isTypeOnlyDeclaration });
         }
         continue;
       }
@@ -161,13 +162,14 @@ export class ExportResolver {
               });
             }
           } else {
-            this.registry.registerExportedName(filePath, { name: exportName });
+            this.registry.registerExportedName(filePath, { name: exportName, isTypeOnly: statement.isTypeOnly });
           }
         } else {
           this.registry.registerExportedName(filePath, {
             name: exportName,
             externalModule: existingNamespaceInfo.externalModule,
             externalImportName: existingNamespaceInfo.externalImportName,
+            isTypeOnly: statement.isTypeOnly,
           });
         }
 
@@ -216,12 +218,14 @@ export class ExportResolver {
                   externalModule: exportedInfo.externalModule,
                   externalImportName,
                   exportFrom: exportedInfo.exportFrom,
+                  isTypeOnly: statement.isTypeOnly,
                 });
               } else {
                 this.registry.registerExportedName(filePath, {
                   name: exportedName,
                   sourceFile: resolvedSourceFile,
                   originalName: resolvedOriginalName,
+                  isTypeOnly: statement.isTypeOnly,
                 });
 
                 const starResolved = exportedInfo
@@ -237,6 +241,7 @@ export class ExportResolver {
                     externalModule: starResolved.moduleName,
                     externalImportName: starImportName,
                     exportFrom: true,
+                    isTypeOnly: statement.isTypeOnly,
                   });
                 }
               }
@@ -249,6 +254,7 @@ export class ExportResolver {
               name: exportedName,
               externalModule: importPath,
               externalImportName: importName,
+              isTypeOnly: statement.isTypeOnly,
             });
           }
         }
@@ -298,15 +304,17 @@ export class ExportResolver {
             name: exportedName,
             externalModule: importInfo.sourceFile,
             externalImportName: importInfo.originalName,
+            isTypeOnly: statement.isTypeOnly,
           });
         } else if (importInfo && resolvedSourceFile) {
           this.registry.registerExportedName(filePath, {
             name: exportedName,
             sourceFile: resolvedSourceFile,
             originalName: resolvedOriginalName,
+            isTypeOnly: statement.isTypeOnly,
           });
         } else {
-          this.registry.registerExportedName(filePath, { name: exportedName });
+          this.registry.registerExportedName(filePath, { name: exportedName, isTypeOnly: statement.isTypeOnly });
         }
 
         const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, originalName);
@@ -850,6 +858,7 @@ export class ExportResolver {
       };
 
       const declaration = new TypeDeclaration(name, filePath, expression, statement.getSourceFile(), exportInfo);
+      declaration.isTypeOnly = ts.isInterfaceDeclaration(expression) || ts.isTypeAliasDeclaration(expression);
       this.registry.register(declaration);
       return;
     }

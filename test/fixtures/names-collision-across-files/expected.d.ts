@@ -1,5 +1,5 @@
-import * as fakePackage from "fake-package";
-import { Interface as FPI1, Interface as FPI2, Interface as Interface$2 } from "fake-package";
+import type * as fakePackage from "fake-package";
+import type { Interface as FPI1, Interface as FPI2, Interface as Interface$2 } from "fake-package";
 
 export type ExportEqNs = string;
 declare namespace ExportEqNs$1 {

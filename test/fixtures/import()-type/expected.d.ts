@@ -1,4 +1,4 @@
-import { NonDefaultInterface as DFI } from "package-with-default-export";
+import type { NonDefaultInterface as DFI } from "package-with-default-export";
 
 interface CustomType {
   foo: number;
