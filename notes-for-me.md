@@ -1,4 +1,8 @@
-I want to move the test case `the-test-case` from the #file:test-cases to #file:dts-bundler.test.ts and #file:fixtures
+I want to move some test cases from the #file:test-cases to #file:dts-bundler.test.ts and #file:fixtures
+
+The test cases I want to move are:
+
+- `the-test-case`
 
 Some instructions on how to move a test is writting in #file:MOVING_A_TEST_CASE.md
 
