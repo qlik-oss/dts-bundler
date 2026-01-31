@@ -131,6 +131,13 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle import from interface with export = package", () => {
+      const { expected, result } = runTestCase("import-from-interface-with-export-eq", {
+        importedLibraries: ["commander"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle export = types from npm", () => {
       const { expected, result } = runTestCase("handle-export-eq-from-npm", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);
@@ -440,6 +447,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle extending other modules", () => {
       const { expected, result } = runTestCase("extend-other-module", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle complex module extensions", () => {
+      const { expected, result } = runTestCase("extend-other-module-complex");
       expect(result).toBe(expected);
     });
 

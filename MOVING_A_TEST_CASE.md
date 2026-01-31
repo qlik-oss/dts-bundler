@@ -11,8 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-extend-other-module-complex
-import-from-interface-with-export-eq
 import-from-namespace-in-cjs
 merged-symbols
 inline-package-with-namespaced-import
