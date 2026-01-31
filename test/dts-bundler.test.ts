@@ -131,6 +131,23 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle compound types from npm without extra imports", () => {
+      const { expected, result } = runTestCase("import-compound-type-from-npm-cause-unnecessary-import");
+      expect(result).toBe(expected);
+    });
+
+    it("should resolve non-relative imports via baseUrl", () => {
+      const { expected, result } = runTestCase("import-from-non-relative-path-inferred-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve imported libs with declaration merging", () => {
+      const { expected, result } = runTestCase("import-package-with-declaration-merging-with-default-lib", {
+        importedLibraries: ["fake-types-lib-3"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle import from interface with export = package", () => {
       const { expected, result } = runTestCase("import-from-interface-with-export-eq", {
         importedLibraries: ["commander"],
@@ -268,6 +285,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle exports wrapped with namespace", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace", { exportReferencedTypes: false });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle exports with underscores in names", () => {
+      const { expected, result } = runTestCase("underscore-in-name");
       expect(result).toBe(expected);
     });
 

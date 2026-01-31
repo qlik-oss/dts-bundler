@@ -11,13 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-Move These Last (Low Priority)
-Edge Cases:
-33. underscore-in-name
-34. import-compound-type-from-npm-cause-unnecessary-import
-35. import-from-non-relative-path-inferred-type
-36. import-package-with-declaration-merging-with-default-lib
-
 TypeScript Paths:
 37. re-export-from-paths-module
 38. re-export-with-paths

@@ -3,9 +3,9 @@ interface LibInterface {
 }
 export declare const myLib: LibInterface;
 
-declare namespace newName {
-}
 declare namespace myLib {
 }
+declare namespace newName {
+}
 
-export { newName, myLib };
+export { myLib, newName };
