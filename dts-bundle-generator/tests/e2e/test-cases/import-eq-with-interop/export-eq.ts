@@ -1,3 +1,0 @@
-class ClassName {}
-
-export = ClassName;

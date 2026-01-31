@@ -1,1 +1,0 @@
-export type Decl = string;
