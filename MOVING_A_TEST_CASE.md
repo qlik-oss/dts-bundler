@@ -11,30 +11,14 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-Move These Later (Medium Priority)
-Tree Shaking/Export Stripping:
-
-Module Declarations:
-17. declare-unknown-modules
-18. modules-in-internal-files-without-inline-declare-globals
-19. dont-inline-declare-extenal-modules-in-internal-files
-
-Complex Patterns:
-20. extend-other-module-complex
-21. different-default-export-names-in-project
-22. import-from-interface-with-export-eq
-23. import-from-namespace-in-cjs
-24. handle-export-eq-from-npm
-25. merged-symbols
-26. top-level-declarations
-27. rename-local-class
-28. inline-package-with-namespaced-import
-
-Namespace Chain Variants:
-29. export-wrapped-with-namespace-chain-but-via-imports
-30. export-wrapped-with-namespace-chain-inline
-31. export-wrapped-with-namespace-export-eq-export
-32. export-wrapped-with-namespace-export-eq-inline
+extend-other-module-complex
+import-from-interface-with-export-eq
+import-from-namespace-in-cjs
+merged-symbols
+inline-package-with-namespaced-import
+export-wrapped-with-namespace-chain-inline
+export-wrapped-with-namespace-export-eq-export
+export-wrapped-with-namespace-export-eq-inline
 
 Move These Last (Low Priority)
 Edge Cases:

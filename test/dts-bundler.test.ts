@@ -79,6 +79,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle different default export names in project", () => {
+      const { expected, result } = runTestCase("different-default-export-names-in-project");
+      expect(result).toBe(expected);
+    });
+
     it("should handle mixed ES and CommonJS imports", () => {
       const { expected, result } = runTestCase("mixed-imports");
       expect(result).toBe(expected);
@@ -86,6 +91,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle importing variables from external packages", () => {
       const { expected, result } = runTestCase("import-variables");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle renamed local class imports", () => {
+      const { expected, result } = runTestCase("rename-local-class");
       expect(result).toBe(expected);
     });
 
@@ -118,6 +128,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle importing from types", () => {
       const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle export = types from npm", () => {
+      const { expected, result } = runTestCase("handle-export-eq-from-npm", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);
     });
   });
@@ -205,6 +220,13 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle exports wrapped with namespace chain", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace-chain", { exportReferencedTypes: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle exports wrapped with namespace chain via imports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain-but-via-imports", {
+        exportReferencedTypes: false,
+      });
       expect(result).toBe(expected);
     });
 
@@ -296,8 +318,23 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle unknown module declarations", () => {
+      const { expected, result } = runTestCase("declare-unknown-modules", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
     it("should handle declare module in internal files", () => {
       const { expected, result } = runTestCase("declare-module-in-internal-files", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle internal modules without inlining externals", () => {
+      const { expected, result } = runTestCase("modules-in-internal-files-without-inline-declare-globals");
+      expect(result).toBe(expected);
+    });
+
+    it("should not inline external modules in internal files", () => {
+      const { expected, result } = runTestCase("dont-inline-declare-extenal-modules-in-internal-files");
       expect(result).toBe(expected);
     });
 
@@ -327,6 +364,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("inline-declare-global-from-imports", {
         inlineDeclareGlobals: true,
       });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle top-level declarations", () => {
+      const { expected, result } = runTestCase("top-level-declarations");
       expect(result).toBe(expected);
     });
   });
