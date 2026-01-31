@@ -11,10 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-export-wrapped-with-namespace-chain-inline
-export-wrapped-with-namespace-export-eq-export
-export-wrapped-with-namespace-export-eq-inline
-
 Move These Last (Low Priority)
 Edge Cases:
 33. underscore-in-name

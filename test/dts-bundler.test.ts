@@ -251,6 +251,14 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle exports wrapped with namespace chain with inlined exports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain-inline", {
+        inlinedLibraries: ["package-with-export-eq"],
+        exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle exports wrapped with namespace chain via imports", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace-chain-but-via-imports", {
         exportReferencedTypes: false,
@@ -260,6 +268,21 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle exports wrapped with namespace", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace", { exportReferencedTypes: false });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle namespace export = re-exports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-export-eq-export", {
+        exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle namespace export = with inlining", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-export-eq-inline", {
+        inlinedLibraries: ["package-with-export-eq", "package-with-export-eq-variable"],
+        exportReferencedTypes: false,
+      });
       expect(result).toBe(expected);
     });
 
