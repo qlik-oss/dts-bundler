@@ -88,6 +88,12 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("import-variables");
       expect(result).toBe(expected);
     });
+
+    it("should handle several import * from one package", () => {
+      const { expected, result } = runTestCase("several-import-star-from-one-package");
+      expect(result).toBe(expected);
+    });
+
     it("should handle importing from types", () => {
       const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
       expect(result).toBe(expected);
