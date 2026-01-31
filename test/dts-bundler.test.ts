@@ -332,8 +332,41 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle re-export inside modules", () => {
+      const { expected, result } = runTestCase("re-export-in-modules", {
+        allowedTypesLibraries: [],
+        importedLibraries: [
+          "package-with-cyclic-re-export-1",
+          "package-with-cyclic-re-export-2",
+          "re-export-cycle-dependency-1",
+          "re-export-cycle-dependency-2",
+          "re-export-via-eq-v2",
+          "re-export-via-eq",
+          "re-export-via-import",
+          "re-export-via-star-with-rename",
+          "re-export-via-star",
+        ],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle re-export as namespace", () => {
       const { expected, result } = runTestCase("re-export-as-namespace");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export from paths module", () => {
+      const { expected, result } = runTestCase("re-export-from-paths-module");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export with paths", () => {
+      const { expected, result } = runTestCase("re-export-with-paths");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export from importable module", () => {
+      const { expected, result } = runTestCase("re-export-from-importable-module");
       expect(result).toBe(expected);
     });
 
@@ -364,6 +397,13 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle re-export without statements (namespace re-export)", () => {
       const { expected, result } = runTestCase("re-export-without-statements");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export in node_modules", () => {
+      const { expected, result } = runTestCase("re-export-in-node_modules", {
+        inlinedLibraries: ["package-with-re-exports"],
+      });
       expect(result).toBe(expected);
     });
   });

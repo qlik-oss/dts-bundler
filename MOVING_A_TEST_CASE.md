@@ -11,13 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-TypeScript Paths:
-37. re-export-from-paths-module
-38. re-export-with-paths
-39. re-export-from-importable-module
-40. re-export-in-modules
-41. re-export-in-node_modules
-
 Feature-Specific:
 42. external-types
 43. allow-js
