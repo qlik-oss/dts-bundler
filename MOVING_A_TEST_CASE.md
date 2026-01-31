@@ -13,9 +13,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 Move These Later (Medium Priority)
 Tree Shaking/Export Stripping:
-13. strip-export-from-non-exported-enum
-14. strip-export-from-non-exported-function
-15. disable-non-direct-exports
 
 Module Declarations:
 17. declare-unknown-modules

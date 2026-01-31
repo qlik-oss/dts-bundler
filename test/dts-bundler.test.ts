@@ -106,6 +106,16 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should strip exports from non-exported enums", () => {
+      const { expected, result } = runTestCase("strip-export-from-non-exported-enum");
+      expect(result).toBe(expected);
+    });
+
+    it("should strip exports from non-exported functions", () => {
+      const { expected, result } = runTestCase("strip-export-from-non-exported-function");
+      expect(result).toBe(expected);
+    });
+
     it("should handle importing from types", () => {
       const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
       expect(result).toBe(expected);
@@ -324,6 +334,11 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Configuration Options", () => {
     it("should add banner when noBanner is false", () => {
       const { expected, result } = runTestCase("banner", { noBanner: false });
+      expect(result).toBe(expected);
+    });
+
+    it("should disable non-direct exports when configured", () => {
+      const { expected, result } = runTestCase("disable-non-direct-exports", { exportReferencedTypes: false });
       expect(result).toBe(expected);
     });
 

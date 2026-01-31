@@ -7,7 +7,7 @@ declare namespace ExportedModule {
   type Foo = string;
 }
 declare var ModuleName: { prototype: Interface };
-declare module "ambient-module" {}
+declare module "ambient-module" { }
 export interface InterfaceInternal extends Interface {}
 export declare module ModuleName {
   interface Interface extends InterfaceInternal {}
