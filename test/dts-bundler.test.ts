@@ -138,6 +138,13 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should inline namespace exports from CommonJS package", () => {
+      const { expected, result } = runTestCase("import-from-namespace-in-cjs", {
+        inlinedLibraries: ["ora"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle export = types from npm", () => {
       const { expected, result } = runTestCase("handle-export-eq-from-npm", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);
@@ -152,6 +159,20 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should inline specified libraries", () => {
       const { expected, result } = runTestCase("inline-libraries", { inlinedLibraries: ["@myorg/lib"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle module augmentation only exports", () => {
+      const { expected, result } = runTestCase("module-augmentation", {
+        inlinedLibraries: ["extensions-package"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline namespaced re-exports from packages", () => {
+      const { expected, result } = runTestCase("inline-package-with-namespaced-import", {
+        inlinedLibraries: ["fake-package"],
+      });
       expect(result).toBe(expected);
     });
 
