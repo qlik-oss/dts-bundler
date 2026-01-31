@@ -23,6 +23,7 @@ export class FileCollector {
   private typeChecker: ts.TypeChecker;
   private entryFile: string;
   private inlinedLibrariesSet: Set<string>;
+  private typeRoots: string[];
   private modulePathCache: Map<string, string>;
   private moduleFilesByLibrary: Map<string, string[]>;
   private moduleResolveCache: Map<string, string | null>;
@@ -33,6 +34,11 @@ export class FileCollector {
     this.inlinedLibraries = options.inlinedLibraries ?? [];
     this.program = this.createProgram();
     this.typeChecker = this.program.getTypeChecker();
+
+    const compilerOptions = this.program.getCompilerOptions();
+    const effectiveRoots = ts.getEffectiveTypeRoots(compilerOptions, ts.sys) ?? [];
+    const configRoots = compilerOptions.typeRoots ?? [];
+    this.typeRoots = [...new Set([...effectiveRoots, ...configRoots])].map((root) => path.resolve(root));
 
     // Compute transitive closure of inlined libraries
     this.inlinedLibrariesSet = this.computeInlinedLibrariesSet();
@@ -134,6 +140,18 @@ export class FileCollector {
       return false;
     }
 
+    if (this.isFromTypeRoots(fileName)) {
+      for (const statement of sourceFile.statements) {
+        if (ts.isModuleDeclaration(statement)) {
+          const moduleName = statement.name.text;
+          if (this.inlinedLibrariesSet.has(moduleName)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     // Check if file is from node_modules
     const libraryName = getLibraryName(fileName);
 
@@ -159,6 +177,14 @@ export class FileCollector {
     }
 
     return false;
+  }
+
+  private isFromTypeRoots(fileName: string): boolean {
+    if (this.typeRoots.length === 0) {
+      return false;
+    }
+    const normalizedFile = path.resolve(fileName);
+    return this.typeRoots.some((root) => normalizedFile.startsWith(`${root}${path.sep}`) || normalizedFile === root);
   }
 
   shouldInlineFilePath(filePath: string): boolean {
@@ -296,6 +322,12 @@ export class FileCollector {
       }
     }
 
+    const resolvedByTs = this.resolveModuleSpecifier(fromFile, importPath);
+    if (resolvedByTs && fs.existsSync(resolvedByTs) && fs.statSync(resolvedByTs).isFile()) {
+      this.moduleResolveCache.set(importPath, resolvedByTs);
+      return resolvedByTs;
+    }
+
     this.moduleResolveCache.set(importPath, null);
     return null;
   }
@@ -388,6 +420,25 @@ export class FileCollector {
       for (const ref of typeRefs) {
         if (ref.preserve === true) {
           referencedTypes.add(ref.fileName);
+        }
+      }
+
+      for (const statement of sourceFile.statements) {
+        if (!ts.isImportDeclaration(statement)) continue;
+        if (statement.importClause) continue;
+        const moduleSpecifier = statement.moduleSpecifier;
+        if (!ts.isStringLiteral(moduleSpecifier)) continue;
+
+        const { resolvedPath, typesLibraryName } = this.resolveExternalImport(filePath, moduleSpecifier.text);
+        if (typesLibraryName) {
+          referencedTypes.add(typesLibraryName);
+          continue;
+        }
+        if (resolvedPath) {
+          const fallbackTypesLibrary = getTypesLibraryName(resolvedPath);
+          if (fallbackTypesLibrary) {
+            referencedTypes.add(fallbackTypesLibrary);
+          }
         }
       }
 

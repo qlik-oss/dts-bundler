@@ -10,8 +10,9 @@ interface AnotherInterface {
   field: number;
 }
 declare const constName = "const";
-declare let letName: number;
 declare function funcName(): void;
+declare let letName: number;
+export declare class MyClass {}
 interface SomeInterface {
   field: string;
 }
@@ -19,7 +20,6 @@ interface DefaultInterface {
   field: boolean;
 }
 declare function defaultFunction(): void;
-export declare class MyClass {}
 
 export * from "fs";
 

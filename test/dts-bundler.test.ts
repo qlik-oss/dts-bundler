@@ -200,6 +200,21 @@ describe("TypeScript Declaration Bundler", () => {
       });
       expect(result).toBe(expected);
     });
+
+    it("should emit reference types for external types libraries", () => {
+      const { expected, result } = runTestCase("external-types", { allowedTypesLibraries: ["mocha"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should respect custom typeRoots with imported libraries", () => {
+      const { expected, result } = runTestCase("custom-types-folder", { importedLibraries: ["fake-types-lib-2"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should resolve custom typeRoots for local types", () => {
+      const { expected, result } = runTestCase("using-custom-types", { allowedTypesLibraries: [] });
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Export Patterns", () => {
