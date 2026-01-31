@@ -31,6 +31,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should support allowJs imports", () => {
+      const { expected, result } = runTestCase("allow-js");
+      expect(result).toBe(expected);
+    });
+
     it("should handle type-only imports from dependencies", () => {
       const { expected, result } = runTestCase("import-type-from-deps");
       expect(result).toBe(expected);
@@ -59,6 +64,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle CommonJS import with ES module interop", () => {
+      const { expected, result } = runTestCase("import-eq-with-interop");
+      expect(result).toBe(expected);
+    });
+
     it("should handle import * from local modules", () => {
       const { expected, result } = runTestCase("import-star-from-local-module");
       expect(result).toBe(expected);
@@ -74,6 +84,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle different default export names in project", () => {
+      const { expected, result } = runTestCase("different-default-export-names-in-project");
+      expect(result).toBe(expected);
+    });
+
     it("should handle mixed ES and CommonJS imports", () => {
       const { expected, result } = runTestCase("mixed-imports");
       expect(result).toBe(expected);
@@ -83,8 +98,77 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("import-variables");
       expect(result).toBe(expected);
     });
+
+    it("should handle renamed local class imports", () => {
+      const { expected, result } = runTestCase("rename-local-class");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle several import * from one package", () => {
+      const { expected, result } = runTestCase("several-import-star-from-one-package");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle several default imports from one package", () => {
+      const { expected, result } = runTestCase("several-import-default-from-one-package");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle different import styles from one package", () => {
+      const { expected, result } = runTestCase("import-with-different-names", {
+        importedLibraries: ["fake-package", "package-with-export-eq"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should strip exports from non-exported enums", () => {
+      const { expected, result } = runTestCase("strip-export-from-non-exported-enum");
+      expect(result).toBe(expected);
+    });
+
+    it("should strip exports from non-exported functions", () => {
+      const { expected, result } = runTestCase("strip-export-from-non-exported-function");
+      expect(result).toBe(expected);
+    });
+
     it("should handle importing from types", () => {
       const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle compound types from npm without extra imports", () => {
+      const { expected, result } = runTestCase("import-compound-type-from-npm-cause-unnecessary-import");
+      expect(result).toBe(expected);
+    });
+
+    it("should resolve non-relative imports via baseUrl", () => {
+      const { expected, result } = runTestCase("import-from-non-relative-path-inferred-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve imported libs with declaration merging", () => {
+      const { expected, result } = runTestCase("import-package-with-declaration-merging-with-default-lib", {
+        importedLibraries: ["fake-types-lib-3"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle import from interface with export = package", () => {
+      const { expected, result } = runTestCase("import-from-interface-with-export-eq", {
+        importedLibraries: ["commander"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline namespace exports from CommonJS package", () => {
+      const { expected, result } = runTestCase("import-from-namespace-in-cjs", {
+        inlinedLibraries: ["ora"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle export = types from npm", () => {
+      const { expected, result } = runTestCase("handle-export-eq-from-npm", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);
     });
   });
@@ -100,11 +184,40 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle module augmentation only exports", () => {
+      const { expected, result } = runTestCase("module-augmentation", {
+        inlinedLibraries: ["extensions-package"],
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline namespaced re-exports from packages", () => {
+      const { expected, result } = runTestCase("inline-package-with-namespaced-import", {
+        inlinedLibraries: ["fake-package"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle transitive dependency inlining", () => {
       const { expected, result } = runTestCase("inline-from-deps-transitive", {
         inlinedLibraries: ["fake-package", "fake-fs"],
         sortNodes: true,
       });
+      expect(result).toBe(expected);
+    });
+
+    it("should emit reference types for external types libraries", () => {
+      const { expected, result } = runTestCase("external-types", { allowedTypesLibraries: ["mocha"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should respect custom typeRoots with imported libraries", () => {
+      const { expected, result } = runTestCase("custom-types-folder", { importedLibraries: ["fake-types-lib-2"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should resolve custom typeRoots for local types", () => {
+      const { expected, result } = runTestCase("using-custom-types", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);
     });
   });
@@ -175,8 +288,43 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle exports wrapped with namespace chain with inlined exports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain-inline", {
+        inlinedLibraries: ["package-with-export-eq"],
+        exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle exports wrapped with namespace chain via imports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-chain-but-via-imports", {
+        exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle exports wrapped with namespace", () => {
       const { expected, result } = runTestCase("export-wrapped-with-namespace", { exportReferencedTypes: false });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle exports with underscores in names", () => {
+      const { expected, result } = runTestCase("underscore-in-name");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle namespace export = re-exports", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-export-eq-export", {
+        exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle namespace export = with inlining", () => {
+      const { expected, result } = runTestCase("export-wrapped-with-namespace-export-eq-inline", {
+        inlinedLibraries: ["package-with-export-eq", "package-with-export-eq-variable"],
+        exportReferencedTypes: false,
+      });
       expect(result).toBe(expected);
     });
 
@@ -204,8 +352,41 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle re-export inside modules", () => {
+      const { expected, result } = runTestCase("re-export-in-modules", {
+        allowedTypesLibraries: [],
+        importedLibraries: [
+          "package-with-cyclic-re-export-1",
+          "package-with-cyclic-re-export-2",
+          "re-export-cycle-dependency-1",
+          "re-export-cycle-dependency-2",
+          "re-export-via-eq-v2",
+          "re-export-via-eq",
+          "re-export-via-import",
+          "re-export-via-star-with-rename",
+          "re-export-via-star",
+        ],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle re-export as namespace", () => {
       const { expected, result } = runTestCase("re-export-as-namespace");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export from paths module", () => {
+      const { expected, result } = runTestCase("re-export-from-paths-module");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export with paths", () => {
+      const { expected, result } = runTestCase("re-export-with-paths");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle re-export from importable module", () => {
+      const { expected, result } = runTestCase("re-export-from-importable-module");
       expect(result).toBe(expected);
     });
 
@@ -238,6 +419,13 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("re-export-without-statements");
       expect(result).toBe(expected);
     });
+
+    it("should handle re-export in node_modules", () => {
+      const { expected, result } = runTestCase("re-export-in-node_modules", {
+        inlinedLibraries: ["package-with-re-exports"],
+      });
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Module Formats", () => {
@@ -260,6 +448,26 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Declaration Patterns", () => {
     it("should handle declare module and imports", () => {
       const { expected, result } = runTestCase("declare-module-and-imports", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle unknown module declarations", () => {
+      const { expected, result } = runTestCase("declare-unknown-modules", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle declare module in internal files", () => {
+      const { expected, result } = runTestCase("declare-module-in-internal-files", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle internal modules without inlining externals", () => {
+      const { expected, result } = runTestCase("modules-in-internal-files-without-inline-declare-globals");
+      expect(result).toBe(expected);
+    });
+
+    it("should not inline external modules in internal files", () => {
+      const { expected, result } = runTestCase("dont-inline-declare-extenal-modules-in-internal-files");
       expect(result).toBe(expected);
     });
 
@@ -291,11 +499,21 @@ describe("TypeScript Declaration Bundler", () => {
       });
       expect(result).toBe(expected);
     });
+
+    it("should handle top-level declarations", () => {
+      const { expected, result } = runTestCase("top-level-declarations");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Configuration Options", () => {
     it("should add banner when noBanner is false", () => {
       const { expected, result } = runTestCase("banner", { noBanner: false });
+      expect(result).toBe(expected);
+    });
+
+    it("should disable non-direct exports when configured", () => {
+      const { expected, result } = runTestCase("disable-non-direct-exports", { exportReferencedTypes: false });
       expect(result).toBe(expected);
     });
 
@@ -358,6 +576,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle complex module extensions", () => {
+      const { expected, result } = runTestCase("extend-other-module-complex");
+      expect(result).toBe(expected);
+    });
+
     it("should handle globalThis references", () => {
       const { expected, result } = runTestCase("globalThis");
       expect(result).toBe(expected);
@@ -392,6 +615,11 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Name Resolution", () => {
     it("should handle external types with same name from different packages", () => {
       const { expected, result } = runTestCase("external-name-conflicts", { inlinedLibraries: ["@myorg/lib"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle renaming imported externals", () => {
+      const { expected, result } = runTestCase("rename-imports");
       expect(result).toBe(expected);
     });
 

@@ -1617,6 +1617,26 @@ export class OutputGenerator {
       const isDefaultExport =
         declaration.exportInfo.kind === ExportKind.Default || declaration.exportInfo.kind === ExportKind.DefaultOnly;
       if (!isDefaultExport) {
+        let returnTypeNode: ts.TypeNode = ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword);
+        if (typeChecker) {
+          const signature = typeChecker.getSignatureFromDeclaration(statement);
+          if (signature) {
+            const returnType = typeChecker.getReturnTypeOfSignature(signature);
+            const symbol = returnType.getSymbol();
+            const declarations = symbol?.getDeclarations() ?? [];
+            const isFromJs =
+              declarations.length > 0 &&
+              declarations.every((decl) => decl.getSourceFile().fileName.match(/\.(js|jsx)$/));
+            const canInfer = !symbol || isFromJs;
+
+            if (canInfer) {
+              const inferred = typeChecker.typeToTypeNode(returnType, undefined, ts.NodeBuilderFlags.NoTruncation);
+              if (inferred) {
+                returnTypeNode = inferred;
+              }
+            }
+          }
+        }
         const updated = ts.factory.updateFunctionDeclaration(
           statement,
           statement.modifiers,
@@ -1624,7 +1644,7 @@ export class OutputGenerator {
           statement.name,
           statement.typeParameters,
           statement.parameters,
-          ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword),
+          returnTypeNode,
           statement.body,
         );
         ts.setTextRange(updated, statement);
