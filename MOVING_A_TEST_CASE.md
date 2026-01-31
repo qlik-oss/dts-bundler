@@ -13,7 +13,3 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 Feature-Specific:
 43. allow-js
-42. external-types
-44. custom-types-folder
-45. include-exclude-in-tsconfig
-46. using-custom-types

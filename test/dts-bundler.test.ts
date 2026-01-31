@@ -31,6 +31,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should support allowJs imports", () => {
+      const { expected, result } = runTestCase("allow-js");
+      expect(result).toBe(expected);
+    });
+
     it("should handle type-only imports from dependencies", () => {
       const { expected, result } = runTestCase("import-type-from-deps");
       expect(result).toBe(expected);
