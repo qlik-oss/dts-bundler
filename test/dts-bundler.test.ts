@@ -99,6 +99,13 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle different import styles from one package", () => {
+      const { expected, result } = runTestCase("import-with-different-names", {
+        importedLibraries: ["fake-package", "package-with-export-eq"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle importing from types", () => {
       const { expected, result } = runTestCase("import-from-types", { importedLibraries: ["fs", "fake-types-lib"] });
       expect(result).toBe(expected);
@@ -279,6 +286,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle declare module in internal files", () => {
+      const { expected, result } = runTestCase("declare-module-in-internal-files", { inlineDeclareExternals: true });
+      expect(result).toBe(expected);
+    });
+
     it("should not inline declare global when disabled", () => {
       const { expected, result } = runTestCase("dont-inline-declare-global", { inlineDeclareGlobals: false });
       expect(result).toBe(expected);
@@ -408,6 +420,11 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Name Resolution", () => {
     it("should handle external types with same name from different packages", () => {
       const { expected, result } = runTestCase("external-name-conflicts", { inlinedLibraries: ["@myorg/lib"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle renaming imported externals", () => {
+      const { expected, result } = runTestCase("rename-imports");
       expect(result).toBe(expected);
     });
 

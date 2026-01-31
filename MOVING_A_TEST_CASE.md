@@ -11,13 +11,6 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-Import Patterns:
-10. several-import-default-from-one-package
-11. import-with-different-names - 3 different import styles from same package
-
-Rename with External (import-aliases only covers local):
-12. rename-imports - aliased imports from external packages
-
 Move These Later (Medium Priority)
 Tree Shaking/Export Stripping:
 13. strip-export-from-non-exported-enum
@@ -25,7 +18,6 @@ Tree Shaking/Export Stripping:
 15. disable-non-direct-exports
 
 Module Declarations:
-16. declare-module-in-internal-files
 17. declare-unknown-modules
 18. modules-in-internal-files-without-inline-declare-globals
 19. dont-inline-declare-extenal-modules-in-internal-files
