@@ -59,6 +59,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle CommonJS import with ES module interop", () => {
+      const { expected, result } = runTestCase("import-eq-with-interop");
+      expect(result).toBe(expected);
+    });
+
     it("should handle import * from local modules", () => {
       const { expected, result } = runTestCase("import-star-from-local-module");
       expect(result).toBe(expected);

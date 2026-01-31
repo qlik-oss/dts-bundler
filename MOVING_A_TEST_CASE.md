@@ -11,11 +11,7 @@ A folder in #file:test-cases have. Some files should be copied over to a corresp
 
 ## test cases to move (maybe)
 
-Move These First (High Priority)
-Re-export Patterns (genuinely not covered):
-
 Import Patterns:
-8. import-eq-with-interop - CommonJS interop with default imports
 9. several-import-star-from-one-package
 10. several-import-default-from-one-package
 11. import-with-different-names - 3 different import styles from same package
