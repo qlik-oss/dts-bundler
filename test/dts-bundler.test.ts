@@ -8,9 +8,16 @@
  * - Always run: pnpm test && pnpm lint && pnpm check-types
  */
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 import { bundleTypes } from "../src/index";
 import { runTestCase } from "./run-test-case";
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJsonPath = path.resolve(__dirname, "../package.json");
 
 describe("TypeScript Declaration Bundler", () => {
   describe("Core Functionality", () => {
@@ -510,6 +517,26 @@ describe("TypeScript Declaration Bundler", () => {
     it("should add banner when noBanner is false", () => {
       const { expected, result } = runTestCase("banner", { noBanner: false });
       expect(result).toBe(expected);
+    });
+
+    it("should add banner with version from package.json", () => {
+      // Read original package.json
+      const originalContent = fs.readFileSync(packageJsonPath, "utf-8");
+      const pkg = JSON.parse(originalContent) as { version?: string };
+      const originalVersion = pkg.version;
+
+      try {
+        // Set a test version
+        pkg.version = "1.2.3";
+        fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+        const { expected, result } = runTestCase("banner-with-version", { noBanner: false });
+        expect(result).toBe(expected);
+      } finally {
+        // Restore original version
+        pkg.version = originalVersion;
+        fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+      }
     });
 
     it("should disable non-direct exports when configured", () => {
