@@ -50,7 +50,7 @@ export class OutputGenerator {
     entryFile?: string;
     entryImportedFiles?: Set<string>;
     importTypeResolver?: {
-      shouldInline: (importPath: string) => boolean;
+      shouldInline: (importPath: string, fromFile?: string) => boolean;
       resolveImport: (fromFile: string, importPath: string) => string | null;
     };
   };
@@ -77,7 +77,7 @@ export class OutputGenerator {
       entryFile?: string;
       entryImportedFiles?: Set<string>;
       importTypeResolver?: {
-        shouldInline: (importPath: string) => boolean;
+        shouldInline: (importPath: string, fromFile?: string) => boolean;
         resolveImport: (fromFile: string, importPath: string) => string | null;
       };
     } = {},
@@ -733,7 +733,7 @@ export class OutputGenerator {
 
     const moduleName = OutputGenerator.getImportTypeModuleName(node);
     if (!moduleName) return false;
-    if (!resolver.shouldInline(moduleName)) return false;
+    if (!resolver.shouldInline(moduleName, sourceFile.fileName)) return false;
 
     const resolvedPath = resolver.resolveImport(sourceFile.fileName, moduleName);
     if (!resolvedPath) return false;

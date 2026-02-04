@@ -53,7 +53,7 @@ export class ExportResolver {
       const exportName = statement.exportClause.name.text;
       const importPath = statement.moduleSpecifier.text;
 
-      if (this.fileCollector.shouldInline(importPath)) {
+      if (this.fileCollector.shouldInline(importPath, filePath)) {
         const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
         if (!resolvedPath) continue;
         this.registry.registerNamespaceExport(
@@ -122,7 +122,7 @@ export class ExportResolver {
       if (!statement.exportClause) {
         if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
         const importPath = statement.moduleSpecifier.text;
-        if (this.fileCollector.shouldInline(importPath)) {
+        if (this.fileCollector.shouldInline(importPath, filePath)) {
           const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
           if (resolvedPath) {
             this.registry.registerStarExport(filePath, { targetFile: resolvedPath }, isEntry);
@@ -146,7 +146,7 @@ export class ExportResolver {
         if (!existingNamespaceInfo) {
           if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
             const importPath = statement.moduleSpecifier.text;
-            if (this.fileCollector.shouldInline(importPath)) {
+            if (this.fileCollector.shouldInline(importPath, filePath)) {
               const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
               if (resolvedPath) {
                 this.registry.registerNamespaceExport(filePath, { name: exportName, targetFile: resolvedPath });
@@ -183,7 +183,7 @@ export class ExportResolver {
 
       if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
         const importPath = statement.moduleSpecifier.text;
-        const isInline = this.fileCollector.shouldInline(importPath);
+        const isInline = this.fileCollector.shouldInline(importPath, filePath);
         const resolvedPath = isInline ? this.fileCollector.resolveImport(filePath, importPath) : null;
 
         for (const element of statement.exportClause.elements) {
@@ -348,7 +348,7 @@ export class ExportResolver {
 
       if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
         const importPath = statement.moduleSpecifier.text;
-        if (!this.fileCollector.shouldInline(importPath)) continue;
+        if (!this.fileCollector.shouldInline(importPath, filePath)) continue;
 
         const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
         if (!resolvedPath) continue;
@@ -729,7 +729,7 @@ export class ExportResolver {
       if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
 
       const importPath = statement.moduleSpecifier.text;
-      if (!this.fileCollector.shouldInline(importPath)) continue;
+      if (!this.fileCollector.shouldInline(importPath, filePath)) continue;
       const resolvedImport = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedImport) continue;
 

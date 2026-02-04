@@ -73,9 +73,11 @@ export class DeclarationCollector {
     }
 
     const moduleName = moduleDecl.name.text;
+    // For declare module statements, check if it resolves to a local file
+    // or if it's a module that should be inlined
     const resolvedModule = this.fileCollector.resolveModuleSpecifier(filePath, moduleName);
     const shouldInline =
-      this.fileCollector.shouldInline(moduleName) ||
+      this.fileCollector.shouldInline(moduleName, filePath) ||
       (resolvedModule ? this.fileCollector.shouldInlineFilePath(resolvedModule) : false);
 
     if (!shouldInline) {

@@ -174,6 +174,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle import with alias", () => {
+      const { expected, result } = runTestCase("import-with-alias", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
     it("should handle export = types from npm", () => {
       const { expected, result } = runTestCase("handle-export-eq-from-npm", { allowedTypesLibraries: [] });
       expect(result).toBe(expected);

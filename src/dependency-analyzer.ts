@@ -275,7 +275,7 @@ export class DependencyAnalyzer {
   }
 
   private resolveImportTypeModule(fromFile: string, moduleName: string): string | null {
-    if (!this.fileCollector.shouldInline(moduleName)) {
+    if (!this.fileCollector.shouldInline(moduleName, fromFile)) {
       return null;
     }
 

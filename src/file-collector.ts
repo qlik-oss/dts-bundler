@@ -120,11 +120,43 @@ export class FileCollector {
     return first;
   }
 
-  shouldInline(importPath: string): boolean {
+  shouldInline(importPath: string, fromFile?: string): boolean {
     if (importPath.startsWith(".")) {
       return true;
     }
-    return this.inlinedLibraries.some((lib) => importPath === lib || importPath.startsWith(`${lib}/`));
+
+    // Check if it's an explicitly inlined library
+    if (this.inlinedLibraries.some((lib) => importPath === lib || importPath.startsWith(`${lib}/`))) {
+      return true;
+    }
+
+    // Path aliases starting with @ look like scoped packages and should be treated as external
+    // even if they resolve to local files (user likely wants to preserve the alias in output)
+    if (importPath.startsWith("@")) {
+      return false;
+    }
+
+    // For non-relative imports (including path aliases like ~/), try to resolve and check if it's a local file
+    if (fromFile) {
+      const resolvedPath = this.resolveModuleSpecifier(fromFile, importPath);
+      if (resolvedPath) {
+        // If resolved path is in typeRoots, treat as external (like @types packages)
+        if (this.isFromTypeRoots(resolvedPath)) {
+          return false;
+        }
+        // If resolved path is not in node_modules, it's a local file and should be inlined
+        const libraryName = getLibraryName(resolvedPath);
+        if (libraryName === null) {
+          return true;
+        }
+        // If resolved to an inlined library, inline it
+        if (this.inlinedLibrariesSet.has(libraryName)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private shouldInlineFile(sourceFile: ts.SourceFile): boolean {

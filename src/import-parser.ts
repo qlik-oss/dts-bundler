@@ -34,7 +34,7 @@ export class ImportParser {
       ) {
         const moduleName = statement.name.text;
         const shouldParseModuleImports =
-          this.fileCollector.shouldInline(moduleName) || this.options.inlineDeclareExternals;
+          this.fileCollector.shouldInline(moduleName, filePath) || this.options.inlineDeclareExternals;
         if (!shouldParseModuleImports) {
           continue;
         }
@@ -61,7 +61,7 @@ export class ImportParser {
     const importPath = moduleSpecifier.text;
     const isTypeOnly = statement.importClause?.isTypeOnly ?? false;
 
-    if (this.fileCollector.shouldInline(importPath)) {
+    if (this.fileCollector.shouldInline(importPath, filePath)) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
 
@@ -169,7 +169,7 @@ export class ImportParser {
     const importName = statement.name.text;
     const isTypeOnly = statement.isTypeOnly;
 
-    if (this.fileCollector.shouldInline(importPath)) {
+    if (this.fileCollector.shouldInline(importPath, filePath)) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
 
