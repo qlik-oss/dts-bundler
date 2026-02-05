@@ -708,4 +708,67 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
   });
+
+  describe("Compatibility (dts-bundle-generator parity)", () => {
+    it("should not export internal types referenced by entry exports", () => {
+      const { expected, result } = runTestCase("inline-excessive-exports");
+      expect(result).toBe(expected);
+    });
+
+    it("should tree-shake component and function declarations", () => {
+      const { expected, result } = runTestCase("more-tree-shaking");
+      expect(result).toBe(expected);
+    });
+
+    it("should deduplicate types imported via different paths", () => {
+      const { expected, result } = runTestCase("duplicate-types");
+      expect(result).toBe(expected);
+    });
+
+    it("should rename conflicting types with $N suffix (Issue #2)", () => {
+      const { expected, result } = runTestCase("duplicate-rename");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve type references in return types (Issue #4)", () => {
+      const { expected, result } = runTestCase("inline-return-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should not export enums that are not entry exports (Issue #7)", () => {
+      const { expected, result } = runTestCase("enum-export-modifier");
+      expect(result).toBe(expected);
+    });
+
+    it("should merge declare global blocks", () => {
+      const { expected, result } = runTestCase("declare-global-merge", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
+    it.skip("should use import type for type-only imports", () => {
+      const { expected, result } = runTestCase("type-only-imports");
+      expect(result).toBe(expected);
+    });
+
+    it.skip("should use import type for typeof expressions (Issue #5)", () => {
+      const { expected, result } = runTestCase("typeof-import-should-be-type-only");
+      expect(result).toBe(expected);
+    });
+
+    it.skip("should handle hub-parcels pattern with inlined library and declare global", () => {
+      const { expected, result } = runTestCase("hub-parcels-real-pattern", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it.skip("should not export inlined library types used in declare global (Issue #1)", () => {
+      const { expected, result } = runTestCase("inlined-lib-types-not-exported", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+  });
 });

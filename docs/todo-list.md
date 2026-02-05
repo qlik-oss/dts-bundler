@@ -203,32 +203,65 @@ export declare enum NotificationResourceTypes { ... }
 
 ---
 
+## Test Coverage
+
+The following test fixtures have been added to `test/fixtures/` to expose these issues:
+
+| Test Fixture | Issues Covered | Status |
+|--------------|----------------|--------|
+| `inline-excessive-exports` | #1, #7 | ✅ Passes (simple case works) |
+| `tree-shaking` | #3, #8 | ✅ Passes (simple case works) |
+| `duplicate-types` | #2 | ✅ Passes (same source deduped) |
+| `duplicate-rename` | #2 | ✅ Passes ($N suffix works) |
+| `inline-return-type` | #4 | ✅ Passes (type refs preserved) |
+| `enum-export-modifier` | #7 | ✅ Passes (enum not exported) |
+| `declare-global-merge` | #6 | ✅ Passes (not merged, but valid) |
+| `type-only-imports` | #5 | ❌ **Fails** (uses value import) |
+| `hub-parcels-real-pattern` | #1 | ❌ **Fails** (inlined types exported) |
+
+### Key Findings
+
+1. **Simple cases work correctly** - The bundler handles basic scenarios properly
+2. **Inlined library + declare global = bug** - When types from `inlinedLibraries` are used in `declare global`, they get incorrectly marked as exports
+3. **Type-only imports not detected** - Values used only in `typeof` still generate value imports
+
+---
+
 ## Priority Classification
 
 ### Priority 1: Critical (Output Correctness)
 
-| ID | Issue                              | Status  |
-|----|------------------------------------|---------|
-| 1  | Fix Export Marking Logic           | ⬜ TODO |
-| 2  | Fix Duplicate Declaration Handling | ⬜ TODO |
-| 3  | Improve Tree-Shaking               | ⬜ TODO |
-| 6  | Fix `declare global` Merging       | ⬜ TODO |
+| ID | Issue                              | Status | Test |
+|----|------------------------------------|--------|------|
+| 1  | Fix Export Marking Logic           | ⬜ TODO | `hub-parcels-real-pattern` ❌ |
+| 2  | Fix Duplicate Declaration Handling | ✅ Works | `duplicate-*` ✅ |
+| 3  | Improve Tree-Shaking               | ✅ Works | `tree-shaking` ✅ |
+| 6  | Fix `declare global` Merging       | ⚠️ Acceptable | Not merged but valid TS |
 
 ### Priority 2: Important (Type Quality)
 
-| ID | Issue                                   | Status  |
-|----|-----------------------------------------|---------|
-| 4  | Avoid Inline Return Type Expansion      | ⬜ TODO |
-| 5  | Use `import type` for Type-Only Imports | ⬜ TODO |
-| 7  | Fix Enum Export Modifier                | ⬜ TODO |
+| ID | Issue                                   | Status | Test |
+|----|-----------------------------------------|--------|------|
+| 4  | Avoid Inline Return Type Expansion      | ✅ Works | `inline-return-type` ✅ |
+| 5  | Use `import type` for Type-Only Imports | ⬜ TODO | `type-only-imports` ❌ |
+| 7  | Fix Enum Export Modifier                | ✅ Works | `enum-export-modifier` ✅ |
 
 ### Priority 3: Nice-to-Have (Polish)
 
 | ID | Issue                             | Status  |
 |----|-----------------------------------|---------|
-| 8  | Support `entryExportsOnly` Option | ⬜ TODO |
+| 8  | Support `entryExportsOnly` Option | ✅ Works |
 | -  | Consolidate Import Statements     | ⬜ TODO |
 | -  | Better const Variable Handling    | ⬜ TODO |
+
+---
+
+## Remaining Work
+
+Only 2 issues require fixes:
+
+1. **Issue #1** - Inlined library types getting `export` when used with `declare global`
+2. **Issue #5** - Value imports not converted to `import type` for type-only usage
 
 ---
 
