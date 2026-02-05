@@ -354,12 +354,12 @@ export class DependencyAnalyzer {
     if (ts.isTypeQueryNode(node)) {
       const exprName = node.exprName;
       if (ts.isIdentifier(exprName)) {
-        addValueReference(exprName.text);
+        addReference(exprName.text);
       } else if (ts.isQualifiedName(exprName)) {
         DependencyAnalyzer.extractQualifiedName(exprName, references);
         const leftmost = DependencyAnalyzer.getLeftmostEntityName(exprName);
         if (leftmost) {
-          addValueReference(leftmost);
+          addReference(leftmost);
         }
       }
     }

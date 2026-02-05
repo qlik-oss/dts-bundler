@@ -42,10 +42,10 @@ This fixture has:
 
 // Expected output:
 export interface PublicAPI {
-  config: InternalConfig;
+config: InternalConfig;
 }
 interface InternalConfig {
-  debug: boolean;
+debug: boolean;
 }
 // NOT: export interface InternalConfig { ... }
 \`\`\`
@@ -152,7 +152,7 @@ import type { externalFunction } from "external-pkg";
 ## Execution Order
 
 | Phase | Issues | Priority | Estimated Complexity |
-|-------|--------|----------|----------------------|
+| ----- | ------ | -------- | -------------------- |
 | 1     | #1, #7 | CRITICAL | Medium               |
 | 2     | #3, #8 | HIGH     | Medium               |
 | 3     | #2, #6 | HIGH     | High                 |
@@ -170,9 +170,9 @@ After each phase:
 
 ## Final Success Metrics
 
-| Metric         | Current | Target   |
-|----------------|---------|----------|
-| Output lines   | 4819    | ~1000    |
-| Exported types | 67      | 3        |
-| Duplicate \$N  | Many    | 0        |
-| Declare global | 2       | 1        |
+| Metric         | Current | Target |
+| -------------- | ------- | ------ |
+| Output lines   | 4819    | ~1000  |
+| Exported types | 67      | 3      |
+| Duplicate \$N  | Many    | 0      |
+| Declare global | 2       | 1      |

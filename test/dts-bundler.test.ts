@@ -745,7 +745,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should use import type for type-only imports", () => {
+    it("should use import type for type-only imports", () => {
       const { expected, result } = runTestCase("type-only-imports");
       expect(result).toBe(expected);
     });

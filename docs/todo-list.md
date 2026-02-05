@@ -13,7 +13,7 @@ Configuration: `inlinedLibraries: "@qlik-trial/hub-common"`
 ## Output Comparison
 
 | Metric         | dts-bundler (new) | dts-bundle-generator (old) |
-|----------------|-------------------|----------------------------|
+| -------------- | ----------------- | -------------------------- |
 | Output file    | `hub-parcels.ts`  | `hub-parcels-generator.ts` |
 | Total lines    | 4819              | 1005                       |
 | Exported types | 67                | 3                          |
@@ -52,7 +52,7 @@ Configuration: `inlinedLibraries: "@qlik-trial/hub-common"`
 **Examples:**
 
 | Original                    | Duplicate                     |
-|-----------------------------|-------------------------------|
+| --------------------------- | ----------------------------- |
 | `CustomDashboardSource`     | `CustomDashboardSource$1`     |
 | `ResourceReloadStatus`      | `ResourceReloadStatus$2`      |
 | `DatasetSubType`            | `DatasetSubType$1`            |
@@ -173,7 +173,7 @@ import {
 // Old bundler (correct)
 declare enum NotificationResourceTypes { ... }
 
-// New bundler (incorrect) 
+// New bundler (incorrect)
 export declare enum NotificationResourceTypes { ... }
 ```
 
@@ -207,17 +207,17 @@ export declare enum NotificationResourceTypes { ... }
 
 The following test fixtures have been added to `test/fixtures/` to expose these issues:
 
-| Test Fixture | Issues Covered | Status |
-|--------------|----------------|--------|
-| `inline-excessive-exports` | #1, #7 | ✅ Passes (simple case works) |
-| `tree-shaking` | #3, #8 | ✅ Passes (simple case works) |
-| `duplicate-types` | #2 | ✅ Passes (same source deduped) |
-| `duplicate-rename` | #2 | ✅ Passes ($N suffix works) |
-| `inline-return-type` | #4 | ✅ Passes (type refs preserved) |
-| `enum-export-modifier` | #7 | ✅ Passes (enum not exported) |
-| `declare-global-merge` | #6 | ✅ Passes (not merged, but valid) |
-| `type-only-imports` | #5 | ❌ **Fails** (uses value import) |
-| `hub-parcels-real-pattern` | #1 | ❌ **Fails** (inlined types exported) |
+| Test Fixture               | Issues Covered | Status                                |
+| -------------------------- | -------------- | ------------------------------------- |
+| `inline-excessive-exports` | #1, #7         | ✅ Passes (simple case works)         |
+| `tree-shaking`             | #3, #8         | ✅ Passes (simple case works)         |
+| `duplicate-types`          | #2             | ✅ Passes (same source deduped)       |
+| `duplicate-rename`         | #2             | ✅ Passes ($N suffix works)           |
+| `inline-return-type`       | #4             | ✅ Passes (type refs preserved)       |
+| `enum-export-modifier`     | #7             | ✅ Passes (enum not exported)         |
+| `declare-global-merge`     | #6             | ✅ Passes (not merged, but valid)     |
+| `type-only-imports`        | #5             | ❌ **Fails** (uses value import)      |
+| `hub-parcels-real-pattern` | #1             | ❌ **Fails** (inlined types exported) |
 
 ### Key Findings
 
@@ -231,28 +231,28 @@ The following test fixtures have been added to `test/fixtures/` to expose these 
 
 ### Priority 1: Critical (Output Correctness)
 
-| ID | Issue                              | Status | Test |
-|----|------------------------------------|--------|------|
-| 1  | Fix Export Marking Logic           | ⬜ TODO | `hub-parcels-real-pattern` ❌ |
-| 2  | Fix Duplicate Declaration Handling | ✅ Works | `duplicate-*` ✅ |
-| 3  | Improve Tree-Shaking               | ✅ Works | `tree-shaking` ✅ |
-| 6  | Fix `declare global` Merging       | ⚠️ Acceptable | Not merged but valid TS |
+| ID  | Issue                              | Status        | Test                          |
+| --- | ---------------------------------- | ------------- | ----------------------------- |
+| 1   | Fix Export Marking Logic           | ⬜ TODO       | `hub-parcels-real-pattern` ❌ |
+| 2   | Fix Duplicate Declaration Handling | ✅ Works      | `duplicate-*` ✅              |
+| 3   | Improve Tree-Shaking               | ✅ Works      | `tree-shaking` ✅             |
+| 6   | Fix `declare global` Merging       | ⚠️ Acceptable | Not merged but valid TS       |
 
 ### Priority 2: Important (Type Quality)
 
-| ID | Issue                                   | Status | Test |
-|----|-----------------------------------------|--------|------|
-| 4  | Avoid Inline Return Type Expansion      | ✅ Works | `inline-return-type` ✅ |
-| 5  | Use `import type` for Type-Only Imports | ⬜ TODO | `type-only-imports` ❌ |
-| 7  | Fix Enum Export Modifier                | ✅ Works | `enum-export-modifier` ✅ |
+| ID  | Issue                                   | Status   | Test                      |
+| --- | --------------------------------------- | -------- | ------------------------- |
+| 4   | Avoid Inline Return Type Expansion      | ✅ Works | `inline-return-type` ✅   |
+| 5   | Use `import type` for Type-Only Imports | ⬜ TODO  | `type-only-imports` ❌    |
+| 7   | Fix Enum Export Modifier                | ✅ Works | `enum-export-modifier` ✅ |
 
 ### Priority 3: Nice-to-Have (Polish)
 
-| ID | Issue                             | Status  |
-|----|-----------------------------------|---------|
-| 8  | Support `entryExportsOnly` Option | ✅ Works |
-| -  | Consolidate Import Statements     | ⬜ TODO |
-| -  | Better const Variable Handling    | ⬜ TODO |
+| ID  | Issue                             | Status   |
+| --- | --------------------------------- | -------- |
+| 8   | Support `entryExportsOnly` Option | ✅ Works |
+| -   | Consolidate Import Statements     | ⬜ TODO  |
+| -   | Better const Variable Handling    | ⬜ TODO  |
 
 ---
 
