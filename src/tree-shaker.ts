@@ -1,19 +1,35 @@
+import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
-import type { ExternalImport } from "./types.js";
+import { ExportKind, type ExternalImport, type ImportInfo } from "./types.js";
 
 export class TreeShaker {
   private registry: TypeRegistry;
   private used: Set<symbol>;
   private usedExternals: Set<string>;
   private exportReferencedTypes: boolean;
+  private entryExportsOnly: boolean;
   private entryFile?: string;
+  private entryImports?: Map<string, ImportInfo>;
+  private entrySourceFile?: ts.SourceFile;
 
-  constructor(registry: TypeRegistry, options: { exportReferencedTypes?: boolean; entryFile?: string } = {}) {
+  constructor(
+    registry: TypeRegistry,
+    options: {
+      exportReferencedTypes?: boolean;
+      entryExportsOnly?: boolean;
+      entryFile?: string;
+      entryImports?: Map<string, ImportInfo>;
+      entrySourceFile?: ts.SourceFile;
+    } = {},
+  ) {
     this.registry = registry;
     this.used = new Set();
     this.usedExternals = new Set();
     this.exportReferencedTypes = options.exportReferencedTypes ?? true;
+    this.entryExportsOnly = options.entryExportsOnly ?? false;
     this.entryFile = options.entryFile;
+    this.entryImports = options.entryImports;
+    this.entrySourceFile = options.entrySourceFile;
   }
 
   shake(): {
@@ -21,10 +37,14 @@ export class TreeShaker {
     externalImports: Map<string, Set<ExternalImport>>;
     detectedTypesLibraries: Set<string>;
   } {
-    const exported = this.registry.getAllExported();
+    const useEntryExportsOnly = this.entryExportsOnly && Boolean(this.entryFile);
 
-    for (const declaration of exported) {
-      this.markUsed(declaration.id);
+    if (!useEntryExportsOnly) {
+      const exported = this.registry.getAllExported();
+
+      for (const declaration of exported) {
+        this.markUsed(declaration.id);
+      }
     }
 
     for (const declaration of this.registry.declarations.values()) {
@@ -35,6 +55,8 @@ export class TreeShaker {
 
     if (this.entryFile) {
       this.markEntryNamedExportsUsed(this.entryFile);
+      this.markEntryExportAssignmentsUsed(this.entryFile);
+      this.markEntryStarExportsUsed();
     }
 
     this.markNamespaceExportsUsed();
@@ -178,7 +200,13 @@ export class TreeShaker {
       }
 
       const declFile = exported.sourceFile ?? filePath;
-      const declName = exported.originalName ?? exported.name;
+      let declName = exported.originalName ?? exported.name;
+      if (declName === "default") {
+        const defaultName = this.getDefaultExportName(declFile);
+        if (defaultName) {
+          declName = defaultName;
+        }
+      }
       this.markDeclarationsUsedByName(declFile, declName);
 
       const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
@@ -186,6 +214,17 @@ export class TreeShaker {
         this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles);
       } else if (namespaceInfo?.externalModule && namespaceInfo.externalImportName) {
         this.usedExternals.add(`${namespaceInfo.externalModule}:${namespaceInfo.externalImportName}`);
+      }
+    }
+  }
+
+  private markEntryStarExportsUsed(): void {
+    if (this.registry.entryStarExports.length === 0) return;
+    const visitedFiles = new Set<string>();
+
+    for (const entry of this.registry.entryStarExports) {
+      if (entry.info.targetFile) {
+        this.markModuleExportsUsed(entry.info.targetFile, visitedFiles);
       }
     }
   }
@@ -199,9 +238,85 @@ export class TreeShaker {
       }
 
       const declFile = exported.sourceFile ?? entryFile;
-      const declName = exported.originalName ?? exported.name;
+      let declName = exported.originalName ?? exported.name;
+      if (declName === "default") {
+        const defaultName = this.getDefaultExportName(declFile);
+        if (defaultName) {
+          declName = defaultName;
+        }
+      }
       this.markDeclarationsUsedByName(declFile, declName);
     }
+  }
+
+  private markEntryExportAssignmentsUsed(entryFile: string): void {
+    if (!this.entrySourceFile) {
+      return;
+    }
+
+    for (const statement of this.entrySourceFile.statements) {
+      if (!ts.isExportAssignment(statement)) continue;
+      if (!ts.isIdentifier(statement.expression)) continue;
+      const exportName = statement.expression.text;
+      const importInfo = this.entryImports?.get(exportName);
+      if (importInfo?.sourceFile) {
+        let originalName = importInfo.originalName;
+        if (originalName === "default") {
+          const defaultName = this.getDefaultExportName(importInfo.sourceFile);
+          if (defaultName) {
+            originalName = defaultName;
+          }
+        }
+        const shouldSkipTypeOnlyImport = this.shouldSkipTypeOnlyImportExport(importInfo.sourceFile, originalName);
+        if (!shouldSkipTypeOnlyImport) {
+          this.markDeclarationsUsedByName(importInfo.sourceFile, originalName);
+        }
+        continue;
+      }
+
+      this.markDeclarationsUsedByName(entryFile, exportName);
+    }
+  }
+
+  private shouldSkipTypeOnlyImportExport(sourceFile: string, name: string): boolean {
+    const declIds = this.registry.getDeclarationIds(sourceFile, name);
+    if (!declIds || declIds.size === 0) return false;
+
+    let hasValueDeclaration = false;
+    for (const declId of declIds) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (!decl.isTypeOnly) {
+        hasValueDeclaration = true;
+        break;
+      }
+    }
+
+    if (hasValueDeclaration) return false;
+
+    for (const decl of this.registry.declarations.values()) {
+      if (decl.sourceFile === sourceFile) continue;
+      if (decl.name === name && decl.forceInclude) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private getDefaultExportName(sourceFile: string): string | null {
+    const declarations = this.registry.declarationsByFile.get(sourceFile);
+    if (!declarations) return null;
+
+    for (const declId of declarations) {
+      const decl = this.registry.getDeclaration(declId);
+      if (!decl) continue;
+      if (decl.exportInfo.kind === ExportKind.Default || decl.exportInfo.kind === ExportKind.DefaultOnly) {
+        return decl.name;
+      }
+    }
+
+    return null;
   }
 
   private markDeclarationsUsedByName(sourceFile: string, name: string): void {

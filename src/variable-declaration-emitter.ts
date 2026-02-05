@@ -142,7 +142,14 @@ export class VariableDeclarationEmitter {
 
       const newDeclarations = identifiers.map((identifier) => {
         const type = this.checker.getTypeAtLocation(identifier);
-        const typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+        const typeNode = this.checker.typeToTypeNode(
+          type,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
         const name = ts.factory.createIdentifier(identifier.text);
         return ts.factory.createVariableDeclaration(name, undefined, typeNode, undefined);
       });
@@ -201,7 +208,23 @@ export class VariableDeclarationEmitter {
       }
 
       if (!typeNode) {
-        typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+        if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
+          const functionType = this.buildFunctionTypeFromInitializer(initializer);
+          if (functionType) {
+            typeNode = functionType;
+          }
+        }
+      }
+
+      if (!typeNode) {
+        typeNode = this.checker.typeToTypeNode(
+          type,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
       }
 
       newDeclarations.push(ts.factory.createVariableDeclaration(name, undefined, typeNode, undefined));
@@ -214,6 +237,79 @@ export class VariableDeclarationEmitter {
     return ts.factory.createVariableDeclarationList(newDeclarations, statement.declarationList.flags);
   }
 
+  private buildFunctionTypeFromInitializer(
+    initializer: ts.ArrowFunction | ts.FunctionExpression,
+  ): ts.FunctionTypeNode | null {
+    const hasExplicitParamType = initializer.parameters.some((param) => Boolean(param.type));
+    const hasExplicitReturnType = Boolean(initializer.type);
+    if (!hasExplicitParamType && !hasExplicitReturnType) {
+      return null;
+    }
+    const sourceFile = initializer.getSourceFile();
+    const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, removeComments: true });
+    const typeParamText = initializer.typeParameters
+      ? `<${initializer.typeParameters.map((param) => param.getText(sourceFile)).join(", ")}>`
+      : "";
+
+    const parameterText = initializer.parameters
+      .map((param) => {
+        const nameText = param.name.getText(sourceFile);
+        const isOptional = Boolean(param.questionToken || param.initializer);
+        const restPrefix = param.dotDotDotToken ? "..." : "";
+        const typeText = param.type ? param.type.getText(sourceFile) : "any";
+        const optionalText = isOptional ? "?" : "";
+        return `${restPrefix}${nameText}${optionalText}: ${typeText}`;
+      })
+      .join(", ");
+
+    let returnTypeText = initializer.type ? initializer.type.getText(sourceFile) : "";
+    if (!returnTypeText) {
+      const signature = this.checker.getSignatureFromDeclaration(initializer);
+      if (signature) {
+        const signatureReturnType = this.checker.getReturnTypeOfSignature(signature);
+        const inferred = this.checker.typeToTypeNode(
+          signatureReturnType,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
+        if (inferred) {
+          returnTypeText = printer.printNode(ts.EmitHint.Unspecified, inferred, sourceFile);
+        }
+      }
+    }
+
+    const functionTypeText = `${typeParamText}(${parameterText}) => ${returnTypeText || "void"}`;
+    return VariableDeclarationEmitter.parseFunctionTypeFromText(functionTypeText);
+  }
+
+  private static parseFunctionTypeFromText(typeText: string): ts.FunctionTypeNode | null {
+    const sourceFile = ts.createSourceFile(
+      "__type_parse__.ts",
+      `type __T = ${typeText};`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const statement = sourceFile.statements[0];
+    if (ts.isTypeAliasDeclaration(statement)) {
+      const typeNode = statement.type;
+      VariableDeclarationEmitter.markSynthesized(typeNode);
+      return ts.isFunctionTypeNode(typeNode) ? typeNode : null;
+    }
+    return null;
+  }
+
+  private static markSynthesized(node: ts.Node): void {
+    ts.setTextRange(node, { pos: -1, end: -1 });
+    ts.setEmitFlags(node, ts.EmitFlags.NoComments);
+    node.forEachChild((child) => {
+      VariableDeclarationEmitter.markSynthesized(child);
+    });
+  }
+
   private printStatement(
     statementNode: ts.VariableStatement,
     sourceStatement: ts.VariableStatement,
@@ -221,14 +317,15 @@ export class VariableDeclarationEmitter {
     preserveJsDoc: boolean,
   ): string {
     const renameMap = this.getRenameMap(declarations);
+    const renameMapToUse = renameMap.size > 0 ? renameMap : undefined;
     const sourceFile = sourceStatement.getSourceFile();
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!sourceFile) {
       const fallbackSource = statementNode.getSourceFile();
-      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap });
+      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap: renameMapToUse });
       return normalizePrintedStatement(printed, sourceStatement, "", { preserveJsDoc });
     }
-    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap });
+    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap: renameMapToUse });
     const originalText = sourceStatement.getText(sourceFile);
     return normalizePrintedStatement(printed, sourceStatement, originalText, { preserveJsDoc });
   }

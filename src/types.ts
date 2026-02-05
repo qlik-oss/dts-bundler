@@ -40,6 +40,11 @@ export interface BundleTypesOptions {
   exportReferencedTypes?: boolean;
 
   /**
+   * Whether to only include entry exports during tree-shaking
+   */
+  entryExportsOnly?: boolean;
+
+  /**
    * Whether to include a banner in output
    */
   noBanner?: boolean;

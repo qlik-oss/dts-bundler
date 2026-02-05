@@ -148,6 +148,16 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should preserve indexed access types from external imports", () => {
+      const { expected, result } = runTestCase("indexed-access-external-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve indexed access types in function parameter annotations", () => {
+      const { expected, result } = runTestCase("indexed-access-in-function-param");
+      expect(result).toBe(expected);
+    });
+
     it("should resolve non-relative imports via baseUrl", () => {
       const { expected, result } = runTestCase("import-from-non-relative-path-inferred-type");
       expect(result).toBe(expected);
@@ -272,6 +282,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle exports via global declarations", () => {
       const { expected, result } = runTestCase("export-via-global-declaration", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle declare global in non-entry files", () => {
+      const { expected, result } = runTestCase("declare-global-non-entry", { inlineDeclareGlobals: true });
       expect(result).toBe(expected);
     });
 
@@ -613,6 +628,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should ignore function body type references", () => {
+      const { expected, result } = runTestCase("ignore-function-body-types");
+      expect(result).toBe(expected);
+    });
+
     it("should handle globalThis references", () => {
       const { expected, result } = runTestCase("globalThis");
       expect(result).toBe(expected);
@@ -635,6 +655,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle non-exported abstract class as base", () => {
       const { expected, result } = runTestCase("non-exported-abstract-class");
+      expect(result).toBe(expected);
+    });
+
+    it("should support entry-only exports", () => {
+      const { expected, result } = runTestCase("entry-exports-only", { entryExportsOnly: true });
       expect(result).toBe(expected);
     });
 

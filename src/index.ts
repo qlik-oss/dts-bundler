@@ -21,6 +21,7 @@ function bundle(
     umdModuleName?: string;
     exportReferencedTypes?: boolean;
     includeEmptyExport?: boolean;
+    entryExportsOnly?: boolean;
     allowedTypesLibraries?: string[];
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
@@ -60,14 +61,19 @@ function bundle(
   const normalizer = new NameNormalizer(registry, entryFile, collector.getTypeChecker());
   normalizer.normalize();
 
+  const entryImports = parser.importMap.get(entryFile);
+  const entrySourceFile = files.get(entryFile)?.sourceFile;
+
   const shaker = new TreeShaker(registry, {
     exportReferencedTypes: options.exportReferencedTypes,
+    entryExportsOnly: options.entryExportsOnly,
     entryFile,
+    entryImports: entryImports ?? undefined,
+    entrySourceFile: entrySourceFile ?? undefined,
   });
   const { declarations: usedDeclarations, externalImports: usedExternals, detectedTypesLibraries } = shaker.shake();
 
   const entryImportedFiles = new Set<string>();
-  const entryImports = parser.importMap.get(entryFile);
   if (entryImports) {
     for (const importInfo of entryImports.values()) {
       if (!importInfo.isExternal && importInfo.sourceFile) {
@@ -111,6 +117,7 @@ export function bundleTypes(options: BundleTypesOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
+    entryExportsOnly,
     inlineDeclareGlobals,
     inlineDeclareExternals,
     respectPreserveConstEnum,
@@ -125,6 +132,7 @@ export function bundleTypes(options: BundleTypesOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
+    entryExportsOnly,
     allowedTypesLibraries,
     importedLibraries,
     inlineDeclareGlobals,

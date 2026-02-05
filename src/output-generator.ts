@@ -1641,7 +1641,14 @@ export class OutputGenerator {
             const canInfer = !symbol || isFromJs;
 
             if (canInfer) {
-              const inferred = typeChecker.typeToTypeNode(returnType, undefined, ts.NodeBuilderFlags.NoTruncation);
+              const inferred = typeChecker.typeToTypeNode(
+                returnType,
+                undefined,
+                // eslint-disable-next-line no-bitwise
+                ts.NodeBuilderFlags.NoTruncation |
+                  ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+                  ts.NodeBuilderFlags.NoTypeReduction,
+              );
               if (inferred) {
                 returnTypeNode = inferred;
               }

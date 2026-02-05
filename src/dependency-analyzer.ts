@@ -411,6 +411,16 @@ export class DependencyAnalyzer {
       processHeritageClauses();
     }
 
+    if (ts.isFunctionLike(node) && "body" in node && node.body) {
+      node.forEachChild((child) => {
+        if (child === node.body) {
+          return;
+        }
+        this.extractTypeReferences(child, references, valueReferences);
+      });
+      return;
+    }
+
     node.forEachChild((child) => {
       this.extractTypeReferences(child, references, valueReferences);
     });
