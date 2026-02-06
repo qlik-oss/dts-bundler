@@ -634,6 +634,12 @@ export class OutputGenerator {
         declaration.sourceFile === this.options.entryFile &&
         ts.isInterfaceDeclaration(declaration.node) &&
         entryNamespaceNames.has(declaration.name);
+      const suppressExportForGlobalOnlyInlined =
+        declaration.exportInfo.kind === ExportKind.NotExported &&
+        declaration.exportInfo.wasOriginallyExported &&
+        declaration.isFromInlinedLibrary &&
+        declaration.usedInGlobal &&
+        !declaration.usedInNonGlobal;
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
@@ -641,6 +647,7 @@ export class OutputGenerator {
         !suppressExportForModuleAugmentation &&
         !suppressExportForAlias &&
         !shouldStripExportForMergedNamespace &&
+        !suppressExportForGlobalOnlyInlined &&
         (declaration.exportInfo.kind === ExportKind.Named ||
           declaration.exportInfo.kind === ExportKind.NamedAndDefault ||
           declaration.exportInfo.wasOriginallyExported ||

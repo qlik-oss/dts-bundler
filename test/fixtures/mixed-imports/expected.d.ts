@@ -1,11 +1,11 @@
-import * as wholePackage from "package-with-default-export";
-import DefaultClass, {
+import type * as wholePackage from "package-with-default-export";
+import type DefaultClass, {
   NonDefaultInterface,
   default as RenamedDefaultClass,
   NonDefaultInterface as RenamedInterface,
 } from "package-with-default-export";
-import * as starImportNameModule from "package-with-default-export/namespace";
-import {
+import type * as starImportNameModule from "package-with-default-export/namespace";
+import type {
   default as defaultImportedNamespace,
   default as defaultImportedNamespace2,
 } from "package-with-default-export/namespace";

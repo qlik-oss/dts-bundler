@@ -1,4 +1,4 @@
-import * as firstImportInModule from "package-with-default-export";
+import type * as firstImportInModule from "package-with-default-export";
 
 type ExportedType = string | number;
 export interface ExportedInterface {

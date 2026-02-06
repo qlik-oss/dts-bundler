@@ -27,6 +27,12 @@ export class DeclarationCollector {
     this.options = options;
   }
 
+  private registerDeclaration(declaration: TypeDeclaration, filePath: string): void {
+    // eslint-disable-next-line no-param-reassign
+    declaration.isFromInlinedLibrary = this.fileCollector.isFromInlinedLibrary(filePath);
+    this.registry.register(declaration);
+  }
+
   collectDeclarations(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -98,7 +104,7 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
       declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(moduleDecl);
 
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
       return;
     }
 
@@ -119,7 +125,7 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
       declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(statement);
       declaration.forceInclude = true;
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
     }
   }
 
@@ -180,7 +186,7 @@ export class DeclarationCollector {
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
   }
 
   private parseExportAssignment(
@@ -209,7 +215,7 @@ export class DeclarationCollector {
       declaration.variableDeclaration = varDecl;
     }
 
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
 
     if (isEntry) {
       onDefaultExportName(syntheticName);
@@ -262,7 +268,7 @@ export class DeclarationCollector {
     ts.setTextRange(namedNode, statement);
     const declaration = new TypeDeclaration(syntheticName, filePath, namedNode, sourceFile, exportInfo);
     declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(namedNode);
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
 
     if (isEntry) {
       onDefaultExportName(syntheticName);
@@ -343,7 +349,7 @@ export class DeclarationCollector {
         const synthetic = ts.factory.createVariableDeclaration(identifier, undefined, undefined, element.initializer);
         ts.setTextRange(synthetic, element);
         declaration.variableDeclaration = synthetic;
-        this.registry.register(declaration);
+        this.registerDeclaration(declaration, filePath);
       }
       return;
     }
@@ -370,7 +376,7 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
       declaration.isTypeOnly = false;
       declaration.variableDeclaration = varDecl;
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
     }
   }
 
@@ -405,7 +411,7 @@ export class DeclarationCollector {
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
   }
 
   private static isTypeOnlyDeclaration(node: ts.Node): boolean {

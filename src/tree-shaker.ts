@@ -1,11 +1,13 @@
 import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
-import { ExportKind, type ExternalImport, type ImportInfo } from "./types.js";
+import { ExportKind, type ExternalImport, type ImportInfo, type TypeDeclaration } from "./types.js";
 
 export class TreeShaker {
   private registry: TypeRegistry;
   private used: Set<symbol>;
   private usedExternals: Set<string>;
+  private processedGlobal: Set<symbol>;
+  private processedNonGlobal: Set<symbol>;
   private exportReferencedTypes: boolean;
   private entryExportsOnly: boolean;
   private entryFile?: string;
@@ -25,6 +27,8 @@ export class TreeShaker {
     this.registry = registry;
     this.used = new Set();
     this.usedExternals = new Set();
+    this.processedGlobal = new Set();
+    this.processedNonGlobal = new Set();
     this.exportReferencedTypes = options.exportReferencedTypes ?? true;
     this.entryExportsOnly = options.entryExportsOnly ?? false;
     this.entryFile = options.entryFile;
@@ -43,23 +47,25 @@ export class TreeShaker {
       const exported = this.registry.getAllExported();
 
       for (const declaration of exported) {
-        this.markUsed(declaration.id);
+        const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
+        this.markUsed(declaration.id, context);
       }
     }
 
     for (const declaration of this.registry.declarations.values()) {
       if (declaration.forceInclude) {
-        this.markUsed(declaration.id);
+        const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
+        this.markUsed(declaration.id, context);
       }
     }
 
     if (this.entryFile) {
-      this.markEntryNamedExportsUsed(this.entryFile);
-      this.markEntryExportAssignmentsUsed(this.entryFile);
-      this.markEntryStarExportsUsed();
+      this.markEntryNamedExportsUsed(this.entryFile, "nonGlobal");
+      this.markEntryExportAssignmentsUsed(this.entryFile, "nonGlobal");
+      this.markEntryStarExportsUsed("nonGlobal");
     }
 
-    this.markNamespaceExportsUsed();
+    this.markNamespaceExportsUsed("nonGlobal");
 
     return {
       declarations: this.used,
@@ -83,20 +89,29 @@ export class TreeShaker {
     return result;
   }
 
-  private markUsed(declarationId: symbol): void {
-    if (this.used.has(declarationId)) {
+  private markUsed(declarationId: symbol, context: "global" | "nonGlobal"): void {
+    const declaration = this.registry.getDeclaration(declarationId);
+    if (!declaration) return;
+
+    if (context === "global") {
+      declaration.usedInGlobal = true;
+    } else {
+      declaration.usedInNonGlobal = true;
+    }
+
+    const processed = context === "global" ? this.processedGlobal : this.processedNonGlobal;
+    if (processed.has(declarationId)) {
+      this.used.add(declarationId);
       return;
     }
 
+    processed.add(declarationId);
     this.used.add(declarationId);
-
-    const declaration = this.registry.getDeclaration(declarationId);
-    if (!declaration) return;
 
     const shouldIncludeDependencies = this.exportReferencedTypes || declaration.dependencies.size > 0;
     if (shouldIncludeDependencies) {
       for (const depId of declaration.dependencies) {
-        this.markUsed(depId);
+        this.markUsed(depId, context);
       }
     }
 
@@ -125,7 +140,7 @@ export class TreeShaker {
     return result;
   }
 
-  private markNamespaceExportsUsed(): void {
+  private markNamespaceExportsUsed(context: "global" | "nonGlobal"): void {
     if (this.registry.entryNamespaceExports.length === 0) return;
     const visitedFiles = new Set<string>();
 
@@ -142,7 +157,7 @@ export class TreeShaker {
       if (!info) continue;
 
       if (info.targetFile) {
-        this.markModuleExportsUsed(info.targetFile, visitedFiles);
+        this.markModuleExportsUsed(info.targetFile, visitedFiles, context);
       } else if (info.externalModule && info.externalImportName) {
         this.usedExternals.add(`${info.externalModule}:${info.externalImportName}`);
       }
@@ -182,7 +197,7 @@ export class TreeShaker {
     return depth;
   }
 
-  private markModuleExportsUsed(filePath: string, visitedFiles: Set<string>): void {
+  private markModuleExportsUsed(filePath: string, visitedFiles: Set<string>, context: "global" | "nonGlobal"): void {
     if (visitedFiles.has(filePath)) return;
     visitedFiles.add(filePath);
 
@@ -190,7 +205,7 @@ export class TreeShaker {
 
     for (const starExport of this.registry.getStarExports(filePath)) {
       if (starExport.targetFile) {
-        this.markModuleExportsUsed(starExport.targetFile, visitedFiles);
+        this.markModuleExportsUsed(starExport.targetFile, visitedFiles, context);
       }
     }
 
@@ -207,29 +222,29 @@ export class TreeShaker {
           declName = defaultName;
         }
       }
-      this.markDeclarationsUsedByName(declFile, declName);
+      this.markDeclarationsUsedByName(declFile, declName, context);
 
       const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
       if (namespaceInfo?.targetFile) {
-        this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles);
+        this.markModuleExportsUsed(namespaceInfo.targetFile, visitedFiles, context);
       } else if (namespaceInfo?.externalModule && namespaceInfo.externalImportName) {
         this.usedExternals.add(`${namespaceInfo.externalModule}:${namespaceInfo.externalImportName}`);
       }
     }
   }
 
-  private markEntryStarExportsUsed(): void {
+  private markEntryStarExportsUsed(context: "global" | "nonGlobal"): void {
     if (this.registry.entryStarExports.length === 0) return;
     const visitedFiles = new Set<string>();
 
     for (const entry of this.registry.entryStarExports) {
       if (entry.info.targetFile) {
-        this.markModuleExportsUsed(entry.info.targetFile, visitedFiles);
+        this.markModuleExportsUsed(entry.info.targetFile, visitedFiles, context);
       }
     }
   }
 
-  private markEntryNamedExportsUsed(entryFile: string): void {
+  private markEntryNamedExportsUsed(entryFile: string, context: "global" | "nonGlobal"): void {
     const exportedNames = this.registry.exportedNamesByFile.get(entryFile) ?? [];
     for (const exported of exportedNames) {
       if (exported.externalModule && exported.externalImportName) {
@@ -245,11 +260,11 @@ export class TreeShaker {
           declName = defaultName;
         }
       }
-      this.markDeclarationsUsedByName(declFile, declName);
+      this.markDeclarationsUsedByName(declFile, declName, context);
     }
   }
 
-  private markEntryExportAssignmentsUsed(entryFile: string): void {
+  private markEntryExportAssignmentsUsed(entryFile: string, context: "global" | "nonGlobal"): void {
     if (!this.entrySourceFile) {
       return;
     }
@@ -269,12 +284,12 @@ export class TreeShaker {
         }
         const shouldSkipTypeOnlyImport = this.shouldSkipTypeOnlyImportExport(importInfo.sourceFile, originalName);
         if (!shouldSkipTypeOnlyImport) {
-          this.markDeclarationsUsedByName(importInfo.sourceFile, originalName);
+          this.markDeclarationsUsedByName(importInfo.sourceFile, originalName, context);
         }
         continue;
       }
 
-      this.markDeclarationsUsedByName(entryFile, exportName);
+      this.markDeclarationsUsedByName(entryFile, exportName, context);
     }
   }
 
@@ -319,11 +334,20 @@ export class TreeShaker {
     return null;
   }
 
-  private markDeclarationsUsedByName(sourceFile: string, name: string): void {
+  private markDeclarationsUsedByName(sourceFile: string, name: string, context: "global" | "nonGlobal"): void {
     const declIds = this.registry.getDeclarationIds(sourceFile, name);
     if (!declIds) return;
     for (const declId of declIds) {
-      this.markUsed(declId);
+      const declaration = this.registry.getDeclaration(declId);
+      if (!declaration) continue;
+      const effectiveContext = TreeShaker.isGlobalDeclaration(declaration) ? "global" : context;
+      this.markUsed(declId, effectiveContext);
     }
+  }
+
+  private static isGlobalDeclaration(declaration: TypeDeclaration): boolean {
+    if (!ts.isModuleDeclaration(declaration.node)) return false;
+    // eslint-disable-next-line no-bitwise
+    return (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
   }
 }

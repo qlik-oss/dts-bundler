@@ -750,20 +750,20 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it.skip("should use import type for typeof expressions (Issue #5)", () => {
+    it("should use import type for typeof expressions (Issue #5)", () => {
       const { expected, result } = runTestCase("typeof-import-should-be-type-only");
       expect(result).toBe(expected);
     });
 
-    it.skip("should handle hub-parcels pattern with inlined library and declare global", () => {
-      const { expected, result } = runTestCase("hub-parcels-real-pattern", {
+    it("should handle pattern with inlined library and declare global", () => {
+      const { expected, result } = runTestCase("real-pattern", {
         inlinedLibraries: ["fake-inlined-lib"],
         inlineDeclareGlobals: true,
       });
       expect(result).toBe(expected);
     });
 
-    it.skip("should not export inlined library types used in declare global (Issue #1)", () => {
+    it("should not export inlined library types used in declare global (Issue #1)", () => {
       const { expected, result } = runTestCase("inlined-lib-types-not-exported", {
         inlinedLibraries: ["fake-inlined-lib"],
         inlineDeclareGlobals: true,
