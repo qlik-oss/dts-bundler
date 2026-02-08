@@ -11,7 +11,7 @@ This document tracks issues identified when comparing `dts-bundler` output to `d
 - `/Users/ann/Coding/javascript/dts-bundler/reference/hub-parcels/hub-parcels-generator.ts` - output file by `dts-bundle-generator`
 - `/Users/ann/Coding/javascript/dts-bundler/reference/dts-bundle-generator` - The reference project
 
-*NOTE* Configuration when bundling hub-parcels is using `inlinedLibraries: "@qlik-trial/hub-common"`
+_NOTE_ Configuration when bundling hub-parcels is using `inlinedLibraries: "@qlik-trial/hub-common"`
 
 ---
 

@@ -6,6 +6,7 @@ dist/
 
 # only a reference
 dts-bundle-generator/
+reference/
 
 # don't mess with the output files
 test/fixtures/**/expected.d.ts

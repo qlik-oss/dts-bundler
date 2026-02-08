@@ -9,3 +9,5 @@ declare global {
     Menu: MenuProps;
   }
 }
+
+export {};

@@ -49,6 +49,7 @@ export class OutputGenerator {
     respectPreserveConstEnum?: boolean;
     entryFile?: string;
     entryImportedFiles?: Set<string>;
+    declarationOrder?: Map<symbol, number>;
     importTypeResolver?: {
       shouldInline: (importPath: string, fromFile?: string) => boolean;
       resolveImport: (fromFile: string, importPath: string) => string | null;
@@ -76,6 +77,7 @@ export class OutputGenerator {
       respectPreserveConstEnum?: boolean;
       entryFile?: string;
       entryImportedFiles?: Set<string>;
+      declarationOrder?: Map<symbol, number>;
       importTypeResolver?: {
         shouldInline: (importPath: string, fromFile?: string) => boolean;
         resolveImport: (fromFile: string, importPath: string) => string | null;
@@ -634,12 +636,8 @@ export class OutputGenerator {
         declaration.sourceFile === this.options.entryFile &&
         ts.isInterfaceDeclaration(declaration.node) &&
         entryNamespaceNames.has(declaration.name);
-      const suppressExportForGlobalOnlyInlined =
-        declaration.exportInfo.kind === ExportKind.NotExported &&
-        declaration.exportInfo.wasOriginallyExported &&
-        declaration.isFromInlinedLibrary &&
-        declaration.usedInGlobal &&
-        !declaration.usedInNonGlobal;
+      const suppressExportForInlinedGlobalOnly =
+        declaration.isFromInlinedLibrary && declaration.usedInGlobal && !declaration.usedInNonGlobal;
 
       const shouldHaveExport =
         declaration.exportInfo.kind !== ExportKind.Equals &&
@@ -647,7 +645,7 @@ export class OutputGenerator {
         !suppressExportForModuleAugmentation &&
         !suppressExportForAlias &&
         !shouldStripExportForMergedNamespace &&
-        !suppressExportForGlobalOnlyInlined &&
+        !suppressExportForInlinedGlobalOnly &&
         (declaration.exportInfo.kind === ExportKind.Named ||
           declaration.exportInfo.kind === ExportKind.NamedAndDefault ||
           declaration.exportInfo.wasOriginallyExported ||
@@ -1184,7 +1182,17 @@ export class OutputGenerator {
     const used = Array.from(this.usedDeclarations);
     const entryImportedFiles = this.options.entryImportedFiles ?? new Set<string>();
     const indexById = new Map<symbol, number>();
-    used.forEach((id, index) => indexById.set(id, index));
+    const declarationOrder = this.options.declarationOrder;
+    if (declarationOrder) {
+      for (const [id, index] of declarationOrder.entries()) {
+        indexById.set(id, index);
+      }
+    }
+    used.forEach((id, index) => {
+      if (!indexById.has(id)) {
+        indexById.set(id, index);
+      }
+    });
 
     const ordered = [...used].sort((a, b) => {
       const declA = this.registry.getDeclaration(a);

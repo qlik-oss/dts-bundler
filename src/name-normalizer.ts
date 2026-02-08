@@ -630,4 +630,109 @@ export class NameNormalizer {
     }
     return false;
   }
+
+  /**
+   * After tree-shaking, strip unnecessary $N/_N suffixes from names whose collisions were removed.
+   * Also renumber remaining suffixes to fill gaps (e.g. $2 becomes $1 if $0 was removed).
+   */
+  static stripUnnecessarySuffixes(
+    registry: TypeRegistry,
+    usedDeclarations: Set<symbol>,
+    usedExternals: Map<string, Set<ExternalImport>>,
+  ): void {
+    const suffixPattern = /^(.+?)(?:\$(\d+)|_(\d+))$/;
+    const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    type SuffixedEntity =
+      | { kind: "declaration"; declaration: TypeDeclaration }
+      | { kind: "external"; external: ExternalImport };
+
+    const baseNameGroups = new Map<string, Map<string, SuffixedEntity[]>>();
+
+    const addToGroup = (baseName: string, normalizedName: string, entity: SuffixedEntity): void => {
+      if (!baseNameGroups.has(baseName)) {
+        baseNameGroups.set(baseName, new Map());
+      }
+      const group = baseNameGroups.get(baseName);
+      if (!group) {
+        return;
+      }
+      if (!group.has(normalizedName)) {
+        group.set(normalizedName, []);
+      }
+      group.get(normalizedName)?.push(entity);
+    };
+
+    for (const id of usedDeclarations) {
+      const decl = registry.getDeclaration(id);
+      if (!decl) continue;
+      const name = decl.normalizedName;
+      const match = name.match(suffixPattern);
+      const baseName = match ? match[1] : name;
+      addToGroup(baseName, name, { kind: "declaration", declaration: decl });
+    }
+
+    for (const imports of usedExternals.values()) {
+      for (const ext of imports) {
+        const importName = NameNormalizer.extractImportName(ext.normalizedName);
+        const match = importName.match(suffixPattern);
+        const baseName = match ? match[1] : importName;
+        addToGroup(baseName, importName, { kind: "external", external: ext });
+      }
+    }
+
+    for (const [baseName, normalizedGroups] of baseNameGroups) {
+      const distinctNames = Array.from(normalizedGroups.keys()).sort((a, b) => {
+        if (a === baseName) return -1;
+        if (b === baseName) return 1;
+        return a.localeCompare(b);
+      });
+
+      const escapedBase = escapeRegExp(baseName);
+      const dollarPattern = new RegExp(`^${escapedBase}\\$\\d+$`);
+      const underscorePattern = new RegExp(`^${escapedBase}_\\d+$`);
+      const hasDollar = distinctNames.some((name) => dollarPattern.test(name));
+      const hasUnderscore = distinctNames.some((name) => underscorePattern.test(name));
+      const separator = hasUnderscore && !hasDollar ? "_" : "$";
+
+      let needsRenumber = false;
+      if (distinctNames.length === 1 && distinctNames[0] !== baseName) {
+        needsRenumber = true;
+      } else if (distinctNames.length > 1) {
+        for (let i = 0; i < distinctNames.length; i++) {
+          const expected = i === 0 ? baseName : `${baseName}${separator}${i}`;
+          if (distinctNames[i] !== expected) {
+            needsRenumber = true;
+            break;
+          }
+        }
+      }
+
+      if (!needsRenumber) continue;
+
+      for (let i = 0; i < distinctNames.length; i++) {
+        const currentName = distinctNames[i];
+        const targetName = i === 0 ? baseName : `${baseName}${separator}${i}`;
+        if (currentName === targetName) continue;
+
+        const entities = normalizedGroups.get(currentName) ?? [];
+        for (const entity of entities) {
+          if (entity.kind === "declaration") {
+            entity.declaration.normalizedName = targetName;
+            continue;
+          }
+
+          const originalName = NameNormalizer.extractImportName(entity.external.originalName);
+          if (targetName === originalName) {
+            entity.external.normalizedName = entity.external.originalName;
+          } else {
+            entity.external.normalizedName = NameNormalizer.replaceImportLocalName(
+              entity.external.normalizedName,
+              targetName,
+            );
+          }
+        }
+      }
+    }
+  }
 }

@@ -13,15 +13,6 @@ interface HomeProps {
   helper: LibHelper;
   title: string;
 }
-export interface FileUploadModel {
-  file: File;
-  progress: number;
-  status: "pending" | "uploading" | "done" | "error";
-}
-export type CustomContent = {
-  name: string;
-  props?: Record<string, unknown>;
-};
 declare global {
   interface QlikEmbedUIs {
     "hub-parcels/FileUpload": {
@@ -32,5 +23,14 @@ declare global {
     };
   }
 }
+export interface FileUploadModel {
+  file: File;
+  progress: number;
+  status: "pending" | "uploading" | "done" | "error";
+}
+export type CustomContent = {
+  name: string;
+  props?: Record<string, unknown>;
+};
 
 export {};

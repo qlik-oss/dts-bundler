@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { DeclarationParser } from "./declaration-parser.js";
 import { DependencyAnalyzer } from "./dependency-analyzer.js";
 import { FileCollector } from "./file-collector.js";
@@ -38,7 +39,7 @@ function bundle(
 
   const collector = new FileCollector(entryFile, { inlinedLibraries });
   const files = collector.collectFiles();
-  const includeEmptyExport = files.get(entryFile)?.hasEmptyExport ?? false;
+  const includeEmptyExportFromSource = files.get(entryFile)?.hasEmptyExport ?? false;
 
   // Collect all referenced types from all files
   const allReferencedTypes = new Set<string>();
@@ -64,16 +65,8 @@ function bundle(
   const entryImports = parser.importMap.get(entryFile);
   const entrySourceFile = files.get(entryFile)?.sourceFile;
 
-  const shaker = new TreeShaker(registry, {
-    exportReferencedTypes: options.exportReferencedTypes,
-    entryExportsOnly: options.entryExportsOnly,
-    entryFile,
-    entryImports: entryImports ?? undefined,
-    entrySourceFile: entrySourceFile ?? undefined,
-  });
-  const { declarations: usedDeclarations, externalImports: usedExternals, detectedTypesLibraries } = shaker.shake();
-
   const entryImportedFiles = new Set<string>();
+  const entryReferencedFiles = new Set<string>();
   if (entryImports) {
     for (const importInfo of entryImports.values()) {
       if (!importInfo.isExternal && importInfo.sourceFile) {
@@ -81,6 +74,77 @@ function bundle(
       }
     }
   }
+  if (entrySourceFile) {
+    const entryDir = path.dirname(entryFile);
+    for (const statement of entrySourceFile.statements) {
+      if (!ts.isImportDeclaration(statement)) continue;
+      if (statement.importClause) continue;
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const resolvedPath = collector.resolveImport(entryFile, statement.moduleSpecifier.text);
+      if (resolvedPath) {
+        entryImportedFiles.add(resolvedPath);
+      }
+    }
+    for (const reference of entrySourceFile.referencedFiles) {
+      entryReferencedFiles.add(path.resolve(entryDir, reference.fileName));
+    }
+  }
+  const entryRootFiles = new Set(entryImportedFiles);
+  for (const referencedFile of entryReferencedFiles) {
+    entryRootFiles.add(referencedFile);
+  }
+  if (entryFile) {
+    const exportedNames = registry.exportedNamesByFile.get(entryFile) ?? [];
+    for (const info of exportedNames) {
+      if (info.sourceFile) {
+        entryRootFiles.add(info.sourceFile);
+      }
+    }
+    for (const entryExport of registry.entryNamespaceExports) {
+      if (entryExport.sourceFile !== entryFile) continue;
+      const info = registry.getNamespaceExportInfo(entryExport.sourceFile, entryExport.name);
+      if (info?.targetFile) {
+        entryRootFiles.add(info.targetFile);
+      }
+    }
+    for (const entryExport of registry.entryStarExports) {
+      if (entryExport.sourceFile !== entryFile) continue;
+      if (entryExport.info.targetFile) {
+        entryRootFiles.add(entryExport.info.targetFile);
+      }
+    }
+  }
+
+  const shaker = new TreeShaker(registry, {
+    exportReferencedTypes: options.exportReferencedTypes,
+    entryExportsOnly: options.entryExportsOnly,
+    entryFile,
+    entryImports: entryImports ?? undefined,
+    entrySourceFile: entrySourceFile ?? undefined,
+    entryImportedFiles: entryRootFiles,
+    entryReferencedFiles,
+  });
+  const {
+    declarations: usedDeclarations,
+    externalImports: usedExternals,
+    detectedTypesLibraries,
+    declarationOrder,
+  } = shaker.shake();
+
+  // Strip unnecessary $N suffixes when collisions were removed by tree-shaking.
+  NameNormalizer.stripUnnecessarySuffixes(registry, usedDeclarations, usedExternals);
+
+  const hasGlobalAugmentation = Array.from(usedDeclarations).some((id) => {
+    const declaration = registry.getDeclaration(id);
+    return Boolean(
+      declaration &&
+      ts.isModuleDeclaration(declaration.node) &&
+      // eslint-disable-next-line no-bitwise
+      declaration.node.flags & ts.NodeFlags.GlobalAugmentation,
+    );
+  });
+
+  const includeEmptyExport = includeEmptyExportFromSource || hasGlobalAugmentation;
 
   const generator = new OutputGenerator(registry, usedDeclarations, usedExternals, {
     ...options,
@@ -91,6 +155,7 @@ function bundle(
     entryExportDefaultName: parser.entryExportDefaultName,
     entryFile,
     entryImportedFiles,
+    declarationOrder,
     detectedTypesLibraries,
     typeChecker: collector.getTypeChecker(),
     preserveConstEnums: collector.getCompilerOptions().preserveConstEnums ?? false,

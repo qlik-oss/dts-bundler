@@ -1,3 +1,3 @@
-import { DefaultClass as DefaultClass_1 } from "@test-case/re-export";
+import { DefaultClass } from "@test-case/re-export";
 
-export { DefaultClass_1 };
+export { DefaultClass };

@@ -585,6 +585,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("simple-tree-shaking");
       expect(result).toBe(expected);
     });
+
+    it("should strip unnecessary $N suffixes after tree-shaking", () => {
+      const { expected, result } = runTestCase("unnecessary-rename-after-tree-shaking");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("TypeScript Features", () => {
@@ -765,6 +770,14 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should not export inlined library types used in declare global (Issue #1)", () => {
       const { expected, result } = runTestCase("inlined-lib-types-not-exported", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should tree-shake inlined library component exports", () => {
+      const { expected, result } = runTestCase("inlined-lib-components-tree-shaking", {
         inlinedLibraries: ["fake-inlined-lib"],
         inlineDeclareGlobals: true,
       });

@@ -1,7 +1,6 @@
 import type * as fakePackage from "fake-package";
 import type { Interface as FPI1, Interface as FPI2, Interface as Interface$2 } from "fake-package";
 
-export type ExportEqNs = string;
 declare namespace ExportEqNs$1 {
   namespace InternalNs {
     type NewType = string;
@@ -23,6 +22,7 @@ declare namespace ExportEqNs$1 {
     }
   }
 }
+export type ExportEqNs = string;
 declare const TEMPLATE = "template1";
 declare const MergedSymbol = "";
 declare var Variable: number;
@@ -61,6 +61,7 @@ declare function anotherFunc$1(two: NamespaceName$1.Local): void;
 declare namespace NamespaceName$1 {
   interface Local {}
 }
+export type ExportedNsType = ExportEqNs$1.InternalNs.NewType;
 export interface Inter {
   field: Interface;
   field2: AnotherInterface$1;
@@ -84,7 +85,6 @@ export interface Inter2 {
   field8: DefaultInterface;
 }
 export type MyType = Interface$2;
-export type ExportedNsType = ExportEqNs$1.InternalNs.NewType;
 
 export {
   anotherFunc as af1,

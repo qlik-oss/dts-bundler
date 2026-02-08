@@ -13,6 +13,8 @@ export class TreeShaker {
   private entryFile?: string;
   private entryImports?: Map<string, ImportInfo>;
   private entrySourceFile?: ts.SourceFile;
+  private entryImportedFiles: Set<string>;
+  private entryReferencedFiles: Set<string>;
 
   constructor(
     registry: TypeRegistry,
@@ -22,6 +24,8 @@ export class TreeShaker {
       entryFile?: string;
       entryImports?: Map<string, ImportInfo>;
       entrySourceFile?: ts.SourceFile;
+      entryImportedFiles?: Set<string>;
+      entryReferencedFiles?: Set<string>;
     } = {},
   ) {
     this.registry = registry;
@@ -34,26 +38,69 @@ export class TreeShaker {
     this.entryFile = options.entryFile;
     this.entryImports = options.entryImports;
     this.entrySourceFile = options.entrySourceFile;
+    this.entryImportedFiles = options.entryImportedFiles ?? new Set();
+    this.entryReferencedFiles = options.entryReferencedFiles ?? new Set();
   }
 
   shake(): {
     declarations: Set<symbol>;
     externalImports: Map<string, Set<ExternalImport>>;
     detectedTypesLibraries: Set<string>;
+    declarationOrder: Map<symbol, number>;
   } {
-    const useEntryExportsOnly = this.entryExportsOnly && Boolean(this.entryFile);
+    const useEntryExportsOnly = Boolean(this.entryFile) || this.entryExportsOnly;
+    const declarationOrder = this.buildDeclarationOrder(useEntryExportsOnly);
 
     if (!useEntryExportsOnly) {
       const exported = this.registry.getAllExported();
 
       for (const declaration of exported) {
+        if (this.entryFile) {
+          const isEntryFile = declaration.sourceFile === this.entryFile;
+          const isEntryImport = this.entryImportedFiles.has(declaration.sourceFile);
+          if (!isEntryFile && !isEntryImport) {
+            continue;
+          }
+          if (declaration.isFromInlinedLibrary && !isEntryFile) {
+            continue;
+          }
+        }
         const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
         this.markUsed(declaration.id, context);
       }
     }
 
     for (const declaration of this.registry.declarations.values()) {
-      if (declaration.forceInclude) {
+      if (!declaration.forceInclude) {
+        continue;
+      }
+      if (this.entryFile && TreeShaker.isGlobalDeclaration(declaration)) {
+        const isEntryFile = declaration.sourceFile === this.entryFile;
+        const isEntryImport = this.entryImportedFiles.has(declaration.sourceFile);
+        if (!isEntryFile && !isEntryImport) {
+          continue;
+        }
+      }
+      const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
+      this.markUsed(declaration.id, context);
+    }
+
+    if (this.entryFile) {
+      for (const declaration of this.registry.declarations.values()) {
+        if (!ts.isModuleDeclaration(declaration.node)) {
+          continue;
+        }
+        const isEntryFile = declaration.sourceFile === this.entryFile;
+        const isReferencedFile = this.entryReferencedFiles.has(declaration.sourceFile);
+        if (!isEntryFile && !isReferencedFile) {
+          continue;
+        }
+        if (TreeShaker.isGlobalDeclaration(declaration) && !declaration.forceInclude) {
+          continue;
+        }
+        if (!isEntryFile && !ts.isStringLiteral(declaration.node.name)) {
+          continue;
+        }
         const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
         this.markUsed(declaration.id, context);
       }
@@ -71,7 +118,45 @@ export class TreeShaker {
       declarations: this.used,
       externalImports: this.collectUsedExternalImports(),
       detectedTypesLibraries: this.collectDetectedTypesLibraries(),
+      declarationOrder,
     };
+  }
+
+  private buildDeclarationOrder(useEntryExportsOnly: boolean): Map<symbol, number> {
+    const order = new Map<symbol, number>();
+    const visited = new Set<symbol>();
+
+    const record = (id: symbol): void => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const declaration = this.registry.getDeclaration(id);
+      if (!declaration) return;
+      order.set(id, order.size);
+      const shouldIncludeDependencies = this.exportReferencedTypes || declaration.dependencies.size > 0;
+      if (shouldIncludeDependencies) {
+        for (const depId of declaration.dependencies) {
+          record(depId);
+        }
+      }
+    };
+
+    if (!useEntryExportsOnly) {
+      const exported = this.registry.getAllExported();
+      for (const declaration of exported) {
+        if (declaration.isFromInlinedLibrary) {
+          continue;
+        }
+        record(declaration.id);
+      }
+    }
+
+    for (const declaration of this.registry.declarations.values()) {
+      if (declaration.forceInclude) {
+        record(declaration.id);
+      }
+    }
+
+    return order;
   }
 
   private collectDetectedTypesLibraries(): Set<string> {
@@ -203,6 +288,20 @@ export class TreeShaker {
 
     const exportedNames = this.registry.exportedNamesByFile.get(filePath) ?? [];
 
+    const fileDeclarations = this.registry.declarationsByFile.get(filePath);
+    if (fileDeclarations) {
+      for (const declId of fileDeclarations) {
+        const declaration = this.registry.getDeclaration(declId);
+        if (!declaration) continue;
+        if (!declaration.isFromInlinedLibrary) continue;
+        if (ts.isModuleDeclaration(declaration.node)) continue;
+        if (!declaration.exportInfo.wasOriginallyExported && !ts.isVariableStatement(declaration.node)) {
+          continue;
+        }
+        this.markUsed(declId, context);
+      }
+    }
+
     for (const starExport of this.registry.getStarExports(filePath)) {
       if (starExport.targetFile) {
         this.markModuleExportsUsed(starExport.targetFile, visitedFiles, context);
@@ -261,6 +360,10 @@ export class TreeShaker {
         }
       }
       this.markDeclarationsUsedByName(declFile, declName, context);
+
+      if (declFile !== entryFile) {
+        this.markDeclarationsUsedByName(entryFile, exported.name, context);
+      }
     }
   }
 

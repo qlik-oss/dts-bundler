@@ -160,7 +160,11 @@ export class DependencyAnalyzer {
           const memberNames = DependencyAnalyzer.collectNamespaceMemberReferences(declaration.node, refName);
           if (memberNames.size > 0) {
             for (const memberName of memberNames) {
-              const key = `${importInfo.sourceFile}:${memberName}`;
+              const resolvedMemberName =
+                memberName === "default"
+                  ? (this.getDefaultExportName(importInfo.sourceFile) ?? memberName)
+                  : memberName;
+              const key = `${importInfo.sourceFile}:${resolvedMemberName}`;
               const depIds = this.registry.getDeclarationIdsByKey(key);
               if (depIds) {
                 for (const depId of depIds) {
@@ -213,7 +217,10 @@ export class DependencyAnalyzer {
           }
 
           const key = `${importInfo.sourceFile}:${originalName}`;
-          const depIds = this.registry.getDeclarationIdsByKey(key);
+          let depIds = this.registry.getDeclarationIdsByKey(key);
+          if (!depIds && refName !== originalName) {
+            depIds = this.registry.getDeclarationIdsByKey(importedKey);
+          }
           if (depIds) {
             for (const depId of depIds) {
               declaration.dependencies.add(depId);
@@ -322,6 +329,18 @@ export class DependencyAnalyzer {
         (ts.isStatement(decl.node) && hasDefaultModifier(decl.node))
       ) {
         return decl.name;
+      }
+    }
+
+    const sourceFileNode = this.fileCollector.getProgram().getSourceFile(sourceFile);
+    if (sourceFileNode) {
+      for (const statement of sourceFileNode.statements) {
+        if (!ts.isExportAssignment(statement) || statement.isExportEquals) {
+          continue;
+        }
+        if (ts.isIdentifier(statement.expression)) {
+          return statement.expression.text;
+        }
       }
     }
 

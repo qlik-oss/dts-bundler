@@ -1,4 +1,4 @@
 export declare const Bar = 12;
-export interface Foo {}
 export interface Bar {}
+export interface Foo {}
 export declare const Foo = 2;

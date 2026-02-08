@@ -285,7 +285,8 @@ export class FileCollector {
       if (lastDotIndex > 0 && lastDotIndex > importPath.lastIndexOf("/")) {
         const ext = importPath.substring(lastDotIndex);
         if (![".ts", ".tsx", ".js", ".mjs", ".cjs", ".mts", ".cts"].includes(ext)) {
-          const arbitraryDeclPath = `${resolved}.d${ext}.ts`;
+          const basePath = resolved.slice(0, -ext.length);
+          const arbitraryDeclPath = `${basePath}.d${ext}.ts`;
           if (fs.existsSync(arbitraryDeclPath)) {
             return arbitraryDeclPath;
           }

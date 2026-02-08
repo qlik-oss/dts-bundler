@@ -4,3 +4,5 @@ declare global {
   }
 }
 export declare const observable: typeof observable | "@@observable";
+
+export {};

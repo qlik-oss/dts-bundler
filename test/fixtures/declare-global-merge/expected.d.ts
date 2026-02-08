@@ -14,3 +14,5 @@ declare global {
     featureB: FeatureB;
   }
 }
+
+export {};
