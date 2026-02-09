@@ -4,7 +4,7 @@ import qlik from "@qlik/eslint-config";
 export default qlik.compose(
   // ignored files
   {
-    ignores: ["node_modules", "reference", "dts-bundle-generator", "**/test/fixtures", "**/test/__snapshots__", "dist"],
+    ignores: ["node_modules", "**/test/fixtures", "dist"],
   },
   ...qlik.configs.esm,
   {
