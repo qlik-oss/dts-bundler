@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { AstPrinter } from "./ast-printer.js";
-import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer.js";
-import { buildEntryExportData, type EntryExportData } from "./helpers/entry-exports.js";
-import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
-import { VariableDeclarationEmitter } from "./variable-declaration-emitter.js";
+import { AstPrinter } from "./ast-printer";
+import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer";
+import { buildEntryExportData, type EntryExportData } from "./helpers/entry-exports";
+import { normalizePrintedStatement } from "./helpers/print-normalizer";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types";
+import { VariableDeclarationEmitter } from "./variable-declaration-emitter";
 
 /**
  * Read the package version from the local package.json.

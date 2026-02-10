@@ -5,8 +5,8 @@ import type {
   NamespaceExportInfo,
   StarExportInfo,
   TypeDeclaration,
-} from "./types.js";
-import { ExportKind, ExternalImport } from "./types.js";
+} from "./types";
+import { ExportKind, ExternalImport } from "./types";
 
 export class TypeRegistry {
   public declarations: Map<symbol, TypeDeclaration>;

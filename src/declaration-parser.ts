@@ -1,10 +1,10 @@
 import type ts from "typescript";
-import { DeclarationCollector } from "./declaration-collector.js";
-import { ExportResolver } from "./export-resolver.js";
-import type { FileCollector } from "./file-collector.js";
-import { ImportParser } from "./import-parser.js";
-import type { TypeRegistry } from "./registry.js";
-import type { ImportInfo } from "./types.js";
+import { DeclarationCollector } from "./declaration-collector";
+import { ExportResolver } from "./export-resolver";
+import type { FileCollector } from "./file-collector";
+import { ImportParser } from "./import-parser";
+import type { TypeRegistry } from "./registry";
+import type { ImportInfo } from "./types";
 
 /**
  * Parses declarations, imports and exports from a group of `SourceFile`s

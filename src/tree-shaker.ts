@@ -1,6 +1,6 @@
 import ts from "typescript";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, type ExternalImport, type ImportInfo, type TypeDeclaration } from "./types.js";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, type ExternalImport, type ImportInfo, type TypeDeclaration } from "./types";
 
 /**
  * Perform tree-shaking analysis on the registry to determine which

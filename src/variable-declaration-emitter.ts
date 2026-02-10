@@ -1,8 +1,8 @@
 import ts from "typescript";
-import type { AstPrinter } from "./ast-printer.js";
-import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers.js";
-import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
-import { ExportKind, type TypeDeclaration } from "./types.js";
+import type { AstPrinter } from "./ast-printer";
+import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers";
+import { normalizePrintedStatement } from "./helpers/print-normalizer";
+import { ExportKind, type TypeDeclaration } from "./types";
 
 /**
  * Emit variable declaration statements for a group of `TypeDeclaration`s.

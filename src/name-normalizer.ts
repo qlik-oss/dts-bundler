@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { isDeclareGlobal } from "./declaration-utils.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
+import { isDeclareGlobal } from "./declaration-utils";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types";
 
 export class NameNormalizer {
   /**

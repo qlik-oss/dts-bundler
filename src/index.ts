@@ -5,13 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { DeclarationParser } from "./declaration-parser";
-import { DependencyAnalyzer } from "./dependency-analyzer.js";
-import { FileCollector } from "./file-collector.js";
-import { NameNormalizer } from "./name-normalizer.js";
-import { OutputGenerator } from "./output-generator.js";
-import { TypeRegistry } from "./registry.js";
-import { TreeShaker } from "./tree-shaker.js";
-import type { BundleTypesOptions } from "./types.js";
+import { DependencyAnalyzer } from "./dependency-analyzer";
+import { FileCollector } from "./file-collector";
+import { NameNormalizer } from "./name-normalizer";
+import { OutputGenerator } from "./output-generator";
+import { TypeRegistry } from "./registry";
+import { TreeShaker } from "./tree-shaker";
+import type { BundleTypesOptions } from "./types";
 
 function bundle(
   entry: string,

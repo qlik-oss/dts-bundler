@@ -1,11 +1,11 @@
 import ts from "typescript";
-import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils.js";
-import type { FileCollector } from "./file-collector.js";
-import { collectBindingIdentifiersFromName } from "./helpers/binding-identifiers.js";
-import { resolveDefaultExportNameFromRegistry } from "./helpers/default-export.js";
-import { getLibraryName } from "./helpers/node-modules.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, TypeDeclaration, type ExportInfo, type ExportedNameInfo } from "./types.js";
+import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils";
+import type { FileCollector } from "./file-collector";
+import { collectBindingIdentifiersFromName } from "./helpers/binding-identifiers";
+import { resolveDefaultExportNameFromRegistry } from "./helpers/default-export";
+import { getLibraryName } from "./helpers/node-modules";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, TypeDeclaration, type ExportInfo, type ExportedNameInfo } from "./types";
 
 /**
  * Resolve exports and re-exports across project files and register them in

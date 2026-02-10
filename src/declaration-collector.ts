@@ -5,11 +5,11 @@ import {
   hasExportModifier,
   isDeclaration,
   isDeclareGlobal,
-} from "./declaration-utils.js";
-import type { FileCollector } from "./file-collector.js";
-import { collectBindingElementsFromDeclarations } from "./helpers/binding-identifiers.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
+} from "./declaration-utils";
+import type { FileCollector } from "./file-collector";
+import { collectBindingElementsFromDeclarations } from "./helpers/binding-identifiers";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, TypeDeclaration, type ExportInfo } from "./types";
 
 export class DeclarationCollector {
   private registry: TypeRegistry;

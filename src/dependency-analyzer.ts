@@ -1,9 +1,9 @@
 import path from "node:path";
 import ts from "typescript";
-import { hasDefaultModifier } from "./declaration-utils.js";
-import type { FileCollector } from "./file-collector.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind } from "./types.js";
+import { hasDefaultModifier } from "./declaration-utils";
+import type { FileCollector } from "./file-collector";
+import type { TypeRegistry } from "./registry";
+import { ExportKind } from "./types";
 
 /**
  * Responsible for analyzing type and value references in registered declarations

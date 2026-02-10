@@ -1,7 +1,7 @@
 import ts from "typescript";
-import type { FileCollector } from "./file-collector.js";
-import type { TypeRegistry } from "./registry.js";
-import type { ImportInfo } from "./types.js";
+import type { FileCollector } from "./file-collector";
+import type { TypeRegistry } from "./registry";
+import type { ImportInfo } from "./types";
 
 /**
  * Parse import declarations from a `SourceFile` and register any external
