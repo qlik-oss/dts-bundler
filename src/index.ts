@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { DeclarationParser } from "./declaration-parser.js";
+import { DeclarationParser } from "./declaration-parser";
 import { DependencyAnalyzer } from "./dependency-analyzer.js";
 import { FileCollector } from "./file-collector.js";
 import { NameNormalizer } from "./name-normalizer.js";

@@ -37,7 +37,6 @@ export class DependencyAnalyzer {
   /**
    * Create a `DependencyAnalyzer` responsible for converting type/value
    * references in declarations into dependency sets that the bundler can use.
-   *
    * @param registry - Shared `TypeRegistry` with declarations and helpers.
    * @param importMap - Map of file imports produced by `ImportParser`.
    * @param fileCollector - Helper used for resolving imports and program access.

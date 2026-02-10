@@ -696,6 +696,10 @@ export class ExportResolver {
     return null;
   }
 
+  /**
+   * Apply star exports from the entry file by marking all exported declarations
+   * from the star-exported files as having `Named` export kind.
+   */
   applyStarExports(): void {
     if (this.registry.entryStarExports.length === 0) return;
     const visitedFiles = new Set<string>();
@@ -707,6 +711,13 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Mark all statements with export modifiers in a file and its star-exported
+   * dependencies as having named export kind. Recursively processes star exports.
+   *
+   * @param filePath - Path of the file being processed.
+   * @param visitedFiles - Set of already-visited file paths to prevent cycles.
+   */
   private markStarExportedDeclarations(filePath: string, visitedFiles: Set<string>): void {
     if (visitedFiles.has(filePath)) return;
     visitedFiles.add(filePath);
@@ -741,10 +752,15 @@ export class ExportResolver {
     }
   }
 
-  private resolveDefaultExportName(resolvedPath: string): string | null {
-    return this.resolveDefaultExportTarget(resolvedPath)?.name ?? null;
-  }
-
+  /**
+   * Resolve a file path to find its default export declaration name and source file.
+   * Handles `export default` statements, `export =` assignments, and follows
+   * import chains to find the actual default export target.
+   *
+   * @param resolvedPath - The fully resolved file path to analyze.
+   * @param visited - Set of visited paths to prevent infinite recursion.
+   * @returns An object with the default export `name` and `sourceFile`, or null if not found.
+   */
   private resolveDefaultExportTarget(
     resolvedPath: string,
     visited: Set<string> = new Set(),
@@ -783,6 +799,16 @@ export class ExportResolver {
     return null;
   }
 
+  /**
+   * Resolve an imported identifier to its original default export target by
+   * following import statements and resolving default exports from imported files.
+   *
+   * @param sourceFile - The source file AST to scan for imports.
+   * @param filePath - Path of the file containing the import statement.
+   * @param identifierName - The local identifier name being resolved.
+   * @param visited - Set of visited paths to prevent infinite recursion.
+   * @returns An object with the resolved declaration `name` and `sourceFile`, or null if not found.
+   */
   private resolveImportedIdentifierTarget(
     sourceFile: ts.SourceFile,
     filePath: string,
@@ -826,6 +852,14 @@ export class ExportResolver {
     return null;
   }
 
+  /**
+   * Scan a source file for `export = name` assignments and update the import
+   * map to reflect the mapping between local files and their export equals target.
+   *
+   * @param filePath - The file path being analyzed.
+   * @param sourceFile - The parsed source file AST.
+   * @param importMap - Map of file imports to update with resolved export targets.
+   */
   static resolveExportEquals(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -856,6 +890,15 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Handle `export =` assignment statements for a file. Updates the export info
+   * for the target declaration to mark it as an `export =` target.
+   *
+   * @param statement - The export assignment statement.
+   * @param filePath - Path of the file containing the export assignment.
+   * @param isEntry - Whether this is the entry file.
+   * @param importMap - Map of imports used to resolve the exported name.
+   */
   private parseExportEquals(
     statement: ts.ExportAssignment,
     filePath: string,
@@ -905,6 +948,14 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Handle `export default` assignment statements. For inline declarations,
+   * creates a new `TypeDeclaration` entry. For identifier-based exports,
+   * updates the export kind of the referenced declaration.
+   *
+   * @param statement - The export default assignment statement.
+   * @param filePath - Path of the file containing the export default statement.
+   */
   private parseExportDefault(statement: ts.ExportAssignment, filePath: string): void {
     const expression = statement.expression;
 
@@ -959,6 +1010,14 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Resolve the types library name for an external import using the file collector's
+   * resolution logic. Returns the `@types` package name if applicable.
+   *
+   * @param fromFile - The file path from which the import is made.
+   * @param importPath - The import specifier string.
+   * @returns The types library name (e.g., 'node'), or null if not applicable.
+   */
   private getTypesLibraryName(fromFile: string, importPath: string): string | null {
     return this.fileCollector.resolveExternalImport(fromFile, importPath).typesLibraryName;
   }

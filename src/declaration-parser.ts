@@ -35,7 +35,6 @@ export class DeclarationParser {
 
   /**
    * Create a `DeclarationParser`.
-   *
    * @param registry - Shared `TypeRegistry` used for symbol information.
    * @param fileCollector - Helper for resolving/collecting file relationships.
    * @param options - Optional flags to control inlining of `declare global` and external `declare module` blocks.

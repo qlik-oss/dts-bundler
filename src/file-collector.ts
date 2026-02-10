@@ -36,30 +36,61 @@ export interface CollectedFile {
 
 export class FileCollector {
   /**
-   * Collects and resolves project files for bundling. Uses a TypeScript
-   * `Program` to resolve modules and decide which files should be inlined
-   * into the generated declaration bundle vs left as external references.
-   *
-   * The collector also builds caches for fast module resolution and keeps
-   * track of `typeRoots` so `@types` packages are treated as externals.
+   * Configure library names that should be inlined into the bundle.
    */
   private inlinedLibraries: string[];
+
+  /**
+   * TypeScript `Program` used for module resolution and type checking.
+   */
   private program: ts.Program;
+
+  /**
+   * TypeScript `TypeChecker` from the program for symbol and type analysis.
+   */
   private typeChecker: ts.TypeChecker;
+
+  /**
+   * Absolute path to the entry file for the bundle.
+   */
   private entryFile: string;
+
+  /**
+   * Set of library names that have been computed as inlined based on configuration.
+   */
   private inlinedLibrariesSet: Set<string>;
+
+  /**
+   * Array of type root directories where `@types` packages are located.
+   */
   private typeRoots: string[];
+
+  /**
+   * Cache mapping library names to their representative file paths.
+   */
   private modulePathCache: Map<string, string>;
+
+  /**
+   * Cache mapping library names to all files contained in that library.
+   */
   private moduleFilesByLibrary: Map<string, string[]>;
+
+  /**
+   * Cache of resolved module paths for non-relative imports.
+   */
   private moduleResolveCache: Map<string, string | null>;
+
+  /**
+   * Cache of external import resolutions including resolved path and types library names.
+   */
   private externalResolveCache: Map<string, { resolvedPath: string | null; typesLibraryName: string | null }>;
 
+  /**
+   * Create a new `FileCollector`.
+   * @param entryFile - The absolute or relative path to the bundle entry file.
+   * @param options.inlinedLibraries - Packages to inline into the bundle.
+   */
   constructor(entryFile: string, options: FileCollectorOptions = {}) {
-    /**
-     * Create a new `FileCollector`.
-     * @param entryFile - The absolute or relative path to the bundle entry file.
-     * @param options.inlinedLibraries - Packages to inline into the bundle.
-     */
     this.entryFile = path.resolve(entryFile);
     this.inlinedLibraries = options.inlinedLibraries ?? [];
     this.program = this.createProgram();
@@ -80,12 +111,14 @@ export class FileCollector {
     this.buildModuleCaches();
   }
 
+  /**
+   * Create a TypeScript `Program` for the entry file using the discovered
+   * `tsconfig.json` and compiler options appropriate for Node's module
+   * resolution (NodeNext) when required by the entry extension.
+   *
+   * @returns A new TypeScript `Program` configured for the entry file.
+   */
   private createProgram(): ts.Program {
-    /**
-     * Create a TypeScript `Program` for the entry file using the discovered
-     * `tsconfig.json` and compiler options appropriate for Node's module
-     * resolution (NodeNext) when required by the entry extension.
-     */
     const configPath = findTsConfig(this.entryFile);
     const compilerOptions = getCompilerOptions(configPath);
 
@@ -113,22 +146,24 @@ export class FileCollector {
    * If library A is in inlinedLibraries and it imports from library B,
    * then library B should also be inlined (unless it's external).
    */
+  /**
+   * Compute the set of libraries to treat as inlined. Currently this
+   * returns the explicitly configured list; it is a single-source-of-truth
+   * for inline decisions elsewhere in the collector.
+   *
+   * @returns A set of library names that should be inlined.
+   */
   private computeInlinedLibrariesSet(): Set<string> {
-    /**
-     * Compute the set of libraries to treat as inlined. Currently this
-     * returns the explicitly configured list; it is a single-source-of-truth
-     * for inline decisions elsewhere in the collector.
-     */
     return new Set<string>(this.inlinedLibraries);
   }
 
+  /**
+   * Scan the `Program` source files and build caches mapping library names
+   * to representative file paths and lists of files contained in each
+   * library (files under `node_modules`). These caches speed up resolving
+   * non-relative imports.
+   */
   private buildModuleCaches(): void {
-    /**
-     * Scan the `Program` source files and build caches mapping library names
-     * to representative file paths and lists of files contained in each
-     * library (files under `node_modules`). These caches speed up resolving
-     * non-relative imports.
-     */
     for (const sourceFile of this.program.getSourceFiles()) {
       const fileName = sourceFile.fileName;
 
@@ -154,11 +189,14 @@ export class FileCollector {
     }
   }
 
+  /**
+   * Extract the package/library name from an import specifier string.
+   * Handles scoped packages (e.g. `@scope/name/path`).
+   *
+   * @param importPath - The import specifier string.
+   * @returns The library name portion of the import path.
+   */
   private static getLibraryNameFromImportPath(importPath: string): string {
-    /**
-     * Extract the package/library name from an import specifier string.
-     * - Handles scoped packages (e.g. `@scope/name/path`).
-     */
     if (importPath.startsWith("@")) {
       const parts = importPath.split("/");
       return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : importPath;
@@ -215,12 +253,15 @@ export class FileCollector {
     return false;
   }
 
+  /**
+   * Decide whether a `SourceFile` should be included (inlined) in the
+   * output bundle. This considers the entry file, default libraries,
+   * `typeRoots`, `node_modules` origin, and ambient module declarations.
+   *
+   * @param sourceFile - The source file to evaluate.
+   * @returns True if the file should be included in the bundle.
+   */
   private shouldInlineFile(sourceFile: ts.SourceFile): boolean {
-    /**
-     * Decide whether a `SourceFile` should be included (inlined) in the
-     * output bundle. This considers the entry file, default libraries,
-     * `typeRoots`, `node_modules` origin, and ambient module declarations.
-     */
     const fileName = sourceFile.fileName;
 
     // Always include the entry file
@@ -272,12 +313,15 @@ export class FileCollector {
     return false;
   }
 
+  /**
+   * Check whether a path originates from one of the configured `typeRoots`.
+   * Files from `typeRoots` are commonly `@types/*` packages and typically
+   * treated as externals.
+   *
+   * @param fileName - The file path to check.
+   * @returns True if the file is from a declared type root directory.
+   */
   private isFromTypeRoots(fileName: string): boolean {
-    /**
-     * Check whether a path originates from one of the configured `typeRoots`.
-     * Files from `typeRoots` are commonly `@types/*` packages and typically
-     * treated as externals.
-     */
     if (this.typeRoots.length === 0) {
       return false;
     }
@@ -491,21 +535,27 @@ export class FileCollector {
     return result;
   }
 
+  /**
+   * Determine whether an import string refers to a Node builtin module.
+   * Handles both `node:fs` and bare `fs` style specifiers.
+   *
+   * @param importPath - The import specifier to check.
+   * @returns True if the import refers to a Node.js builtin module.
+   */
   private static isNodeBuiltin(importPath: string): boolean {
-    /**
-     * Determine whether an import string refers to a Node builtin module.
-     * Handles both `node:fs` and bare `fs` style specifiers.
-     */
     const normalized = importPath.startsWith("node:") ? importPath.slice(5) : importPath;
     return builtinModules.includes(importPath) || builtinModules.includes(normalized);
   }
 
+  /**
+   * Walk the AST and collect module specifiers used inside `import("...")`
+   * types. These are type-only module references that might require
+   * including the referenced declaration files in the bundle.
+   *
+   * @param sourceFile - The source file AST to scan.
+   * @returns A set of module specifiers used in import type nodes.
+   */
   private static collectImportTypeModuleSpecifiers(sourceFile: ts.SourceFile): Set<string> {
-    /**
-     * Walk the AST and collect module specifiers used inside `import("...")`
-     * types. These are type-only module references that might require
-     * including the referenced declaration files in the bundle.
-     */
     const modules = new Set<string>();
 
     const visit = (node: ts.Node): void => {
