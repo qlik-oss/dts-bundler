@@ -2,18 +2,42 @@ import ts from "typescript";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, type ExternalImport, type ImportInfo, type TypeDeclaration } from "./types.js";
 
+/**
+ * Perform tree-shaking analysis on the registry to determine which
+ * declarations and external imports are actually used and should be
+ * included in the generated bundle.
+ */
 export class TreeShaker {
+  /** The shared `TypeRegistry` containing declarations and imports. */
   private registry: TypeRegistry;
+  /** Set of declaration symbols that are used and should be emitted. */
   private used: Set<symbol>;
+  /** Set of external module names that are used and should be emitted. */
   private usedExternals: Set<string>;
+  /** Map of external module names to sets of external imports that are used and should be emitted. */
   private processedGlobal: Set<symbol>;
+  /** Set of non-global declaration symbols that have been processed. */
   private processedNonGlobal: Set<symbol>;
+  /** Map of external module names to sets of external imports that are used and should be emitted. */
   private entryFile?: string;
+  /** Map of external module names to sets of external imports that are used and should be emitted. */
   private entryImports?: Map<string, ImportInfo>;
+  /** Optional AST for the entry used to inspect export assignments. */
   private entrySourceFile?: ts.SourceFile;
+  /** Optional set of files directly imported by the entry. */
   private entryImportedFiles: Set<string>;
+  /** Optional set of files referenced by the entry (import types, etc.). */
   private entryReferencedFiles: Set<string>;
 
+  /**
+   * Create a `TreeShaker`.
+   * @param registry - The shared `TypeRegistry` containing declarations and imports.
+   * @param options.entryFile - Optional entry file path used to seed usage analysis.
+   * @param options.entryImports - Optional map of local name -> import info from the entry.
+   * @param options.entrySourceFile - Optional AST for the entry used to inspect export assignments.
+   * @param options.entryImportedFiles - Optional set of files directly imported by the entry.
+   * @param options.entryReferencedFiles - Optional set of files referenced by the entry (import types, etc.).
+   */
   constructor(
     registry: TypeRegistry,
     options: {
@@ -42,6 +66,11 @@ export class TreeShaker {
     detectedTypesLibraries: Set<string>;
     declarationOrder: Map<symbol, number>;
   } {
+    /**
+     * Run the tree-shaking algorithm and return the set of declarations and
+     * external imports that must be emitted. The result also includes any
+     * detected `@types` libraries and a declaration ordering map.
+     */
     const declarationOrder = this.buildDeclarationOrder();
 
     for (const declaration of this.registry.declarations.values()) {
@@ -97,6 +126,11 @@ export class TreeShaker {
   }
 
   private buildDeclarationOrder(): Map<symbol, number> {
+    /**
+     * Build a deterministic ordering for declarations that should be
+     * emitted. Declarations forced-included by analysis are recorded and
+     * their dependencies are also visited to produce a stable order.
+     */
     const order = new Map<symbol, number>();
     const visited = new Set<symbol>();
 
@@ -124,6 +158,10 @@ export class TreeShaker {
   }
 
   private collectDetectedTypesLibraries(): Set<string> {
+    /**
+     * Collect a set of `@types` library names that are referenced by used
+     * external imports (so the emitter may add appropriate references).
+     */
     const result = new Set<string>();
 
     for (const [moduleName, moduleImports] of this.registry.externalImports.entries()) {
@@ -139,6 +177,10 @@ export class TreeShaker {
   }
 
   private markUsed(declarationId: symbol, context: "global" | "nonGlobal"): void {
+    /**
+     * Mark a declaration as used in the given context and recursively
+     * include its dependency graph and external imports.
+     */
     const declaration = this.registry.getDeclaration(declarationId);
     if (!declaration) return;
 
@@ -172,6 +214,10 @@ export class TreeShaker {
   }
 
   private collectUsedExternalImports(): Map<string, Set<ExternalImport>> {
+    /**
+     * Return the set of external imports that were recorded as used during
+     * analysis, grouped by module name.
+     */
     const result = new Map<string, Set<ExternalImport>>();
 
     for (const [moduleName, moduleImports] of this.registry.externalImports.entries()) {
@@ -190,6 +236,11 @@ export class TreeShaker {
   }
 
   private markNamespaceExportsUsed(context: "global" | "nonGlobal"): void {
+    /**
+     * Mark namespace exports (exported via `export * as ns`) as used when
+     * they are reachable from the entry. Traverses nested namespace
+     * dependencies in depth order to ensure correctness.
+     */
     if (this.registry.entryNamespaceExports.length === 0) return;
     const visitedFiles = new Set<string>();
 
@@ -217,6 +268,10 @@ export class TreeShaker {
     entry: { name: string; sourceFile: string },
     depthCache: Map<string, number>,
   ): number {
+    /**
+     * Compute depth for a namespace export to enable sorting exports so
+     * deeper (dependent) exports are processed after their children.
+     */
     const key = `${entry.sourceFile}:${entry.name}`;
     if (depthCache.has(key)) return depthCache.get(key) as number;
 
@@ -247,6 +302,11 @@ export class TreeShaker {
   }
 
   private markModuleExportsUsed(filePath: string, visitedFiles: Set<string>, context: "global" | "nonGlobal"): void {
+    /**
+     * Mark all exported declarations from `filePath` that should be included
+     * in the bundle. Recursively follows star exports and namespace
+     * exports, and records external imports encountered.
+     */
     if (visitedFiles.has(filePath)) return;
     visitedFiles.add(filePath);
 
@@ -297,6 +357,10 @@ export class TreeShaker {
   }
 
   private markEntryStarExportsUsed(context: "global" | "nonGlobal"): void {
+    /**
+     * Include declarations reachable from `export * from` entries that are
+     * originated by the entry file.
+     */
     if (this.registry.entryStarExports.length === 0) return;
     const visitedFiles = new Set<string>();
 
@@ -308,6 +372,10 @@ export class TreeShaker {
   }
 
   private markEntryNamedExportsUsed(entryFile: string, context: "global" | "nonGlobal"): void {
+    /**
+     * Mark declarations referenced by named exports from the entry file as
+     * used. Handles re-exported externals and default export resolution.
+     */
     const exportedNames = this.registry.exportedNamesByFile.get(entryFile) ?? [];
     for (const exported of exportedNames) {
       if (exported.externalModule && exported.externalImportName) {
@@ -332,6 +400,10 @@ export class TreeShaker {
   }
 
   private markEntryExportAssignmentsUsed(entryFile: string, context: "global" | "nonGlobal"): void {
+    /**
+     * Inspect `export =` and `export default` assignment statements in
+     * the entry AST and include referenced declarations/imports.
+     */
     if (!this.entrySourceFile) {
       return;
     }
@@ -361,6 +433,12 @@ export class TreeShaker {
   }
 
   private shouldSkipTypeOnlyImportExport(sourceFile: string, name: string): boolean {
+    /**
+     * Decide whether an import that is type-only should be skipped when
+     * referenced from an export assignment. This prevents emitting purely
+     * type-only imports when they are intentionally removed by
+     * configuration or analysis.
+     */
     const declIds = this.registry.getDeclarationIds(sourceFile, name);
     if (!declIds || declIds.size === 0) return false;
 
@@ -387,6 +465,10 @@ export class TreeShaker {
   }
 
   private getDefaultExportName(sourceFile: string): string | null {
+    /**
+     * Return the local name of the default export declared in `sourceFile`,
+     * or null if there is no default export declaration.
+     */
     const declarations = this.registry.declarationsByFile.get(sourceFile);
     if (!declarations) return null;
 
@@ -402,6 +484,11 @@ export class TreeShaker {
   }
 
   private markDeclarationsUsedByName(sourceFile: string, name: string, context: "global" | "nonGlobal"): void {
+    /**
+     * Mark all declarations by `sourceFile` and `name` as used. If a
+     * declaration is a module/global declaration, it will be marked in the
+     * global context regardless of the requested `context`.
+     */
     const declIds = this.registry.getDeclarationIds(sourceFile, name);
     if (!declIds) return;
     for (const declId of declIds) {
@@ -413,6 +500,11 @@ export class TreeShaker {
   }
 
   private static isGlobalDeclaration(declaration: TypeDeclaration): boolean {
+    /**
+     * Determine whether a declaration is a global augmentation (inside
+     * `declare global {}`) so it should be treated in the global context
+     * for inclusion decisions.
+     */
     if (!ts.isModuleDeclaration(declaration.node)) return false;
     // eslint-disable-next-line no-bitwise
     return (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;

@@ -4,12 +4,25 @@ import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from 
 import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
 import { ExportKind, type TypeDeclaration } from "./types.js";
 
+/**
+ * Emit variable declaration statements for a group of `TypeDeclaration`s.
+ * This class is responsible for reconstructing or normalizing `var/let/const`
+ * declarations so they can be emitted in the generated `.d.ts` bundle with
+ * appropriate `declare`/`export` modifiers and preserved type information.
+ */
 export class VariableDeclarationEmitter {
   private checker: ts.TypeChecker;
   private addExtraDefaultExport: (name: string) => void;
   private printer: AstPrinter;
   private getRenameMap: (declarations: TypeDeclaration[]) => Map<string, string>;
 
+  /**
+   * @param checker - TypeScript `TypeChecker` used to synthesize type nodes.
+   * @param addExtraDefaultExport - Callback invoked when an extra default export
+   *   alias must be emitted for `default`-only patterns.
+   * @param printer - `AstPrinter` used to print synthesized AST nodes.
+   * @param getRenameMap - Function returning a rename map for a group of declarations.
+   */
   constructor(
     checker: ts.TypeChecker,
     addExtraDefaultExport: (name: string) => void,
@@ -23,6 +36,13 @@ export class VariableDeclarationEmitter {
   }
 
   generateVariableStatementLines(statement: ts.VariableStatement, declarations: TypeDeclaration[]): string[] {
+    /**
+     * Given an original `VariableStatement` AST node and its associated
+     * `TypeDeclaration` records, produce one or more output lines that
+     * represent the exported/declared variables for the bundle. Handles
+     * grouping by exported vs non-exported and special handling for
+     * default-only export patterns.
+     */
     const orderedDeclarations = [...declarations].sort((a, b) => {
       const aPos = a.variableDeclaration?.pos ?? 0;
       const bPos = b.variableDeclaration?.pos ?? 0;
@@ -83,6 +103,10 @@ export class VariableDeclarationEmitter {
     declarations: TypeDeclaration[],
     shouldExport: boolean,
   ): ts.VariableStatement | null {
+    /**
+     * Build a new `VariableStatement` AST for the provided declarations.
+     * Returns null when nothing meaningful can be emitted.
+     */
     const declarationList = this.buildVariableDeclarationList(statement, declarations);
     if (!declarationList) {
       return null;
@@ -113,6 +137,12 @@ export class VariableDeclarationEmitter {
     statement: ts.VariableStatement,
     declarations: TypeDeclaration[],
   ): ts.VariableDeclarationList | null {
+    /**
+     * Construct an appropriate `VariableDeclarationList` for the given
+     * declarations. This handles destructuring patterns (expanding to
+     * individual identifiers when safe), preserves initializers for
+     * literal consts, and synthesizes type nodes when necessary.
+     */
     const statementDeclarations = statement.declarationList.declarations;
     const hasBindingPattern = statementDeclarations.some(
       (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
@@ -240,6 +270,11 @@ export class VariableDeclarationEmitter {
   private buildFunctionTypeFromInitializer(
     initializer: ts.ArrowFunction | ts.FunctionExpression,
   ): ts.FunctionTypeNode | null {
+    /**
+     * Attempt to build a `FunctionTypeNode` from an initializer that is a
+     * function expression or arrow function. Only returns a type node when
+     * parameter types and/or return type can be determined.
+     */
     const hasExplicitParamType = initializer.parameters.some((param) => Boolean(param.type));
     const hasExplicitReturnType = Boolean(initializer.type);
     if (!hasExplicitParamType && !hasExplicitReturnType) {
@@ -286,6 +321,10 @@ export class VariableDeclarationEmitter {
   }
 
   private static parseFunctionTypeFromText(typeText: string): ts.FunctionTypeNode | null {
+    /**
+     * Parse a textual function type into a `FunctionTypeNode` by creating
+     * a temporary source file and extracting the alias's type node.
+     */
     const sourceFile = ts.createSourceFile(
       "__type_parse__.ts",
       `type __T = ${typeText};`,
@@ -303,6 +342,10 @@ export class VariableDeclarationEmitter {
   }
 
   private static markSynthesized(node: ts.Node): void {
+    /**
+     * Mark a synthesized AST subtree so it prints without comments and
+     * appears as generated (no meaningful text range).
+     */
     ts.setTextRange(node, { pos: -1, end: -1 });
     ts.setEmitFlags(node, ts.EmitFlags.NoComments);
     node.forEachChild((child) => {
@@ -316,6 +359,11 @@ export class VariableDeclarationEmitter {
     declarations: TypeDeclaration[],
     preserveJsDoc: boolean,
   ): string {
+    /**
+     * Print a synthesized `VariableStatement` using the configured
+     * `AstPrinter` and normalize whitespace/comments relative to the
+     * original `sourceStatement`.
+     */
     const renameMap = this.getRenameMap(declarations);
     const renameMapToUse = renameMap.size > 0 ? renameMap : undefined;
     const sourceFile = sourceStatement.getSourceFile();
@@ -340,6 +388,11 @@ export class VariableDeclarationEmitter {
   }
 
   private static shouldKeepInitializer(decl: ts.VariableDeclaration, checker: ts.TypeChecker): boolean {
+    /**
+     * Decide whether a variable initializer should be preserved in the
+     * emitted `.d.ts`. Generally only `const` literal initializers are kept
+     * to preserve literal types.
+     */
     if (!decl.initializer) {
       return false;
     }
@@ -372,6 +425,11 @@ export class VariableDeclarationEmitter {
   }
 
   private static shouldPreserveJsDoc(declarations: TypeDeclaration[], shouldExport: boolean): boolean {
+    /**
+     * Determine whether JSDoc comments should be preserved for a group of
+     * declarations. Preserves JSDoc for exported groups and for default-only
+     * patterns.
+     */
     if (shouldExport) {
       return true;
     }

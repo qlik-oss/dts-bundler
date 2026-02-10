@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import ts from "typescript";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExportResolver } from "../export-resolver";
-import { TypeRegistry } from "../registry";
 import type { FileCollector } from "../file-collector";
+import { TypeRegistry } from "../registry";
 
 describe("ExportResolver", () => {
   let resolver: ExportResolver;
@@ -80,7 +80,10 @@ describe("ExportResolver", () => {
       const code = "export interface Foo {}";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const exports = registry.exportedNamesByFile.get("test.ts");
@@ -91,7 +94,10 @@ describe("ExportResolver", () => {
       const code = "export { Foo } from './lib';";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const exports = registry.exportedNamesByFile.get("test.ts");
@@ -102,7 +108,10 @@ describe("ExportResolver", () => {
       const code = "export { Foo as Bar } from './lib';";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const exports = registry.exportedNamesByFile.get("test.ts");
@@ -113,7 +122,10 @@ describe("ExportResolver", () => {
       const code = "export * from './lib';";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const starExports = registry.starExportsByFile.get("test.ts");
@@ -124,7 +136,10 @@ describe("ExportResolver", () => {
       const code = "export interface Foo {}";
       const sourceFile = ts.createSourceFile("entry.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("entry.ts", sourceFile, importMap, true);
 
       const exports = registry.exportedNamesByFile.get("entry.ts");
@@ -137,7 +152,10 @@ describe("ExportResolver", () => {
       const code = "class Foo {} export = Foo;";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       const onEntryExportEquals = vi.fn();
 
       resolver.handleExportAssignments("test.ts", sourceFile, true, importMap, onEntryExportEquals, vi.fn());
@@ -149,7 +167,10 @@ describe("ExportResolver", () => {
       const code = "class Foo {} export default Foo;";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       const onEntryExportDefault = vi.fn();
 
       resolver.handleExportAssignments("test.ts", sourceFile, true, importMap, vi.fn(), onEntryExportDefault);
@@ -161,7 +182,10 @@ describe("ExportResolver", () => {
       const code = "class Foo {} export = Foo;";
       const sourceFile = ts.createSourceFile("lib.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       const onEntryExportEquals = vi.fn();
 
       resolver.handleExportAssignments("lib.ts", sourceFile, false, importMap, onEntryExportEquals, vi.fn());
@@ -175,7 +199,10 @@ describe("ExportResolver", () => {
       const code = "export { default as Foo } from 'lodash';";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const exports = registry.exportedNamesByFile.get("test.ts");
@@ -198,7 +225,10 @@ describe("ExportResolver", () => {
       const code = "export const foo: string; export const bar: number;";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       const exports = registry.exportedNamesByFile.get("test.ts");
@@ -210,7 +240,10 @@ describe("ExportResolver", () => {
       const code = "export const { foo, bar } = obj;";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolver.collectFileExports("test.ts", sourceFile, importMap, false);
 
       // Should handle binding patterns in exports
@@ -230,7 +263,10 @@ describe("ExportResolver", () => {
       const code = "export { Foo } from 'lodash';";
       const sourceFile = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true);
 
-      const importMap = new Map<string, Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>>();
+      const importMap = new Map<
+        string,
+        Map<string, { originalName: string; sourceFile: string | null; isExternal: boolean; aliasName?: string | null }>
+      >();
       resolverExt.collectFileExports("test.ts", sourceFile, importMap, false);
 
       expect(registry.externalImports.has("lodash")).toBe(true);

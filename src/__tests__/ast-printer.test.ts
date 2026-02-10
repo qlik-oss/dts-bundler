@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import ts from "typescript";
+import { beforeEach, describe, expect, it } from "vitest";
 import { AstPrinter } from "../ast-printer";
 
 describe("AstPrinter", () => {

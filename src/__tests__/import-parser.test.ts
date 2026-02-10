@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import ts from "typescript";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { FileCollector } from "../file-collector";
 import { ImportParser } from "../import-parser";
 import { TypeRegistry } from "../registry";
-import type { FileCollector } from "../file-collector";
 
 describe("ImportParser", () => {
   let parser: ImportParser;
@@ -11,7 +11,10 @@ describe("ImportParser", () => {
   beforeEach(() => {
     registry = new TypeRegistry();
     const fcObj = {
-      shouldInline: vi.fn((importPath: string) => importPath.startsWith("./") || importPath.startsWith("../") || !importPath.includes("/")),
+      shouldInline: vi.fn(
+        (importPath: string) =>
+          importPath.startsWith("./") || importPath.startsWith("../") || !importPath.includes("/"),
+      ),
       resolveImport: vi.fn((fromFile: string, importPath: string) => {
         if (importPath === "./lib") return "/src/lib.ts";
         if (importPath === "./types") return "/src/types.ts";

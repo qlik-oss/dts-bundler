@@ -7,15 +7,36 @@ import { getLibraryName } from "./helpers/node-modules.js";
 import type { TypeRegistry } from "./registry.js";
 import { ExportKind, TypeDeclaration, type ExportInfo, type ExportedNameInfo } from "./types.js";
 
+/**
+ * Resolve exports and re-exports across project files and register them in
+ * the shared `TypeRegistry`.
+ */
 export class ExportResolver {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
 
+  /**
+   * Create an `ExportResolver`.
+   * @param registry - Shared type registry where export information will be recorded.
+   * @param fileCollector - Helper for resolving imports and inspecting files.
+   */
   constructor(registry: TypeRegistry, fileCollector: FileCollector) {
     this.registry = registry;
     this.fileCollector = fileCollector;
   }
 
+  /**
+   * Handle `export =` and `export default` assignments within a source file.
+   * `export =` assignments are passed through `parseExportEquals` while
+   * default export assignments are handled by `parseExportDefault`.
+   *
+   * @param filePath - Path of the source file being processed.
+   * @param sourceFile - The parsed `SourceFile` AST.
+   * @param isEntry - Whether this file is the entry point.
+   * @param importMap - Map of imports for files (from `ImportParser`).
+   * @param onEntryExportEquals - Callback invoked for entry-file `export =` nodes.
+   * @param onEntryExportDefault - Callback invoked for entry-file `export default` nodes.
+   */
   handleExportAssignments(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -44,6 +65,10 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Collect direct `export * as ns from 'mod'` namespace exports and register
+   * them in the registry. External namespaces are recorded as external imports.
+   */
   collectDirectNamespaceExports(filePath: string, sourceFile: ts.SourceFile): void {
     for (const statement of sourceFile.statements) {
       if (!ts.isExportDeclaration(statement)) continue;
@@ -81,6 +106,13 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Scan the file for export declarations and register exported names,
+   * namespace exports and star-exports in the registry.
+   *
+   * This handles `export` modifiers on declarations, `export { ... } from 'x'`,
+   * `export * from 'x'`, and `export * as ns from 'x'`.
+   */
   collectFileExports(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -333,6 +365,13 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Parse re-exports (`export { a as b } from 'x'` and `export { a as b }`)
+   * and update declaration exportInfo and registry entries accordingly.
+   *
+   * @param onEntryExportDefaultName - Optional callback invoked when a default
+   *                                  export name is discovered for the entry file.
+   */
   parseReExports(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -489,6 +528,11 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Mark a chain of merged exports so declarations included in the merge are
+   * assigned to a common merge group. This helps preserve correct ordering
+   * and inclusion when multiple files re-export the same symbol.
+   */
   private markMergedExportChain(
     filePath: string,
     name: string,
@@ -538,6 +582,11 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Add dependencies from all declarations in `sourceFile` to all declarations
+   * in `targetFile` so files importing from one will pull the other when
+   * necessary.
+   */
   private addFileDependency(sourceFile: string, targetFile: string): void {
     const sourceDeclarations = this.registry.declarationsByFile.get(sourceFile);
     const targetDeclarations = this.registry.declarationsByFile.get(targetFile);
@@ -555,12 +604,20 @@ export class ExportResolver {
     }
   }
 
+  /**
+   * Lookup `ExportedNameInfo` for a given `name` in `filePath`.
+   */
   private findExportedNameInfo(filePath: string, name: string): ExportedNameInfo | null {
     const list = this.registry.exportedNamesByFile.get(filePath);
     if (!list) return null;
     return list.find((item) => item.name === name) ?? null;
   }
 
+  /**
+   * Try to resolve a named export that was re-exported via an external
+   * `export * from ...` chain back to the external module that provides it.
+   * Returns the chosen external module and import name when found.
+   */
   private resolveExternalStarExport(
     filePath: string,
     exportName: string,
@@ -600,6 +657,10 @@ export class ExportResolver {
     return { moduleName: fallbackModule, importName: exportName };
   }
 
+  /**
+   * Normalize an external import name to its base import (e.g. strip `as` or
+   * `default as` wrappers when deciding canonical import names).
+   */
   private static getExternalImportBaseName(importName: string): string {
     if (importName.startsWith("default as ")) {
       return "default";
@@ -613,6 +674,10 @@ export class ExportResolver {
     return importName;
   }
 
+  /**
+   * Find a module augmentation (`declare module X {}`) declaration by name
+   * within a file and return its `TypeDeclaration` if present.
+   */
   private findModuleAugmentationDeclaration(filePath: string, name: string): TypeDeclaration | null {
     const declarations = this.registry.declarationsByFile.get(filePath);
     if (!declarations) {

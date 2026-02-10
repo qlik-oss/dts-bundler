@@ -1,5 +1,15 @@
 import ts from "typescript";
 
+/**
+ * Options that control how AST nodes are printed.
+ *
+ * - `renameMap` maps identifier names to their printed replacements.
+ * - `qualifiedNameMap` maps dotted qualified names (e.g. "ns.Type") to a replacement identifier.
+ * - `typeChecker` is used to detect global references when preserving them.
+ * - `preserveGlobalReferences` prevents renaming of identifiers resolved to global symbols.
+ * - `namespaceImportNames` lists namespace import identifiers that should be preserved when printing qualified names.
+ * - `stripImportType` provides custom logic to convert `import("x").T` nodes to a type/query when desired.
+ */
 export interface AstPrintOptions {
   renameMap?: Map<string, string>;
   qualifiedNameMap?: Map<string, string>;
@@ -10,8 +20,13 @@ export interface AstPrintOptions {
 }
 
 export class AstPrinter {
+  /** The underlying TypeScript `Printer` used to emit text. */
   private printer: ts.Printer;
 
+  /**
+   * Create a new `AstPrinter` instance.
+   * The printer is configured to preserve comments and use LF line endings.
+   */
   constructor() {
     this.printer = ts.createPrinter({
       newLine: ts.NewLineKind.LineFeed,
@@ -19,6 +34,16 @@ export class AstPrinter {
     });
   }
 
+  /**
+   * Print an arbitrary `ts.Node` to source text.
+   * If `options` provides rename/qualified-name maps or a `stripImportType` hook,
+   * the node will be transformed before printing to apply those replacements.
+   *
+   * @param node - The AST node to print.
+   * @param sourceFile - The `SourceFile` context used by the printer.
+   * @param options - Optional printing/transformation options.
+   * @returns The printed TypeScript text for `node`.
+   */
   printNode(node: ts.Node, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
       options.renameMap || options.qualifiedNameMap || options.stripImportType
@@ -35,6 +60,15 @@ export class AstPrinter {
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
   }
 
+  /**
+   * Print a `ts.Statement` to source text, applying the same transformation rules
+   * as `printNode` when options are supplied.
+   *
+   * @param statement - The statement to print.
+   * @param sourceFile - The `SourceFile` context used by the printer.
+   * @param options - Optional printing/transformation options.
+   * @returns The printed TypeScript text for `statement`.
+   */
   printStatement(statement: ts.Statement, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
       options.renameMap || options.qualifiedNameMap || options.stripImportType
@@ -51,6 +85,17 @@ export class AstPrinter {
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
   }
 
+  /**
+   * Create a transformer that applies identifier and qualified-name renames.
+   * This transformer also supports:
+   * - converting `import("x").T` nodes to type/query nodes via `stripImportType`;
+   * - preserving namespace-import identifiers and global references when requested.
+   *
+   * Note: This is an internal helper but is documented so callers understand
+   * the transformation behaviour when debugging printed output.
+   *
+   * @internal
+   */
   private static applyRenameTransformer<T extends ts.Node>(
     node: T,
     renameMap?: Map<string, string>,
@@ -243,6 +288,12 @@ export class AstPrinter {
     return transformed;
   }
 
+  /**
+   * Convert a dotted name string into a `ts.EntityName` (`Identifier` / `QualifiedName`).
+   *
+   * @param name - Dotted name like "A.B.C".
+   * @returns A `ts.EntityName` representing the dotted path.
+   */
   private static createQualifiedNameFromString(name: string): ts.EntityName {
     const parts = name.split(".");
     let current: ts.EntityName = ts.factory.createIdentifier(parts[0]);
@@ -252,6 +303,12 @@ export class AstPrinter {
     return current;
   }
 
+  /**
+   * Convert a dotted name string into a `ts.Expression` using `PropertyAccessExpression`.
+   *
+   * @param name - Dotted name like "a.b.c".
+   * @returns A `ts.Expression` representing the property access chain.
+   */
   private static createPropertyAccessFromString(name: string): ts.Expression {
     const parts = name.split(".");
     let current: ts.Expression = ts.factory.createIdentifier(parts[0]);

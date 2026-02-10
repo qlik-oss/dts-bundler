@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import ts from "typescript";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DeclarationCollector } from "../declaration-collector";
-import { TypeRegistry } from "../registry";
 import type { FileCollector } from "../file-collector";
+import { TypeRegistry } from "../registry";
 
 describe("DeclarationCollector", () => {
   let collector: DeclarationCollector;

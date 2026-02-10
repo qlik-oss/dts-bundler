@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
 import ts from "typescript";
+import { describe, expect, it } from "vitest";
 import {
-  isDeclaration,
   getDeclarationName,
-  hasExportModifier,
   hasDefaultModifier,
+  hasExportModifier,
+  isDeclaration,
   isDeclareGlobal,
 } from "../declaration-utils";
 

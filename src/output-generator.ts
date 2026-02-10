@@ -10,6 +10,12 @@ import type { TypeRegistry } from "./registry.js";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
 import { VariableDeclarationEmitter } from "./variable-declaration-emitter.js";
 
+/**
+ * Read the package version from the local package.json.
+ * Falls back to the string "unversioned" when the package file cannot be read
+ * (e.g. in unit-test or non-installed contexts).
+ * @returns The version string or "unversioned" when unavailable.
+ */
 function getVersion(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -22,41 +28,142 @@ function getVersion(): string {
   }
 }
 
+/**
+ * Options controlling how the output .d.ts bundle is generated.
+ * Most options are optional and only alter specific behaviours such as
+ * whether to include a banner, sort nodes, or how imports/types are resolved.
+ */
 export type OutputGeneratorOptions = {
+  /**
+   * When true, do not emit the generated banner comment at the top of the file.
+   */
   noBanner?: boolean;
+  /**
+   * When true, sort declaration nodes by kind to produce a stable, human-friendly order.
+   */
   sortNodes?: boolean;
+  /**
+   * When provided, emit a UMD `export as namespace <name>;` declaration.
+   */
   umdModuleName?: string;
+  /**
+   * When true, include an `export {};` marker in the output to ensure the
+   * file is treated as a module when no exports are otherwise present.
+   */
   includeEmptyExport?: boolean;
+  /**
+   * Explicit allow-list of `@types/*` library names that are permitted to be
+   * referenced via `/// <reference types="..." />` directives.
+   */
   allowedTypesLibraries?: string[];
+  /**
+   * List of external libraries that were imported by the entry point and
+   * should be considered when building prelude/import lines.
+   */
   importedLibraries?: string[];
+  /**
+   * Set of type library names explicitly referenced by the input sources
+   * (e.g. from `/// <reference types="..." />` or `import`-only declarations).
+   */
   referencedTypes?: Set<string>;
+  /**
+   * Set of detected `@types/*` library names discovered from used external
+   * imports (populated by the tree-shaker / analyzer).
+   */
   detectedTypesLibraries?: Set<string>;
+  /**
+   * Optional `export = ...` assignment node parsed from the entry file, if present.
+   */
   entryExportEquals?: ts.ExportAssignment | null;
+  /**
+   * Optional `export default ...` assignment node parsed from the entry file, if present.
+   */
   entryExportDefault?: ts.ExportAssignment | null;
+  /**
+   * When provided, use this name as the resolved default export alias rather
+   * than attempting to infer it from the entry AST.
+   */
   entryExportDefaultName?: string | null;
+  /**
+   * When true, re-export types that were originally exported from their
+   * source files (honours original `export` modifiers for type declarations).
+   */
   exportReferencedTypes?: boolean;
+  /**
+   * Optional TypeScript `TypeChecker` instance used for advanced inference
+   * while transforming and printing nodes (e.g. enum values, function return types).
+   */
   typeChecker?: ts.TypeChecker;
+  /**
+   * When true, allow `const enum` declarations to be preserved instead of
+   * being stripped. This interacts with `respectPreserveConstEnum`.
+   */
   preserveConstEnums?: boolean;
+  /**
+   * When true, respect the original `preserveConstEnums` semantics for
+   * deciding whether to keep const enums; otherwise const-enum stripping is disabled.
+   */
   respectPreserveConstEnum?: boolean;
+  /**
+   * Optional path to the bundle entry file; used for entry-oriented decisions
+   * such as ordering and exported-name resolution.
+   */
   entryFile?: string;
+  /**
+   * Optional set of files directly imported by the entry; used to bias ordering.
+   */
   entryImportedFiles?: Set<string>;
+  /**
+   * Optional deterministic declaration ordering map (symbol -> index). When
+   * provided, the topological sort will prefer this ordering for emitted declarations.
+   */
   declarationOrder?: Map<symbol, number>;
+  /**
+   * Optional resolver used to decide whether `import("...")` type nodes
+   * should be inlined (resolved to local files) or kept as external imports.
+   */
   importTypeResolver?: {
+    /**
+     * Return true when an `import("module")` specifier should be inlined
+     * (resolved to a local file) for a given importing file.
+     */
     shouldInline: (importPath: string, fromFile?: string) => boolean;
+    /**
+     * Resolve a module specifier from `fromFile` to an absolute file path,
+     * or return null when resolution fails. Used together with `shouldInline`.
+     */
     resolveImport: (fromFile: string, importPath: string) => string | null;
   };
 };
 
+/**
+ * Responsible for generating the final .d.ts textual output from the
+ * collected registry of declarations and the set of used declarations.
+ *
+ * The class encapsulates layout logic (ordering, namespace blocks, import
+ * normalization) and uses an `AstPrinter` together with AST transformations
+ * to produce valid declaration output.
+ */
 export class OutputGenerator {
+  /** Registry containing all discovered type declarations and metadata. */
   private registry: TypeRegistry;
+  /** Set of declaration symbols that should be emitted in the final output. */
   private usedDeclarations: Set<symbol>;
+  /** External imports grouped by module name that are referenced by emitted declarations. */
   private usedExternals: Map<string, Set<ExternalImport>>;
+  /** Map of original declaration keys to their normalized names (for rename resolution). */
   private nameMap: Map<string, string>;
+  /** Additional default export names discovered while emitting (used to emit extra default re-exports). */
   private extraDefaultExports: Set<string>;
+  /** Optional helper that emits variable declarations in a compact, safe form. */
   private variableDeclarationEmitter: VariableDeclarationEmitter | null;
+  /** Printer used to convert transformed AST nodes into textual output. */
   private astPrinter: AstPrinter;
+  /** Cached mapping of files to namespace aliases that are used as runtime value aliases. */
   private namespaceValueAliasesByFile: Map<string, Set<string>>;
+  /** Cached entry export analysis produced by `buildEntryExportData`. */
   private entryExportData: EntryExportData | null = null;
+  /** Options controlling generation behaviour. */
   private options: OutputGeneratorOptions;
 
   constructor(
@@ -83,6 +190,12 @@ export class OutputGenerator {
     this.options = options;
   }
 
+  /**
+   * Generate the final .d.ts bundle text.
+   * This method orchestrates building reference directives, imports, namespace
+   * blocks and declarations in the correct order.
+   * @returns The full textual contents of the generated declaration file.
+   */
   generate(): string {
     const lines: string[] = [];
 
@@ -148,6 +261,10 @@ export class OutputGenerator {
     return `${lines.join("\n")}\n`;
   }
 
+  /**
+   * Build a map from source-file+original-name to normalized name for
+   * declarations that were renamed by the bundler.
+   */
   private buildNameMap(): void {
     for (const id of this.usedDeclarations) {
       const declaration = this.registry.getDeclaration(id);
@@ -158,6 +275,12 @@ export class OutputGenerator {
     }
   }
 
+  /**
+   * Build import/export prelude lines for external modules referenced by the
+   * emitted declarations. This may include `export { ... } from` lines and
+   * import statements for external types/values.
+   * @returns An object with a `lines` array containing the generated lines.
+   */
   private generateExternalPrelude(): { lines: string[] } {
     const { exportFromByModule, exportFromTypeOnlyByModule, excludedExternalImports, requiredExternalImports } =
       this.getEntryExportData();
@@ -184,6 +307,10 @@ export class OutputGenerator {
     return { lines };
   }
 
+  /**
+   * Produce a named export list for the entry file (e.g. `export { A, B }`).
+   * This will use `export type` when all exported items are type-only.
+   */
   private generateNamedExports(): string[] {
     const { exportListItems, exportListTypeOnlyItems, exportListExternalDefaults } = this.getEntryExportData();
     if (exportListItems.length === 0) {
@@ -210,6 +337,10 @@ export class OutputGenerator {
     return lines;
   }
 
+  /**
+   * Lazily compute and return the entry-export analysis for the current
+   * generation run. The result is cached on the instance.
+   */
   private getEntryExportData(): EntryExportData {
     if (this.entryExportData) {
       return this.entryExportData;
@@ -226,6 +357,12 @@ export class OutputGenerator {
     return this.entryExportData;
   }
 
+  /**
+   * Parse the entry file (if present) and collect `export { ... } from "..."`
+   * aliases to use when resolving exported names back to their original
+   * declaration files.
+   * @returns A map from exported name to `{ sourceFile, originalName }`.
+   */
   private getEntryExportAliasMap(): Map<string, { sourceFile: string; originalName: string }> {
     const aliasMap = new Map<string, { sourceFile: string; originalName: string }>();
     const entryFile = this.options.entryFile;
@@ -254,11 +391,16 @@ export class OutputGenerator {
         }
       }
     } catch {
-      // ignore
+      // ignore parse errors for entry file reading
     }
 
     return aliasMap;
   }
+
+  /**
+   * Filter external import entries based on excluded and required sets.
+   * Ensures required imports are present and excluded imports are omitted.
+   */
   private filterExternalImports(excluded: Set<string>, required: Set<string>): Map<string, Set<ExternalImport>> {
     const result = new Map<string, Set<ExternalImport>>();
 
@@ -294,6 +436,11 @@ export class OutputGenerator {
     return result;
   }
 
+  /**
+   * Resolve a module path referenced by the entry file to a concrete file
+   * path known by the registry. Tries multiple extensions and index files,
+   * and falls back to suffix-matching against registered files.
+   */
   private resolveSourceFileFromRegistry(entryDir: string, modulePath: string): string | null {
     const basePath = path.resolve(entryDir, modulePath);
     const candidates = [
@@ -337,6 +484,9 @@ export class OutputGenerator {
     return null;
   }
 
+  /**
+   * Build an `export { ... } from "module";` line optionally marked as type-only.
+   */
   private static buildExportFromLine(moduleName: string, items: string[], isTypeOnly = false): string {
     const unique = Array.from(new Set(items));
     if (unique.length === 1) {
@@ -361,6 +511,11 @@ export class OutputGenerator {
     return lines.join("\n");
   }
 
+  /**
+   * Render import lines for a set of external imports for a given module.
+   * Handles CommonJS `import = require` and ES module import forms, including
+   * namespace and default/name imports.
+   */
   private static buildExternalImportLines(moduleName: string, imports: Set<ExternalImport>): string[] {
     const lines: string[] = [];
     const importsArray = Array.from(imports);
@@ -438,18 +593,31 @@ export class OutputGenerator {
     return lines;
   }
 
+  /**
+   * Return the normalized external import name for a given module and import.
+   * If the import is not present in the registry, the original name is returned.
+   */
   private getNormalizedExternalImportName(moduleName: string, importName: string): string {
     const moduleImports = this.registry.externalImports.get(moduleName);
     const externalImport = moduleImports?.get(importName);
     return externalImport?.normalizedName ?? importName;
   }
 
+  /**
+   * Determine whether the original source contained an `export` modifier for
+   * the given declaration. Used to decide when to re-export referenced types.
+   */
   private static hadExportInSource(declaration: TypeDeclaration): boolean {
     if (declaration.exportInfo.wasOriginallyExported) return true;
     if (!ts.canHaveModifiers(declaration.node)) return false;
     return ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
   }
 
+  /**
+   * Render all declarations that should appear in the output. This performs
+   * ordering, grouping of variable statements, and applies transformations
+   * that strip implementation details while preserving types and JSDoc.
+   */
   private generateDeclarations(): string[] {
     const lines: string[] = [];
     const aliasExportedNames = this.getAliasExportedNames();
@@ -586,6 +754,10 @@ export class OutputGenerator {
     return lines;
   }
 
+  /**
+   * Produce namespace declaration blocks for namespaces that are referenced
+   * as values in emitted declarations.
+   */
   private generateNamespaces(): string[] {
     const lines: string[] = [];
     const usedNamespaces = new Map<string, { sourceFile: string; declarations: symbol[] }>();
@@ -639,6 +811,10 @@ export class OutputGenerator {
     return lines;
   }
 
+  /**
+   * Decide whether an import type node should be inlined (stripped) by
+   * resolving it through the provided `importTypeResolver` option.
+   */
   private shouldStripImportType(node: ts.ImportTypeNode, sourceFile: ts.SourceFile): boolean {
     const resolver = this.options.importTypeResolver;
     if (!resolver) return false;
@@ -654,6 +830,10 @@ export class OutputGenerator {
     return this.registry.declarationsByFile.has(resolvedPath);
   }
 
+  /**
+   * Extract the module name string from an `import("module")` type node.
+   * Returns null if the module cannot be determined statically.
+   */
   private static getImportTypeModuleName(node: ts.ImportTypeNode): string | null {
     const argument = node.argument;
     if (!ts.isLiteralTypeNode(argument) || !ts.isStringLiteral(argument.literal)) {
@@ -662,6 +842,10 @@ export class OutputGenerator {
     return argument.literal.text;
   }
 
+  /**
+   * Convert an `export =` assignment into an appropriate export line, if
+   * the assignment targets an identifier.
+   */
   private generateExportEquals(): string[] {
     if (!this.options.entryExportEquals) {
       return [];
@@ -678,6 +862,10 @@ export class OutputGenerator {
     return [`export = ${normalizedName};`];
   }
 
+  /**
+   * Generate export default lines for the entry file, resolving any named
+   * declarations that were exported as default.
+   */
   private generateExportDefault(): string[] {
     if (this.options.entryExportDefaultName) {
       return [this.buildDefaultExportLine(this.options.entryExportDefaultName)];
@@ -717,6 +905,10 @@ export class OutputGenerator {
     return [`export { ${normalizedName} as default };`];
   }
 
+  /**
+   * Build the textual `export { <name> as default, ... }` line used for
+   * default re-exports, including any extra defaults discovered.
+   */
   private buildDefaultExportLine(exportedName: string): string {
     const normalizedName = this.nameMap.get(exportedName) || exportedName;
     const extraExports = Array.from(this.extraDefaultExports).filter((name) => name !== normalizedName);
@@ -724,6 +916,10 @@ export class OutputGenerator {
     return `export { ${exportItems.join(", ")} };`;
   }
 
+  /**
+   * Generate `export * from "...";` lines for star-exported modules and
+   * any referenced external star exports.
+   */
   private generateStarExports(): string[] {
     const lines: string[] = [];
     if (this.registry.entryStarExports.length === 0) return lines;
@@ -763,6 +959,11 @@ export class OutputGenerator {
     return lines;
   }
 
+  /**
+   * Compose namespace export blocks and a single export-list for the entry
+   * file. Namespace blocks are emitted above declarations and the export list
+   * is appended later.
+   */
   private generateNamespaceExports(): { blocks: string[]; exportList: string[] } {
     const blocks: string[] = [];
     const exportNames: string[] = [];
@@ -794,6 +995,10 @@ export class OutputGenerator {
     return { blocks, exportList };
   }
 
+  /**
+   * Recursively build namespace `declare namespace X { ... }` blocks for the
+   * given namespace and collect export items.
+   */
   private buildNamespaceBlocks(
     sourceFile: string,
     namespaceName: string,
@@ -835,6 +1040,10 @@ export class OutputGenerator {
     blocks.push(`}`);
   }
 
+  /**
+   * Build the list of export items for a namespace block. Considers
+   * in-file exports, namespace-defined exports and star-exports.
+   */
   private buildNamespaceExportItems(
     targetFile: string,
     exportedNames: { name: string; originalName?: string; externalModule?: string; externalImportName?: string }[],
@@ -882,6 +1091,10 @@ export class OutputGenerator {
     return exportItems;
   }
 
+  /**
+   * Determine the namespace export item for a single exported name. Returns
+   * the textual value together with a ranking number used for ordering.
+   */
   private getNamespaceExportItem(
     sourceFile: string,
     exported: { name: string; originalName?: string; externalModule?: string; externalImportName?: string },
@@ -916,6 +1129,10 @@ export class OutputGenerator {
     return { value, exportedName, rank };
   }
 
+  /**
+   * Return a numeric rank for namespace export ordering based on declaration
+   * kind. Lower ranks are emitted earlier.
+   */
   private static getNamespaceExportRank(decl: TypeDeclaration | null, isNamespaceExport: boolean): number {
     if (isNamespaceExport) {
       return 5;
@@ -938,6 +1155,10 @@ export class OutputGenerator {
     return 4;
   }
 
+  /**
+   * Compute a depth metric for nested namespace exports to ensure deeper
+   * namespace trees are emitted in the correct order.
+   */
   private getNamespaceExportDepth(
     entry: { name: string; sourceFile: string },
     depthCache: Map<string, number>,
@@ -971,90 +1192,18 @@ export class OutputGenerator {
     return depth;
   }
 
-  /* eslint-disable no-param-reassign */
-  private static stripExportModifier(text: string): string {
-    // Strip both "export default" and "export", handling leading whitespace
-    text = text.replace(/export\s+default\s+/, "");
-    text = text.replace(/export\s+/, "");
-    return text;
-  }
-  /* eslint-enable no-param-reassign */
-
-  private static addDeclareKeyword(text: string): string {
-    // Only add declare to class, enum, function, namespace, and module (not interface or type)
-    // Handle both "export class" and "class" patterns
-    const match = text.match(
-      /^((?:\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*)(?:export\s+)?)(class|enum|function|namespace|module)(?:\s|$)/,
-    );
-    if (match) {
-      const prefix = match[1]; // comments and export keyword
-      const declarationKeyword = match[2]; // class, enum, or function
-      const rest = text.substring(match[0].length - 1); // everything after the keyword
-      return `${prefix}declare ${declarationKeyword}${rest}`;
-    }
-    return text;
-  }
-
-  private static stripNamespaceMemberExports(text: string): string {
-    const openBraceIndex = text.indexOf("{");
-    const closeBraceIndex = text.lastIndexOf("}");
-    if (openBraceIndex === -1 || closeBraceIndex === -1 || closeBraceIndex <= openBraceIndex) {
-      return text;
-    }
-
-    const prefix = text.slice(0, openBraceIndex + 1);
-    const body = text.slice(openBraceIndex + 1, closeBraceIndex);
-    const suffix = text.slice(closeBraceIndex);
-
-    const cleanedBody = body.replace(
-      /(^|\n)(\s*)export\s+(?=(?:declare\s+)?(?:namespace|module|interface|type|class|enum|const|let|var|function)\b)/g,
-      "$1$2",
-    );
-
-    return `${prefix}${cleanedBody}${suffix}`;
-  }
-
-  private static stripDeclareGlobalMemberExports(text: string): string {
-    const openBraceIndex = text.indexOf("{");
-    const closeBraceIndex = text.lastIndexOf("}");
-    if (openBraceIndex === -1 || closeBraceIndex === -1 || closeBraceIndex <= openBraceIndex) {
-      return text;
-    }
-
-    const prefix = text.slice(0, openBraceIndex + 1);
-    const body = text.slice(openBraceIndex + 1, closeBraceIndex);
-    const suffix = text.slice(closeBraceIndex);
-
-    const cleanedBody = body.replace(
-      /(^|\n)(\s*)export\s+(?=(?:declare\s+)?(?:interface|type|class|enum|const|let|var|function)\b)/g,
-      "$1$2",
-    );
-
-    return `${prefix}${cleanedBody}${suffix}`;
-  }
-
-  /* eslint-disable no-param-reassign */
-  private static stripImplementationDetails(text: string): string {
-    // Strip public/private/protected modifiers from class members
-    text = text.replace(/^(\s*)(public|private|protected)\s+/gm, "$1");
-
-    // Strip property initializers (e.g., field: string = ""; becomes field: string;)
-    // This should match property declarations (not methods) with initializers
-    // Property pattern: identifier : type = value;
-    // Avoid matching methods which have () in their signature
-    text = text.replace(/^(\s*)([a-zA-Z_$][\w$]*)\s*:\s*([^;=()]+?)\s*=\s*[^;]+;/gm, "$1$2: $3;");
-
-    // Strip function bodies - replace { ... } with just semicolon
-    text = text.replace(/^((?:export\s+)?(?:declare\s+)?function\s+[^{]+?)\s*\{[^}]*\}/gm, "$1;");
-
-    return text;
-  }
-  /* eslint-enable no-param-reassign */
-
+  /**
+   * Build a stable key for grouping variable statements based on file and
+   * statement positions.
+   */
   private static getVariableStatementKey(sourceFile: string, statement: ts.VariableStatement): string {
     return `${sourceFile}:${statement.pos}:${statement.end}`;
   }
 
+  /**
+   * Topologically sort used declarations by dependencies so that referenced
+   * declarations appear earlier in the output where required.
+   */
   private topologicalSort(): TypeDeclaration[] {
     const sorted: TypeDeclaration[] = [];
     const visited = new Set<symbol>();
@@ -1127,6 +1276,10 @@ export class OutputGenerator {
     return this.adjustDeclarationOrderByFile(sorted);
   }
 
+  /**
+   * Adjust ordering of declarations within the same file to handle default
+   * export assignments and stable ordering requirements.
+   */
   private adjustDeclarationOrderByFile(declarations: TypeDeclaration[]): TypeDeclaration[] {
     if (declarations.length === 0) {
       return declarations;
@@ -1182,6 +1335,11 @@ export class OutputGenerator {
     return result;
   }
 
+  /**
+   * Build a rename map for a single declaration mapping local names to their
+   * normalized replacements. This covers dependencies, external imports and
+   * import aliases.
+   */
   private buildRenameMap(declaration: TypeDeclaration): Map<string, string> {
     const renameMap = new Map<string, string>();
 
@@ -1253,6 +1411,10 @@ export class OutputGenerator {
     return renameMap;
   }
 
+  /**
+   * Collect local type reference names referenced within a node (identifiers
+   * in type references and type queries). Used to build qualified rename maps.
+   */
   private static collectLocalTypeReferences(node: ts.Node): Set<string> {
     const refs = new Set<string>();
 
@@ -1279,6 +1441,9 @@ export class OutputGenerator {
     return refs;
   }
 
+  /**
+   * Build a merged rename map for an array of declarations.
+   */
   private buildRenameMapForDeclarations(declarations: TypeDeclaration[]): Map<string, string> {
     const merged = new Map<string, string>();
     for (const declaration of declarations) {
@@ -1290,6 +1455,9 @@ export class OutputGenerator {
     return merged;
   }
 
+  /**
+   * Extract any exported alias names from the entry export data.
+   */
   private getAliasExportedNames(): Set<string> {
     const aliasNames = new Set<string>();
     const { exportListItems } = this.getEntryExportData();
@@ -1302,6 +1470,10 @@ export class OutputGenerator {
     return aliasNames;
   }
 
+  /**
+   * Build a set of namespace import names that correspond to runtime value
+   * aliases and therefore need special handling in printing.
+   */
   private static buildNamespaceImportNames(declaration: TypeDeclaration): Set<string> {
     const names = new Set<string>();
     for (const importNames of declaration.externalDependencies.values()) {
@@ -1314,6 +1486,10 @@ export class OutputGenerator {
     return names;
   }
 
+  /**
+   * Build a map of qualified names from namespace imports to normalized
+   * declaration names for use when printing qualified name references.
+   */
   private buildQualifiedNameMap(declaration: TypeDeclaration): Map<string, string> {
     const qualifiedNameMap = new Map<string, string>();
     const valueAliases = this.namespaceValueAliasesByFile.get(declaration.sourceFile) ?? new Set<string>();
@@ -1345,6 +1521,9 @@ export class OutputGenerator {
     return qualifiedNameMap;
   }
 
+  /**
+   * Scan used declarations for namespace value aliases and collect them by file.
+   */
   private collectNamespaceValueAliases(): Map<string, Set<string>> {
     const aliasesByFile = new Map<string, Set<string>>();
     for (const [key, info] of this.registry.namespaceImports.entries()) {
@@ -1390,6 +1569,10 @@ export class OutputGenerator {
     return valueAliasesByFile;
   }
 
+  /**
+   * Split a registry namespace key of the form `file:path:namespace` into
+   * its `filePath` and `namespaceName` components.
+   */
   private static splitNamespaceKey(key: string): { filePath: string; namespaceName: string } {
     const splitIndex = key.lastIndexOf(":");
     return {
@@ -1398,6 +1581,10 @@ export class OutputGenerator {
     };
   }
 
+  /**
+   * Get the left-most identifier from a qualified entity name (e.g. in
+   * `A.B.C` returns `A`). Returns null when unable to extract.
+   */
   private static getLeftmostEntityName(entity: ts.EntityName): string | null {
     let current: ts.EntityName = entity;
     while (ts.isQualifiedName(current)) {
@@ -1406,6 +1593,11 @@ export class OutputGenerator {
     return ts.isIdentifier(current) ? current.text : null;
   }
 
+  /**
+   * Find the default export declaration name (if any) for a given file.
+   * This looks for declarations marked as default or statements with a
+   * `default` modifier.
+   */
   private getDefaultExportName(filePath: string): string | null {
     const declarations = this.registry.declarationsByFile.get(filePath);
     if (!declarations) return null;
@@ -1431,6 +1623,10 @@ export class OutputGenerator {
     return null;
   }
 
+  /**
+   * Extract just the import name portion from a normalized import string.
+   * Examples: `default as X` -> `X`, `* as ns` -> `ns`, `A as B` -> `B`.
+   */
   private static extractImportName(importStr: string): string {
     if (importStr.startsWith("default as ")) {
       return importStr.replace("default as ", "");
@@ -1445,6 +1641,10 @@ export class OutputGenerator {
     return importStr;
   }
 
+  /**
+   * Return a sort rank used when `sortNodes` option is enabled. The rank is
+   * based on the declaration kind to produce a stable, human-friendly order.
+   */
   private static getSortRank(declaration: TypeDeclaration): number {
     const node = declaration.node;
     if (ts.isInterfaceDeclaration(node)) return 1;
@@ -1455,6 +1655,10 @@ export class OutputGenerator {
     return 10;
   }
 
+  /**
+   * Build triple-slash `reference` directives for detected or allowed types
+   * that should be referenced at the top of the generated file.
+   */
   private generateReferenceDirectives(): string[] {
     const directives: string[] = [];
     const { referencedTypes, allowedTypesLibraries, detectedTypesLibraries } = this.options;
@@ -1484,6 +1688,11 @@ export class OutputGenerator {
     return directives;
   }
 
+  /**
+   * Transform a declaration AST node into the form suitable for output.
+   * Handles enum numeric value reconstruction, function return type inference,
+   * and various modifier adjustments.
+   */
   private static transformStatementForOutput(
     declaration: TypeDeclaration,
     shouldHaveExport: boolean,
@@ -1613,6 +1822,11 @@ export class OutputGenerator {
     return transformed;
   }
 
+  /**
+   * Create a transformer that removes implementation details such as
+   * parameter initializers, method bodies and strips export modifiers where
+   * appropriate.
+   */
   private static createOutputTransformer(): ts.TransformerFactory<ts.Statement> {
     return (context) => {
       const visit: ts.Visitor = (node) => {
@@ -1697,6 +1911,10 @@ export class OutputGenerator {
     };
   }
 
+  /**
+   * Strip class member implementations (bodies, initializers) and access
+   * modifiers while preserving type signatures needed in .d.ts output.
+   */
   private static stripClassMemberImplementation(member: ts.ClassElement): ts.ClassElement {
     const modifiers = getModifiers(member);
     if (ts.isPropertyDeclaration(member)) {
@@ -1787,6 +2005,10 @@ export class OutputGenerator {
     return member;
   }
 
+  /**
+   * Remove parameter initializers and ensure optional token is present when
+   * initializers are removed (so signatures remain compatible).
+   */
   private static stripParameterInitializer(parameter: ts.ParameterDeclaration): ts.ParameterDeclaration {
     if (!parameter.initializer) {
       return parameter;
@@ -1806,6 +2028,10 @@ export class OutputGenerator {
     return updated;
   }
 
+  /**
+   * Remove `export` modifier from a statement unless the caller requests the
+   * preservation of namespace exports.
+   */
   private static stripExportFromStatement(statement: ts.Statement, preserveNamespaceExport: boolean): ts.Statement {
     if (preserveNamespaceExport && ts.isModuleDeclaration(statement)) {
       return statement;
@@ -1825,6 +2051,10 @@ export class OutputGenerator {
     return recreateRootLevelNodeWithModifiers(statement, modifiersMap) as ts.Statement;
   }
 
+  /**
+   * Decide whether a node inside a module block should have its member
+   * exports stripped when emitting a declaration for the namespace.
+   */
   private static shouldStripNamespaceMemberExport(node: ts.Node): boolean {
     if (!ts.isStatement(node)) {
       return false;
@@ -1851,6 +2081,9 @@ export class OutputGenerator {
     return !ts.isModuleDeclaration(node);
   }
 
+  /**
+   * Check whether a node is a `const enum` declaration (with const modifier).
+   */
   private static isConstEnumDeclaration(node: ts.Node): boolean {
     if (!ts.isEnumDeclaration(node) || !ts.canHaveModifiers(node)) {
       return false;
@@ -1859,6 +2092,10 @@ export class OutputGenerator {
     return ts.getModifiers(node)?.some((mod) => mod.kind === ts.SyntaxKind.ConstKeyword) ?? false;
   }
 
+  /**
+   * Decide whether JSDoc/comments should be preserved when emitting a
+   * declaration for the given declaration.
+   */
   private static shouldPreserveJsDoc(declaration: TypeDeclaration, shouldHaveExport: boolean): boolean {
     if (shouldHaveExport) {
       return true;
@@ -1879,6 +2116,10 @@ export class OutputGenerator {
     return ts.isInterfaceDeclaration(declaration.node) || ts.isTypeAliasDeclaration(declaration.node);
   }
 
+  /**
+   * Decide whether a `declare` keyword should be added to a top-level
+   * statement after transformations were applied.
+   */
   private static shouldAddDeclareKeyword(statement: ts.Statement, strippingExport: boolean): boolean {
     // Only these statement types need a declare keyword at top level
     const needsDeclareKeyword =
@@ -1907,6 +2148,10 @@ export class OutputGenerator {
     return true;
   }
 
+  /**
+   * Check whether a module declaration should be interpreted as a namespace
+   * declaration (i.e. not a `declare module` string-literal external module)
+   */
   private static isNamespaceDeclaration(node: ts.ModuleDeclaration): boolean {
     const sourceFile = node.getSourceFile();
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -1923,6 +2168,10 @@ export class OutputGenerator {
     return /\bnamespace\b/.test(header) || /\bmodule\b/.test(header);
   }
 
+  /**
+   * Decide whether a module declaration should be forcibly exported (used for
+   * namespace/module augmentation cases).
+   */
   private static shouldForceExport(statement: ts.Statement): boolean {
     if (!ts.isModuleDeclaration(statement)) {
       return false;
@@ -1944,6 +2193,10 @@ export class OutputGenerator {
     return true;
   }
 
+  /**
+   * Decide whether a const enum should be stripped based on options and
+   * whether the enum was exported originally.
+   */
   private shouldStripConstEnum(declaration: TypeDeclaration): boolean {
     if (!this.options.preserveConstEnums || !this.options.respectPreserveConstEnum) {
       return false;
@@ -1962,6 +2215,10 @@ export class OutputGenerator {
     return declaration.exportInfo.kind !== ExportKind.NotExported && declaration.exportInfo.wasOriginallyExported;
   }
 
+  /**
+   * Remove access modifiers (public/private/protected) from a list of
+   * modifiers while preserving other modifiers.
+   */
   private static stripAccessModifiers(
     modifiers: readonly ts.Modifier[] | undefined,
   ): readonly ts.Modifier[] | undefined {
