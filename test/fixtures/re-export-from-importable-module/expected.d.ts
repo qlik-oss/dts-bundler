@@ -13,11 +13,11 @@ declare const constName = "const";
 declare function funcName(): void;
 declare let letName: number;
 export declare class MyClass {}
-interface SomeInterface {
-  field: string;
-}
 interface DefaultInterface {
   field: boolean;
+}
+interface SomeInterface {
+  field: string;
 }
 declare function defaultFunction(): void;
 

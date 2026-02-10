@@ -1,7 +1,7 @@
 import ts from "typescript";
-import { hasDefaultModifier } from "../declaration-utils.js";
-import type { TypeRegistry } from "../registry.js";
-import { ExportKind } from "../types.js";
+import { hasDefaultModifier } from "../declaration-utils";
+import type { TypeRegistry } from "../registry";
+import { ExportKind } from "../types";
 
 export const resolveDefaultExportNameFromRegistry = (registry: TypeRegistry, filePath: string): string | null => {
   const declarations = registry.declarationsByFile.get(filePath);

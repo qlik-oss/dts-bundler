@@ -1,4 +1,4 @@
-import {
+import type {
   declaredVariable,
   declaredVariable2,
   variable,

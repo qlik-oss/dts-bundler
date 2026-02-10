@@ -1,4 +1,4 @@
-import { hello } from "./hello.js";
+import { hello } from "./hello";
 
 export function test() {
   return hello;

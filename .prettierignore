@@ -4,9 +4,6 @@ pnpm-lock.yaml
 # built outputs
 dist/
 
-# only a reference
-dts-bundle-generator/
-
 # don't mess with the output files
 test/fixtures/**/expected.d.ts
 

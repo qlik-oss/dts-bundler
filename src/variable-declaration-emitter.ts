@@ -1,15 +1,28 @@
 import ts from "typescript";
-import type { AstPrinter } from "./ast-printer.js";
-import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers.js";
-import { normalizePrintedStatement } from "./helpers/print-normalizer.js";
-import { ExportKind, type TypeDeclaration } from "./types.js";
+import type { AstPrinter } from "./ast-printer";
+import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers";
+import { normalizePrintedStatement } from "./helpers/print-normalizer";
+import { ExportKind, type TypeDeclaration } from "./types";
 
+/**
+ * Emit variable declaration statements for a group of `TypeDeclaration`s.
+ * This class is responsible for reconstructing or normalizing `var/let/const`
+ * declarations so they can be emitted in the generated `.d.ts` bundle with
+ * appropriate `declare`/`export` modifiers and preserved type information.
+ */
 export class VariableDeclarationEmitter {
   private checker: ts.TypeChecker;
   private addExtraDefaultExport: (name: string) => void;
   private printer: AstPrinter;
   private getRenameMap: (declarations: TypeDeclaration[]) => Map<string, string>;
 
+  /**
+   * @param checker - TypeScript `TypeChecker` used to synthesize type nodes.
+   * @param addExtraDefaultExport - Callback invoked when an extra default export
+   *   alias must be emitted for `default`-only patterns.
+   * @param printer - `AstPrinter` used to print synthesized AST nodes.
+   * @param getRenameMap - Function returning a rename map for a group of declarations.
+   */
   constructor(
     checker: ts.TypeChecker,
     addExtraDefaultExport: (name: string) => void,
@@ -23,6 +36,13 @@ export class VariableDeclarationEmitter {
   }
 
   generateVariableStatementLines(statement: ts.VariableStatement, declarations: TypeDeclaration[]): string[] {
+    /**
+     * Given an original `VariableStatement` AST node and its associated
+     * `TypeDeclaration` records, produce one or more output lines that
+     * represent the exported/declared variables for the bundle. Handles
+     * grouping by exported vs non-exported and special handling for
+     * default-only export patterns.
+     */
     const orderedDeclarations = [...declarations].sort((a, b) => {
       const aPos = a.variableDeclaration?.pos ?? 0;
       const bPos = b.variableDeclaration?.pos ?? 0;
@@ -83,6 +103,10 @@ export class VariableDeclarationEmitter {
     declarations: TypeDeclaration[],
     shouldExport: boolean,
   ): ts.VariableStatement | null {
+    /**
+     * Build a new `VariableStatement` AST for the provided declarations.
+     * Returns null when nothing meaningful can be emitted.
+     */
     const declarationList = this.buildVariableDeclarationList(statement, declarations);
     if (!declarationList) {
       return null;
@@ -113,6 +137,12 @@ export class VariableDeclarationEmitter {
     statement: ts.VariableStatement,
     declarations: TypeDeclaration[],
   ): ts.VariableDeclarationList | null {
+    /**
+     * Construct an appropriate `VariableDeclarationList` for the given
+     * declarations. This handles destructuring patterns (expanding to
+     * individual identifiers when safe), preserves initializers for
+     * literal consts, and synthesizes type nodes when necessary.
+     */
     const statementDeclarations = statement.declarationList.declarations;
     const hasBindingPattern = statementDeclarations.some(
       (decl) => ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name),
@@ -142,7 +172,14 @@ export class VariableDeclarationEmitter {
 
       const newDeclarations = identifiers.map((identifier) => {
         const type = this.checker.getTypeAtLocation(identifier);
-        const typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+        const typeNode = this.checker.typeToTypeNode(
+          type,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
         const name = ts.factory.createIdentifier(identifier.text);
         return ts.factory.createVariableDeclaration(name, undefined, typeNode, undefined);
       });
@@ -201,7 +238,23 @@ export class VariableDeclarationEmitter {
       }
 
       if (!typeNode) {
-        typeNode = this.checker.typeToTypeNode(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+        if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
+          const functionType = this.buildFunctionTypeFromInitializer(initializer);
+          if (functionType) {
+            typeNode = functionType;
+          }
+        }
+      }
+
+      if (!typeNode) {
+        typeNode = this.checker.typeToTypeNode(
+          type,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
       }
 
       newDeclarations.push(ts.factory.createVariableDeclaration(name, undefined, typeNode, undefined));
@@ -214,21 +267,113 @@ export class VariableDeclarationEmitter {
     return ts.factory.createVariableDeclarationList(newDeclarations, statement.declarationList.flags);
   }
 
+  private buildFunctionTypeFromInitializer(
+    initializer: ts.ArrowFunction | ts.FunctionExpression,
+  ): ts.FunctionTypeNode | null {
+    /**
+     * Attempt to build a `FunctionTypeNode` from an initializer that is a
+     * function expression or arrow function. Only returns a type node when
+     * parameter types and/or return type can be determined.
+     */
+    const hasExplicitParamType = initializer.parameters.some((param) => Boolean(param.type));
+    const hasExplicitReturnType = Boolean(initializer.type);
+    if (!hasExplicitParamType && !hasExplicitReturnType) {
+      return null;
+    }
+    const sourceFile = initializer.getSourceFile();
+    const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, removeComments: true });
+    const typeParamText = initializer.typeParameters
+      ? `<${initializer.typeParameters.map((param) => param.getText(sourceFile)).join(", ")}>`
+      : "";
+
+    const parameterText = initializer.parameters
+      .map((param) => {
+        const nameText = param.name.getText(sourceFile);
+        const isOptional = Boolean(param.questionToken || param.initializer);
+        const restPrefix = param.dotDotDotToken ? "..." : "";
+        const typeText = param.type ? param.type.getText(sourceFile) : "any";
+        const optionalText = isOptional ? "?" : "";
+        return `${restPrefix}${nameText}${optionalText}: ${typeText}`;
+      })
+      .join(", ");
+
+    let returnTypeText = initializer.type ? initializer.type.getText(sourceFile) : "";
+    if (!returnTypeText) {
+      const signature = this.checker.getSignatureFromDeclaration(initializer);
+      if (signature) {
+        const signatureReturnType = this.checker.getReturnTypeOfSignature(signature);
+        const inferred = this.checker.typeToTypeNode(
+          signatureReturnType,
+          undefined,
+          // eslint-disable-next-line no-bitwise
+          ts.NodeBuilderFlags.NoTruncation |
+            ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
+            ts.NodeBuilderFlags.NoTypeReduction,
+        );
+        if (inferred) {
+          returnTypeText = printer.printNode(ts.EmitHint.Unspecified, inferred, sourceFile);
+        }
+      }
+    }
+
+    const functionTypeText = `${typeParamText}(${parameterText}) => ${returnTypeText || "void"}`;
+    return VariableDeclarationEmitter.parseFunctionTypeFromText(functionTypeText);
+  }
+
+  private static parseFunctionTypeFromText(typeText: string): ts.FunctionTypeNode | null {
+    /**
+     * Parse a textual function type into a `FunctionTypeNode` by creating
+     * a temporary source file and extracting the alias's type node.
+     */
+    const sourceFile = ts.createSourceFile(
+      "__type_parse__.ts",
+      `type __T = ${typeText};`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const statement = sourceFile.statements[0];
+    if (ts.isTypeAliasDeclaration(statement)) {
+      const typeNode = statement.type;
+      VariableDeclarationEmitter.markSynthesized(typeNode);
+      return ts.isFunctionTypeNode(typeNode) ? typeNode : null;
+    }
+    return null;
+  }
+
+  private static markSynthesized(node: ts.Node): void {
+    /**
+     * Mark a synthesized AST subtree so it prints without comments and
+     * appears as generated (no meaningful text range).
+     */
+    ts.setTextRange(node, { pos: -1, end: -1 });
+    ts.setEmitFlags(node, ts.EmitFlags.NoComments);
+    node.forEachChild((child) => {
+      VariableDeclarationEmitter.markSynthesized(child);
+    });
+  }
+
   private printStatement(
     statementNode: ts.VariableStatement,
     sourceStatement: ts.VariableStatement,
     declarations: TypeDeclaration[],
     preserveJsDoc: boolean,
   ): string {
+    /**
+     * Print a synthesized `VariableStatement` using the configured
+     * `AstPrinter` and normalize whitespace/comments relative to the
+     * original `sourceStatement`.
+     */
     const renameMap = this.getRenameMap(declarations);
+    const renameMapToUse = renameMap.size > 0 ? renameMap : undefined;
     const sourceFile = sourceStatement.getSourceFile();
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!sourceFile) {
       const fallbackSource = statementNode.getSourceFile();
-      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap });
+      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap: renameMapToUse });
       return normalizePrintedStatement(printed, sourceStatement, "", { preserveJsDoc });
     }
-    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap });
+    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap: renameMapToUse });
     const originalText = sourceStatement.getText(sourceFile);
     return normalizePrintedStatement(printed, sourceStatement, originalText, { preserveJsDoc });
   }
@@ -243,6 +388,11 @@ export class VariableDeclarationEmitter {
   }
 
   private static shouldKeepInitializer(decl: ts.VariableDeclaration, checker: ts.TypeChecker): boolean {
+    /**
+     * Decide whether a variable initializer should be preserved in the
+     * emitted `.d.ts`. Generally only `const` literal initializers are kept
+     * to preserve literal types.
+     */
     if (!decl.initializer) {
       return false;
     }
@@ -275,6 +425,11 @@ export class VariableDeclarationEmitter {
   }
 
   private static shouldPreserveJsDoc(declarations: TypeDeclaration[], shouldExport: boolean): boolean {
+    /**
+     * Determine whether JSDoc comments should be preserved for a group of
+     * declarations. Preserves JSDoc for exported groups and for default-only
+     * patterns.
+     */
     if (shouldExport) {
       return true;
     }

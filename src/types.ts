@@ -35,7 +35,7 @@ export interface BundleTypesOptions {
   inlineDeclareExternals?: boolean;
 
   /**
-   * Whether to export referenced types automatically
+   * Whether to export referenced types automatically. E.g., if a type from an external library is used, it will be re-exported.
    */
   exportReferencedTypes?: boolean;
 
@@ -124,6 +124,9 @@ export class TypeDeclaration {
   public sourceFileNode: ts.SourceFile;
   public exportInfo: ExportInfo;
   public isTypeOnly: boolean;
+  public isFromInlinedLibrary: boolean;
+  public usedInGlobal: boolean;
+  public usedInNonGlobal: boolean;
   public dependencies: Set<symbol>;
   public externalDependencies: Map<string, Set<string>>;
   public namespaceDependencies: Set<string>; // Track which namespaces this declaration depends on
@@ -148,6 +151,9 @@ export class TypeDeclaration {
     this.sourceFileNode = sourceFileNode;
     this.exportInfo = exportInfo;
     this.isTypeOnly = false;
+    this.isFromInlinedLibrary = false;
+    this.usedInGlobal = false;
+    this.usedInNonGlobal = false;
     this.dependencies = new Set();
     this.externalDependencies = new Map();
     this.namespaceDependencies = new Set();

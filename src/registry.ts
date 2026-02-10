@@ -5,8 +5,8 @@ import type {
   NamespaceExportInfo,
   StarExportInfo,
   TypeDeclaration,
-} from "./types.js";
-import { ExportKind, ExternalImport } from "./types.js";
+} from "./types";
+import { ExportKind, ExternalImport } from "./types";
 
 export class TypeRegistry {
   public declarations: Map<symbol, TypeDeclaration>;
@@ -20,6 +20,13 @@ export class TypeRegistry {
   public starExportsByFile: Map<string, StarExportInfo[]>;
   public entryStarExports: EntryStarExport[];
 
+  /**
+   * Central registry storing discovered type declarations, external import
+   * metadata, and export information gathered during analysis.
+   *
+   * The registry acts as the primary shared datastore used by the various
+   * analysis and emission phases.
+   */
   constructor() {
     this.declarations = new Map();
     this.declarationsByFile = new Map();
@@ -50,6 +57,12 @@ export class TypeRegistry {
     }
   }
 
+  /**
+   * Register a discovered external import and return a canonical `ExternalImport` instance.
+   * - `moduleName`: package/module specifier (e.g. 'lodash').
+   * - `importName`: original import text (e.g. 'default as Foo' or 'Bar').
+   * - `isTypeOnly`: whether the import is type-only.
+   */
   registerExternal(
     moduleName: string,
     importName: string,
@@ -88,6 +101,10 @@ export class TypeRegistry {
     }
   }
 
+  /**
+   * Record an exported name for `filePath`. Merges information if the same
+   * exported name is encountered multiple times with complementary data.
+   */
   registerExportedName(filePath: string, info: ExportedNameInfo): void {
     const list = this.exportedNamesByFile.get(filePath) ?? [];
     const existing = list.find((item) => item.name === info.name);
@@ -121,6 +138,10 @@ export class TypeRegistry {
     }
   }
 
+  /**
+   * Register a namespace export (e.g. `export * as ns from '...'`) for a file.
+   * Optionally also register the exported name into the exported-name index.
+   */
   registerNamespaceExport(filePath: string, info: NamespaceExportInfo, registerExportedName = true): void {
     if (!this.namespaceExportsByFile.has(filePath)) {
       this.namespaceExportsByFile.set(filePath, new Map());
@@ -148,6 +169,7 @@ export class TypeRegistry {
     return fileMap.get(name) ?? null;
   }
 
+  /** Register a namespace export entry originating from the entry file. */
   registerEntryNamespaceExport(filePath: string, name: string): void {
     const exists = this.entryNamespaceExports.some((entry) => entry.name === name && entry.sourceFile === filePath);
     if (!exists) {
@@ -155,6 +177,10 @@ export class TypeRegistry {
     }
   }
 
+  /**
+   * Record a star export (`export * from '...'`) for `filePath`. If `isEntry`
+   * is true, the star export is also tracked as an entry-originating star.
+   */
   registerStarExport(filePath: string, info: StarExportInfo, isEntry: boolean): void {
     const list = this.starExportsByFile.get(filePath) ?? [];
     list.push(info);
@@ -169,6 +195,10 @@ export class TypeRegistry {
     return this.starExportsByFile.get(filePath) ?? [];
   }
 
+  /**
+   * Lookup a declaration by local `name` within `fromFile` scope. Returns the
+   * first matching `TypeDeclaration` or `null` if none found.
+   */
   lookup(name: string, fromFile: string): TypeDeclaration | null {
     const localKey = `${fromFile}:${name}`;
     const ids = this.nameIndex.get(localKey);
@@ -179,29 +209,35 @@ export class TypeRegistry {
     return null;
   }
 
+  /** Return the set of declaration ids for the given key, or null. */
   getDeclarationIdsByKey(key: string): Set<symbol> | null {
     return this.nameIndex.get(key) ?? null;
   }
 
+  /** Return the declaration id set for `sourceFile:name` or null. */
   getDeclarationIds(sourceFile: string, name: string): Set<symbol> | null {
     return this.getDeclarationIdsByKey(`${sourceFile}:${name}`);
   }
 
+  /** Return whether any declarations exist for the provided key. */
   hasDeclarationKey(key: string): boolean {
     const ids = this.nameIndex.get(key);
     return Boolean(ids && ids.size > 0);
   }
 
+  /** Return the first declaration id for `key` or null. */
   getFirstDeclarationIdByKey(key: string): symbol | null {
     const ids = this.nameIndex.get(key);
     if (!ids || ids.size === 0) return null;
     return ids.values().next().value as symbol | null;
   }
 
+  /** Retrieve a declaration by its symbol id. */
   getDeclaration(id: symbol): TypeDeclaration | undefined {
     return this.declarations.get(id);
   }
 
+  /** Return all declarations marked as exported. */
   getAllExported(): TypeDeclaration[] {
     return Array.from(this.declarations.values()).filter((d) => d.exportInfo.kind !== ExportKind.NotExported);
   }

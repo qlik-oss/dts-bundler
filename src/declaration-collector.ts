@@ -5,11 +5,11 @@ import {
   hasExportModifier,
   isDeclaration,
   isDeclareGlobal,
-} from "./declaration-utils.js";
-import type { FileCollector } from "./file-collector.js";
-import { collectBindingElementsFromDeclarations } from "./helpers/binding-identifiers.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, TypeDeclaration, type ExportInfo } from "./types.js";
+} from "./declaration-utils";
+import type { FileCollector } from "./file-collector";
+import { collectBindingElementsFromDeclarations } from "./helpers/binding-identifiers";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, TypeDeclaration, type ExportInfo } from "./types";
 
 export class DeclarationCollector {
   private registry: TypeRegistry;
@@ -17,6 +17,13 @@ export class DeclarationCollector {
   private options: { inlineDeclareGlobals: boolean; inlineDeclareExternals: boolean };
   private defaultExportCounter = 0;
 
+  /**
+   * Create a new `DeclarationCollector`.
+   *
+   * @param registry - Shared type registry to register discovered declarations.
+   * @param fileCollector - Helper to query file/module resolution and inlining rules.
+   * @param options - Controls whether `declare global` and external `declare module` blocks are inlined.
+   */
   constructor(
     registry: TypeRegistry,
     fileCollector: FileCollector,
@@ -27,6 +34,30 @@ export class DeclarationCollector {
     this.options = options;
   }
 
+  /**
+   * Register a `TypeDeclaration` with the `TypeRegistry`, marking whether
+   * it originates from an inlined library.
+   *
+   * @param declaration - The declaration information to register.
+   * @param filePath - The source file path where the declaration was found.
+   */
+  private registerDeclaration(declaration: TypeDeclaration, filePath: string): void {
+    // eslint-disable-next-line no-param-reassign
+    declaration.isFromInlinedLibrary = this.fileCollector.isFromInlinedLibrary(filePath);
+    this.registry.register(declaration);
+  }
+
+  /**
+   * Walk the top-level statements of a `SourceFile` and collect declarations.
+   * This will handle export assignments, ambient modules, module augmentations
+   * and other declaration forms. When a default export name is discovered for
+   * an entry file, `onDefaultExportName` will be invoked.
+   *
+   * @param filePath - Path of the file being processed.
+   * @param sourceFile - The parsed `SourceFile` AST.
+   * @param isEntry - Whether this file is the entry point for the bundle.
+   * @param onDefaultExportName - Callback invoked when a default export name is determined.
+   */
   collectDeclarations(
     filePath: string,
     sourceFile: ts.SourceFile,
@@ -67,15 +98,22 @@ export class DeclarationCollector {
     }
   }
 
+  /**
+   * Handle `declare module "x" { ... }` blocks. Decide whether the module
+   * should be inlined into the bundle or treated as an external declaration
+   * depending on `fileCollector` resolution and the inlining options.
+   */
   private parseAmbientModule(moduleDecl: ts.ModuleDeclaration, filePath: string, sourceFile: ts.SourceFile): void {
     if (!moduleDecl.body || !ts.isModuleBlock(moduleDecl.body)) {
       return;
     }
 
     const moduleName = moduleDecl.name.text;
+    // For declare module statements, check if it resolves to a local file
+    // or if it's a module that should be inlined
     const resolvedModule = this.fileCollector.resolveModuleSpecifier(filePath, moduleName);
     const shouldInline =
-      this.fileCollector.shouldInline(moduleName) ||
+      this.fileCollector.shouldInline(moduleName, filePath) ||
       (resolvedModule ? this.fileCollector.shouldInlineFilePath(resolvedModule) : false);
 
     if (!shouldInline) {
@@ -96,7 +134,7 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, moduleDecl, sourceFile, exportInfo);
       declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(moduleDecl);
 
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
       return;
     }
 
@@ -117,10 +155,14 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
       declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(statement);
       declaration.forceInclude = true;
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
     }
   }
 
+  /**
+   * Parse a non-module top-level declaration (classes, interfaces, functions,
+   * type aliases, exported vars, etc.) and register it in the `TypeRegistry`.
+   */
   private parseDeclaration(
     statement: ts.Statement,
     filePath: string,
@@ -178,9 +220,14 @@ export class DeclarationCollector {
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
   }
 
+  /**
+   * Handle `export default` expressions like `export default <expr>` where the
+   * expression is not a simple identifier. A synthetic variable declaration is
+   * created and registered as the default export.
+   */
   private parseExportAssignment(
     statement: ts.ExportAssignment,
     filePath: string,
@@ -207,13 +254,17 @@ export class DeclarationCollector {
       declaration.variableDeclaration = varDecl;
     }
 
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
 
     if (isEntry) {
       onDefaultExportName(syntheticName);
     }
   }
 
+  /**
+   * If a class/function is exported as a default with no name, create a
+   * synthetic named declaration so it can be referenced by name in the bundle.
+   */
   private registerAnonymousDefaultDeclaration(
     statement: ts.Statement,
     filePath: string,
@@ -260,13 +311,17 @@ export class DeclarationCollector {
     ts.setTextRange(namedNode, statement);
     const declaration = new TypeDeclaration(syntheticName, filePath, namedNode, sourceFile, exportInfo);
     declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(namedNode);
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
 
     if (isEntry) {
       onDefaultExportName(syntheticName);
     }
   }
 
+  /**
+   * Create a const variable statement representing the default export value.
+   * Used to convert `export default <expr>` into a named `const _default = <expr>`.
+   */
   private static createDefaultExportVariable(statement: ts.ExportAssignment, name: string): ts.VariableStatement {
     const declaration = ts.factory.createVariableDeclaration(
       ts.factory.createIdentifier(name),
@@ -280,6 +335,10 @@ export class DeclarationCollector {
     return variableStatement;
   }
 
+  /**
+   * Generate a synthetic name for anonymous default exports. Names are stable
+   * within a run and take the form `_default`, `_default$1`, `_default$2`, ...
+   */
   private getSyntheticDefaultExportName(): string {
     const current = this.defaultExportCounter;
     this.defaultExportCounter += 1;
@@ -289,6 +348,10 @@ export class DeclarationCollector {
     return `_default$${current}`;
   }
 
+  /**
+   * Remove `default` and `export` modifiers from a declaration's modifier list.
+   * Returns `undefined` when no modifiers remain.
+   */
   private static stripDefaultModifiers(statement: ts.Statement): ts.Modifier[] | undefined {
     if (!ts.canHaveModifiers(statement)) {
       return undefined;
@@ -301,6 +364,10 @@ export class DeclarationCollector {
     return filtered.length > 0 ? filtered : undefined;
   }
 
+  /**
+   * Parse a `var/let/const` statement. Handles both simple identifiers and
+   * binding patterns by producing `TypeDeclaration` entries for each declared name.
+   */
   private parseVariableStatement(
     statement: ts.VariableStatement,
     filePath: string,
@@ -341,7 +408,7 @@ export class DeclarationCollector {
         const synthetic = ts.factory.createVariableDeclaration(identifier, undefined, undefined, element.initializer);
         ts.setTextRange(synthetic, element);
         declaration.variableDeclaration = synthetic;
-        this.registry.register(declaration);
+        this.registerDeclaration(declaration, filePath);
       }
       return;
     }
@@ -368,10 +435,15 @@ export class DeclarationCollector {
       const declaration = new TypeDeclaration(name, filePath, statement, sourceFile, exportInfo);
       declaration.isTypeOnly = false;
       declaration.variableDeclaration = varDecl;
-      this.registry.register(declaration);
+      this.registerDeclaration(declaration, filePath);
     }
   }
 
+  /**
+   * Handle module augmentations like `declare module X { ... }` where the module
+   * name is an identifier (augmentation of an existing namespace). These are
+   * collected as declarations and may be forced-included when `declare global`.
+   */
   private parseModuleAugmentation(
     moduleDecl: ts.ModuleDeclaration,
     filePath: string,
@@ -403,9 +475,13 @@ export class DeclarationCollector {
     if (declareGlobal && this.options.inlineDeclareGlobals) {
       declaration.forceInclude = true;
     }
-    this.registry.register(declaration);
+    this.registerDeclaration(declaration, filePath);
   }
 
+  /**
+   * Return true when the given node represents a "type-only" declaration
+   * (interfaces and type aliases) which do not generate value-level output.
+   */
   private static isTypeOnlyDeclaration(node: ts.Node): boolean {
     return ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node);
   }

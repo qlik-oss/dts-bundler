@@ -148,6 +148,16 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should preserve indexed access types from external imports", () => {
+      const { expected, result } = runTestCase("indexed-access-external-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve indexed access types in function parameter annotations", () => {
+      const { expected, result } = runTestCase("indexed-access-in-function-param");
+      expect(result).toBe(expected);
+    });
+
     it("should resolve non-relative imports via baseUrl", () => {
       const { expected, result } = runTestCase("import-from-non-relative-path-inferred-type");
       expect(result).toBe(expected);
@@ -171,6 +181,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("import-from-namespace-in-cjs", {
         inlinedLibraries: ["ora"],
       });
+      expect(result).toBe(expected);
+    });
+
+    it("should handle import with alias", () => {
+      const { expected, result } = runTestCase("import-with-alias", { inlineDeclareGlobals: true });
       expect(result).toBe(expected);
     });
 
@@ -270,6 +285,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should handle declare global in non-entry files", () => {
+      const { expected, result } = runTestCase("declare-global-non-entry", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
     it("should handle exports with object destructuring", () => {
       const { expected, result } = runTestCase("export-object-with-destructuring");
       expect(result).toBe(expected);
@@ -343,6 +363,13 @@ describe("TypeScript Declaration Bundler", () => {
     it("should not export referenced types when disabled", () => {
       const { expected, result } = runTestCase("export-default-no-export-referenced-types", {
         exportReferencedTypes: false,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should export referenced types when enabled", () => {
+      const { expected, result } = runTestCase("export-referenced-types", {
+        exportReferencedTypes: true,
       });
       expect(result).toBe(expected);
     });
@@ -565,6 +592,11 @@ describe("TypeScript Declaration Bundler", () => {
       const { expected, result } = runTestCase("simple-tree-shaking");
       expect(result).toBe(expected);
     });
+
+    it("should strip unnecessary $N suffixes after tree-shaking", () => {
+      const { expected, result } = runTestCase("unnecessary-rename-after-tree-shaking");
+      expect(result).toBe(expected);
+    });
   });
 
   describe("TypeScript Features", () => {
@@ -605,6 +637,11 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should handle complex module extensions", () => {
       const { expected, result } = runTestCase("extend-other-module-complex");
+      expect(result).toBe(expected);
+    });
+
+    it("should ignore function body type references", () => {
+      const { expected, result } = runTestCase("ignore-function-body-types");
       expect(result).toBe(expected);
     });
 
@@ -675,6 +712,77 @@ describe("TypeScript Declaration Bundler", () => {
   describe("Save JSDoc comments", () => {
     it("should keep jsdoc comments in the output", () => {
       const { expected, result } = runTestCase("save-jsdoc");
+      expect(result).toBe(expected);
+    });
+  });
+
+  describe("Compatibility (dts-bundle-generator parity)", () => {
+    it("should not export internal types referenced by entry exports", () => {
+      const { expected, result } = runTestCase("inline-excessive-exports");
+      expect(result).toBe(expected);
+    });
+
+    it("should tree-shake component and function declarations", () => {
+      const { expected, result } = runTestCase("more-tree-shaking");
+      expect(result).toBe(expected);
+    });
+
+    it("should deduplicate types imported via different paths", () => {
+      const { expected, result } = runTestCase("duplicate-types");
+      expect(result).toBe(expected);
+    });
+
+    it("should rename conflicting types with $N suffix (Issue #2)", () => {
+      const { expected, result } = runTestCase("duplicate-rename");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve type references in return types (Issue #4)", () => {
+      const { expected, result } = runTestCase("inline-return-type");
+      expect(result).toBe(expected);
+    });
+
+    it("should not export enums that are not entry exports (Issue #7)", () => {
+      const { expected, result } = runTestCase("enum-export-modifier");
+      expect(result).toBe(expected);
+    });
+
+    it("should merge declare global blocks", () => {
+      const { expected, result } = runTestCase("declare-global-merge", { inlineDeclareGlobals: true });
+      expect(result).toBe(expected);
+    });
+
+    it("should use import type for type-only imports", () => {
+      const { expected, result } = runTestCase("type-only-imports");
+      expect(result).toBe(expected);
+    });
+
+    it("should use import type for typeof expressions (Issue #5)", () => {
+      const { expected, result } = runTestCase("typeof-import-should-be-type-only");
+      expect(result).toBe(expected);
+    });
+
+    it("should handle pattern with inlined library and declare global", () => {
+      const { expected, result } = runTestCase("real-pattern", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should not export inlined library types used in declare global (Issue #1)", () => {
+      const { expected, result } = runTestCase("inlined-lib-types-not-exported", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it("should tree shake inlined library component exports", () => {
+      const { expected, result } = runTestCase("inlined-lib-components-tree-shaking", {
+        inlinedLibraries: ["fake-inlined-lib"],
+        inlineDeclareGlobals: true,
+      });
       expect(result).toBe(expected);
     });
   });

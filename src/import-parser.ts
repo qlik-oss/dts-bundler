@@ -1,19 +1,41 @@
 import ts from "typescript";
-import type { FileCollector } from "./file-collector.js";
-import type { TypeRegistry } from "./registry.js";
-import type { ImportInfo } from "./types.js";
+import type { FileCollector } from "./file-collector";
+import type { TypeRegistry } from "./registry";
+import type { ImportInfo } from "./types";
 
+/**
+ * Parse import declarations from a `SourceFile` and register any external
+ * imports into the `TypeRegistry` when appropriate.
+ *
+ * The parser distinguishes between imports that should be inlined (local
+ * files resolved by `FileCollector`) and external package imports which are
+ * recorded in the registry as external references.
+ */
 export class ImportParser {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
   private options: { inlineDeclareExternals: boolean };
 
+  /**
+   * Create an `ImportParser`.
+   * @param registry - The `TypeRegistry` to register externals into.
+   * @param fileCollector - `FileCollector` used to resolve and decide inline-ness.
+   * @param options.inlineDeclareExternals - When true, treat `declare module` blocks
+   *   as inline sources for import parsing.
+   */
   constructor(registry: TypeRegistry, fileCollector: FileCollector, options?: { inlineDeclareExternals?: boolean }) {
     this.registry = registry;
     this.fileCollector = fileCollector;
     this.options = { inlineDeclareExternals: options?.inlineDeclareExternals ?? false };
   }
 
+  /**
+   * Parse all import statements in `sourceFile` and return a map of local
+   * identifier -> `ImportInfo` describing the resolved import.
+   *
+   * The returned map uses the local binding name as the key and includes
+   * both inlined (local) imports and external imports (package specifiers).
+   */
   parseImports(filePath: string, sourceFile: ts.SourceFile): Map<string, ImportInfo> {
     const fileImports = new Map<string, ImportInfo>();
 
@@ -34,7 +56,7 @@ export class ImportParser {
       ) {
         const moduleName = statement.name.text;
         const shouldParseModuleImports =
-          this.fileCollector.shouldInline(moduleName) || this.options.inlineDeclareExternals;
+          this.fileCollector.shouldInline(moduleName, filePath) || this.options.inlineDeclareExternals;
         if (!shouldParseModuleImports) {
           continue;
         }
@@ -52,6 +74,11 @@ export class ImportParser {
     return fileImports;
   }
 
+  /**
+   * Parse a single `import` declaration and populate `fileImports`.
+   * - For inlined imports, resolve the file path and record the binding.
+   * - For external imports, register the import in the `TypeRegistry`.
+   */
   private parseImport(statement: ts.ImportDeclaration, filePath: string, fileImports: Map<string, ImportInfo>): void {
     const moduleSpecifier = statement.moduleSpecifier;
     if (!ts.isStringLiteral(moduleSpecifier)) {
@@ -61,7 +88,7 @@ export class ImportParser {
     const importPath = moduleSpecifier.text;
     const isTypeOnly = statement.importClause?.isTypeOnly ?? false;
 
-    if (this.fileCollector.shouldInline(importPath)) {
+    if (this.fileCollector.shouldInline(importPath, filePath)) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
 
@@ -151,6 +178,11 @@ export class ImportParser {
     }
   }
 
+  /**
+   * Parse an `import = require()` style import (`ImportEqualsDeclaration`).
+   * Handles both inlined module resolution and recording external imports
+   * into the registry with `registerExternal` when needed.
+   */
   private parseImportEquals(
     statement: ts.ImportEqualsDeclaration,
     filePath: string,
@@ -169,7 +201,7 @@ export class ImportParser {
     const importName = statement.name.text;
     const isTypeOnly = statement.isTypeOnly;
 
-    if (this.fileCollector.shouldInline(importPath)) {
+    if (this.fileCollector.shouldInline(importPath, filePath)) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) return;
 

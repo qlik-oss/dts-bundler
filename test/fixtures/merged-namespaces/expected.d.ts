@@ -13,6 +13,20 @@ declare namespace F1Ns1 {
     }
   }
 }
+declare namespace Ns2 {
+  module SubNs1 {
+    interface Interface1 {
+      field1: F1Ns1.SubNs1.Interface1;
+    }
+  }
+}
+declare namespace Ns2 {
+  module SubNs1 {
+    interface Interface2 {
+      field1: F1Ns1.SubNs1.Interface2;
+    }
+  }
+}
 type FooBar$1 = number;
 declare namespace F2Ns1 {
   namespace SubNs1 {
@@ -25,20 +39,6 @@ declare namespace F2Ns1 {
   namespace SubNs1 {
     interface Interface2 {
       field1: FooBar$1;
-    }
-  }
-}
-declare namespace Ns2 {
-  module SubNs1 {
-    interface Interface1 {
-      field1: F1Ns1.SubNs1.Interface1;
-    }
-  }
-}
-declare namespace Ns2 {
-  module SubNs1 {
-    interface Interface2 {
-      field1: F1Ns1.SubNs1.Interface2;
     }
   }
 }

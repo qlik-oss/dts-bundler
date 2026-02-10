@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import type { TypeRegistry } from "../registry.js";
-import { ExportKind } from "../types.js";
-import { findSyntheticDefaultName, resolveDefaultExportNameFromRegistry } from "./default-export.js";
+import type { TypeRegistry } from "../registry";
+import { ExportKind } from "../types";
+import { findSyntheticDefaultName, resolveDefaultExportNameFromRegistry } from "./default-export";
 
 export type EntryExportData = {
   exportFromByModule: Map<string, string[]>;

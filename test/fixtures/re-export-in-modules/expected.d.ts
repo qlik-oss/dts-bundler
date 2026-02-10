@@ -6,7 +6,7 @@ import type { FooBar as EqFooBar } from "re-export-via-eq";
 import type EqFooBarV2 from "re-export-via-eq-v2";
 import { FooBar as ImportFooBar } from "re-export-via-import";
 import type { FooBar as StartFooBar } from "re-export-via-star";
-import { NsName } from "re-export-via-star-with-rename";
+import type { NsName } from "re-export-via-star-with-rename";
 
 export interface Interface {
   eq: EqFooBar;

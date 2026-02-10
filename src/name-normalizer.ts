@@ -1,17 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { isDeclareGlobal } from "./declaration-utils.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types.js";
+import { isDeclareGlobal } from "./declaration-utils";
+import type { TypeRegistry } from "./registry";
+import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types";
 
 export class NameNormalizer {
+  /**
+   * Responsible for normalizing and disambiguating symbol names across the
+   * project so generated declaration output does not contain collisions.
+   */
   private registry: TypeRegistry;
   private nameCounter: Map<string, number>;
   private entryFile?: string;
   private typeChecker?: ts.TypeChecker;
 
   constructor(registry: TypeRegistry, entryFile?: string, typeChecker?: ts.TypeChecker) {
+    /**
+     * Create a `NameNormalizer`.
+     * @param registry - The `TypeRegistry` containing declarations and external imports.
+     * @param entryFile - Optional path to the bundle entry file used to prefer entry-sourced names.
+     * @param typeChecker - Optional TypeScript `TypeChecker` for global name analysis.
+     */
     this.registry = registry;
     this.nameCounter = new Map();
     this.entryFile = entryFile;
@@ -19,6 +29,12 @@ export class NameNormalizer {
   }
 
   normalize(): void {
+    /**
+     * Main entrypoint: run name normalization across all registered
+     * declarations and external imports. This performs grouping of
+     * colliding declarations, assigns stable suffixes, and coordinates a
+     * set of conflict-resolution passes.
+     */
     const byName = new Map<string, TypeDeclaration[]>();
     const entrySourceOrder = this.getEntrySourceOrder();
     const entryBasenameOrder = this.getEntryBasenameOrder();
@@ -150,6 +166,10 @@ export class NameNormalizer {
   }
 
   private getProtectedExternalNames(): Set<string> {
+    /**
+     * Return a set of external names that must be preserved (protected)
+     * because the entry file exports them as external imports/namespace exports.
+     */
     if (!this.entryFile) {
       return new Set();
     }
@@ -174,6 +194,11 @@ export class NameNormalizer {
   }
 
   private getEntrySourceOrder(): Map<string, number> {
+    /**
+     * Determine ordering for sources referenced directly by the entry file.
+     * Used as a tie-breaker when choosing which declaration keeps the
+     * canonical name during conflicts.
+     */
     const order = new Map<string, number>();
     if (!this.entryFile) {
       return order;
@@ -226,6 +251,11 @@ export class NameNormalizer {
   }
 
   private resolveSourceFileFromRegistry(entryDir: string, modulePath: string): string | null {
+    /**
+     * Resolve a relative module path (from the entry) to a source file path
+     * known in the `registry.declarationsByFile` map. Returns null if not
+     * found.
+     */
     const basePath = path.resolve(entryDir, modulePath);
     const candidates = [
       basePath,
@@ -269,6 +299,11 @@ export class NameNormalizer {
   }
 
   private getEntryBasenameOrder(): Map<string, number> {
+    /**
+     * Collect the ordering of module basenames referenced by the entry file.
+     * This is a weaker ordering than `getEntrySourceOrder` but useful for
+     * deterministic tie-breaking when only basenames differ.
+     */
     const order = new Map<string, number>();
     if (!this.entryFile) {
       return order;
@@ -310,6 +345,11 @@ export class NameNormalizer {
   }
 
   private getEntryExportedSources(): Set<string> {
+    /**
+     * Return a set of source file paths that are exported (directly or via
+     * namespace re-exports) from the entry file. Used to prefer exported
+     * declarations when resolving name collisions.
+     */
     const sources = new Set<string>();
     if (!this.entryFile) {
       return sources;
@@ -336,6 +376,11 @@ export class NameNormalizer {
   }
 
   private getExportEqualsFiles(): Set<string> {
+    /**
+     * Identify files that contain `export =` (export equals) assignments.
+     * Files with export-equals behave differently with respect to symbol
+     * merging and are considered during normalization.
+     */
     const files = new Set<string>();
 
     for (const [filePath, declarations] of this.registry.declarationsByFile.entries()) {
@@ -356,6 +401,11 @@ export class NameNormalizer {
   }
 
   private normalizeExternalImports(): void {
+    /**
+     * Normalize external import local names to avoid collisions between
+     * multiple imports that would produce the same local binding name.
+     * For example, `import {A} from 'x'` and `import {A} from 'y'`.
+     */
     const importNameCounts = new Map<string, ExternalImport[]>();
 
     for (const moduleImports of this.registry.externalImports.values()) {
@@ -391,6 +441,11 @@ export class NameNormalizer {
   }
 
   private normalizeExternalNamespaceImports(): void {
+    /**
+     * Ensure a canonical namespace local name is used when multiple
+     * `* as` namespace imports would otherwise produce different local
+     * names. The first one becomes canonical and others are aligned to it.
+     */
     for (const moduleImports of this.registry.externalImports.values()) {
       const namespaceImports = Array.from(moduleImports.values()).filter((imp) => imp.originalName.startsWith("* as "));
       if (namespaceImports.length <= 1) {
@@ -406,6 +461,11 @@ export class NameNormalizer {
   }
 
   private normalizeDeclarationProtectedExternalConflicts(protectedExternalNames: Set<string>): void {
+    /**
+     * If certain external names are protected by the entry file, rename any
+     * conflicting declarations so they do not collide with those external
+     * names.
+     */
     if (protectedExternalNames.size === 0) {
       return;
     }
@@ -439,6 +499,11 @@ export class NameNormalizer {
   }
 
   private normalizeExternalImportDeclarationConflicts(): void {
+    /**
+     * Resolve conflicts where an external import's local name collides with
+     * a declaration name. External imports will be renamed to avoid the
+     * collision and maintain uniqueness.
+     */
     const declarationNames = new Set<string>();
     for (const declaration of this.registry.declarations.values()) {
       declarationNames.add(declaration.normalizedName);
@@ -504,6 +569,11 @@ export class NameNormalizer {
   }
 
   private normalizeGlobalDeclarationConflicts(globalReferencedNames: Set<string>): void {
+    /**
+     * Rename declarations that would conflict with names available in the
+     * global scope (as reported by the TypeChecker) to avoid accidental
+     * shadowing of true global symbols.
+     */
     if (!this.typeChecker || globalReferencedNames.size === 0) {
       return;
     }
@@ -538,6 +608,10 @@ export class NameNormalizer {
   }
 
   private isGlobalName(name: string): boolean {
+    /**
+     * Determine whether a given name resolves to a global symbol according
+     * to the provided `TypeChecker`.
+     */
     if (!this.typeChecker) {
       return false;
     }
@@ -558,6 +632,11 @@ export class NameNormalizer {
   }
 
   private collectGlobalReferencedNames(): Set<string> {
+    /**
+     * Walk all registered declaration ASTs and collect names that resolve
+     * to global symbols according to the `TypeChecker`. Used to protect
+     * declarations from colliding with real globals.
+     */
     const globalNames = new Set<string>();
     if (!this.typeChecker) {
       return globalNames;
@@ -615,6 +694,10 @@ export class NameNormalizer {
   }
 
   private static getLeftmostIdentifier(entity: ts.EntityName): ts.Identifier | null {
+    /**
+     * Retrieve the left-most identifier from a possibly qualified name
+     * (e.g. `A.B.C` -> `A`). Returns null if not an identifier.
+     */
     let current: ts.EntityName = entity;
     while (ts.isQualifiedName(current)) {
       current = current.left;
@@ -623,11 +706,121 @@ export class NameNormalizer {
   }
 
   private static isWithinGlobalAugmentation(node: ts.Node): boolean {
+    /**
+     * Walk ancestors to determine whether `node` is inside a `declare global`
+     * augmentation, in which case global name conflicts are intentionally
+     * allowed.
+     */
     for (let current: ts.Node = node; !ts.isSourceFile(current); current = current.parent) {
       if (isDeclareGlobal(current as ts.Statement)) {
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * After tree-shaking, strip unnecessary $N/_N suffixes from names whose collisions were removed.
+   * Also renumber remaining suffixes to fill gaps (e.g. $2 becomes $1 if $0 was removed).
+   */
+  static stripUnnecessarySuffixes(
+    registry: TypeRegistry,
+    usedDeclarations: Set<symbol>,
+    usedExternals: Map<string, Set<ExternalImport>>,
+  ): void {
+    const suffixPattern = /^(.+?)(?:\$(\d+)|_(\d+))$/;
+    const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    type SuffixedEntity =
+      | { kind: "declaration"; declaration: TypeDeclaration }
+      | { kind: "external"; external: ExternalImport };
+
+    const baseNameGroups = new Map<string, Map<string, SuffixedEntity[]>>();
+
+    const addToGroup = (baseName: string, normalizedName: string, entity: SuffixedEntity): void => {
+      if (!baseNameGroups.has(baseName)) {
+        baseNameGroups.set(baseName, new Map());
+      }
+      const group = baseNameGroups.get(baseName);
+      if (!group) {
+        return;
+      }
+      if (!group.has(normalizedName)) {
+        group.set(normalizedName, []);
+      }
+      group.get(normalizedName)?.push(entity);
+    };
+
+    for (const id of usedDeclarations) {
+      const decl = registry.getDeclaration(id);
+      if (!decl) continue;
+      const name = decl.normalizedName;
+      const match = name.match(suffixPattern);
+      const baseName = match ? match[1] : name;
+      addToGroup(baseName, name, { kind: "declaration", declaration: decl });
+    }
+
+    for (const imports of usedExternals.values()) {
+      for (const ext of imports) {
+        const importName = NameNormalizer.extractImportName(ext.normalizedName);
+        const match = importName.match(suffixPattern);
+        const baseName = match ? match[1] : importName;
+        addToGroup(baseName, importName, { kind: "external", external: ext });
+      }
+    }
+
+    for (const [baseName, normalizedGroups] of baseNameGroups) {
+      const distinctNames = Array.from(normalizedGroups.keys()).sort((a, b) => {
+        if (a === baseName) return -1;
+        if (b === baseName) return 1;
+        return a.localeCompare(b);
+      });
+
+      const escapedBase = escapeRegExp(baseName);
+      const dollarPattern = new RegExp(`^${escapedBase}\\$\\d+$`);
+      const underscorePattern = new RegExp(`^${escapedBase}_\\d+$`);
+      const hasDollar = distinctNames.some((name) => dollarPattern.test(name));
+      const hasUnderscore = distinctNames.some((name) => underscorePattern.test(name));
+      const separator = hasUnderscore && !hasDollar ? "_" : "$";
+
+      let needsRenumber = false;
+      if (distinctNames.length === 1 && distinctNames[0] !== baseName) {
+        needsRenumber = true;
+      } else if (distinctNames.length > 1) {
+        for (let i = 0; i < distinctNames.length; i++) {
+          const expected = i === 0 ? baseName : `${baseName}${separator}${i}`;
+          if (distinctNames[i] !== expected) {
+            needsRenumber = true;
+            break;
+          }
+        }
+      }
+
+      if (!needsRenumber) continue;
+
+      for (let i = 0; i < distinctNames.length; i++) {
+        const currentName = distinctNames[i];
+        const targetName = i === 0 ? baseName : `${baseName}${separator}${i}`;
+        if (currentName === targetName) continue;
+
+        const entities = normalizedGroups.get(currentName) ?? [];
+        for (const entity of entities) {
+          if (entity.kind === "declaration") {
+            entity.declaration.normalizedName = targetName;
+            continue;
+          }
+
+          const originalName = NameNormalizer.extractImportName(entity.external.originalName);
+          if (targetName === originalName) {
+            entity.external.normalizedName = entity.external.originalName;
+          } else {
+            entity.external.normalizedName = NameNormalizer.replaceImportLocalName(
+              entity.external.normalizedName,
+              targetName,
+            );
+          }
+        }
+      }
+    }
   }
 }

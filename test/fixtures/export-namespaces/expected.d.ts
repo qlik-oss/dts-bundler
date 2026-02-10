@@ -4,11 +4,11 @@ declare namespace InternalModule {
 declare namespace InternalNamespace {
   type NSType = string;
 }
-export declare namespace ExportedNamespace {
-  type ENSType = 1 | 2;
-}
 export declare namespace ExportedModule {
   type EMType = 3 | 4;
+}
+export declare namespace ExportedNamespace {
+  type ENSType = 1 | 2;
 }
 export type A = InternalModule.MType;
 export type B = InternalNamespace.NSType;

@@ -1,4 +1,4 @@
-import DefaultClassOriginal from "package-with-default-export";
+import type DefaultClassOriginal from "package-with-default-export";
 
 interface ExportedInterface {}
 export interface ExportInterface {

@@ -1,12 +1,23 @@
 import path from "node:path";
 import ts from "typescript";
-import { hasDefaultModifier } from "./declaration-utils.js";
-import type { FileCollector } from "./file-collector.js";
-import type { TypeRegistry } from "./registry.js";
-import { ExportKind } from "./types.js";
+import { hasDefaultModifier } from "./declaration-utils";
+import type { FileCollector } from "./file-collector";
+import type { TypeRegistry } from "./registry";
+import { ExportKind } from "./types";
 
+/**
+ * Responsible for analyzing type and value references in registered declarations
+ * and populating their dependency sets accordingly. This includes resolving
+ * imports, handling namespace references and tracking external module usage.
+ */
 export class DependencyAnalyzer {
   private registry: TypeRegistry;
+  /**
+   * Map of file -> (imported name -> import metadata).
+   * The metadata contains the original imported name, resolved source file
+   * (or null for externals), whether the import is external, an optional
+   * alias and whether it was marked type-only.
+   */
   private importMap: Map<
     string,
     Map<
@@ -23,6 +34,14 @@ export class DependencyAnalyzer {
   private entryFile?: string;
   private fileCollector: FileCollector;
 
+  /**
+   * Create a `DependencyAnalyzer` responsible for converting type/value
+   * references in declarations into dependency sets that the bundler can use.
+   * @param registry - Shared `TypeRegistry` with declarations and helpers.
+   * @param importMap - Map of file imports produced by `ImportParser`.
+   * @param fileCollector - Helper used for resolving imports and program access.
+   * @param entryFile - Optional entry file path used to prefer entry aliases.
+   */
   constructor(
     registry: TypeRegistry,
     importMap: Map<
@@ -47,6 +66,9 @@ export class DependencyAnalyzer {
     this.entryFile = entryFile;
   }
 
+  /**
+   * Analyze all registered declarations and populate their dependency sets.
+   */
   analyze(): void {
     this.trackEntryFileAliases();
 
@@ -55,6 +77,11 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * If the entry file imports a symbol under an alias and that alias is used
+   * as a type in the entry file, prefer that alias as the `normalizedName` on
+   * the referenced declaration(s).
+   */
   private trackEntryFileAliases(): void {
     if (!this.entryFile) {
       return;
@@ -83,6 +110,11 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Collect type reference identifiers used in the entry file. This looks for
+   * simple type references, qualified names and type queries and returns the
+   * set of left-most identifiers referenced by those nodes.
+   */
   private collectEntryTypeReferences(entryFile: string): Set<string> {
     const refs = new Set<string>();
     const declarations = this.registry.declarationsByFile.get(entryFile);
@@ -117,6 +149,9 @@ export class DependencyAnalyzer {
     return refs;
   }
 
+  /**
+   * Return the left-most identifier text from a possibly-qualified `EntityName`.
+   */
   private static getLeftmostEntityName(entity: ts.EntityName): string | null {
     let current: ts.EntityName = entity;
     while (ts.isQualifiedName(current)) {
@@ -125,6 +160,13 @@ export class DependencyAnalyzer {
     return ts.isIdentifier(current) ? current.text : null;
   }
 
+  /**
+   * Analyze dependencies for a single declaration. This will populate:
+   * - `declaration.dependencies` with other internal declaration ids
+   * - `declaration.externalDependencies` with external module usage
+   * - `declaration.namespaceDependencies` when a namespace import is referenced
+   * - `declaration.importAliases` for aliased imports
+   */
   private analyzeDependencies(declaration: {
     node: ts.Node;
     sourceFile: string;
@@ -160,7 +202,11 @@ export class DependencyAnalyzer {
           const memberNames = DependencyAnalyzer.collectNamespaceMemberReferences(declaration.node, refName);
           if (memberNames.size > 0) {
             for (const memberName of memberNames) {
-              const key = `${importInfo.sourceFile}:${memberName}`;
+              const resolvedMemberName =
+                memberName === "default"
+                  ? (this.getDefaultExportName(importInfo.sourceFile) ?? memberName)
+                  : memberName;
+              const key = `${importInfo.sourceFile}:${resolvedMemberName}`;
               const depIds = this.registry.getDeclarationIdsByKey(key);
               if (depIds) {
                 for (const depId of depIds) {
@@ -213,7 +259,10 @@ export class DependencyAnalyzer {
           }
 
           const key = `${importInfo.sourceFile}:${originalName}`;
-          const depIds = this.registry.getDeclarationIdsByKey(key);
+          let depIds = this.registry.getDeclarationIdsByKey(key);
+          if (!depIds && refName !== originalName) {
+            depIds = this.registry.getDeclarationIdsByKey(importedKey);
+          }
           if (depIds) {
             for (const depId of depIds) {
               declaration.dependencies.add(depId);
@@ -251,6 +300,10 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Handle `import("module").X` style nodes by resolving the module and
+   * adding the referenced declarations to the dependency set.
+   */
   private trackImportTypeDependencies(declaration: {
     node: ts.Node;
     sourceFile: string;
@@ -274,8 +327,12 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Resolve an `import(...)` module name to a file path, ensuring it is inlined
+   * in the project and contains declarations.
+   */
   private resolveImportTypeModule(fromFile: string, moduleName: string): string | null {
-    if (!this.fileCollector.shouldInline(moduleName)) {
+    if (!this.fileCollector.shouldInline(moduleName, fromFile)) {
       return null;
     }
 
@@ -285,6 +342,9 @@ export class DependencyAnalyzer {
     return resolvedPath;
   }
 
+  /**
+   * Collect `import("x").T` references found under `node`.
+   */
   private static collectImportTypeReferences(
     node: ts.Node,
   ): Array<{ moduleName: string; qualifier: ts.EntityName; isTypeOf: boolean }> {
@@ -309,6 +369,10 @@ export class DependencyAnalyzer {
     return refs;
   }
 
+  /**
+   * Find the default export name for a given source file by inspecting
+   * registered declarations and the file's export assignments.
+   */
   private getDefaultExportName(sourceFile: string): string | null {
     const declarations = this.registry.declarationsByFile.get(sourceFile);
     if (!declarations) return null;
@@ -325,9 +389,26 @@ export class DependencyAnalyzer {
       }
     }
 
+    const sourceFileNode = this.fileCollector.getProgram().getSourceFile(sourceFile);
+    if (sourceFileNode) {
+      for (const statement of sourceFileNode.statements) {
+        if (!ts.isExportAssignment(statement) || statement.isExportEquals) {
+          continue;
+        }
+        if (ts.isIdentifier(statement.expression)) {
+          return statement.expression.text;
+        }
+      }
+    }
+
     return null;
   }
 
+  /**
+   * Walk `node` and collect type and (optionally) value references.
+   * - `references` receives type-level identifier names
+   * - `valueReferences` receives names used in value positions when available
+   */
   private extractTypeReferences(node: ts.Node, references: Set<string>, valueReferences?: Set<string>): void {
     const addReference = (name: string): void => {
       references.add(name);
@@ -354,12 +435,12 @@ export class DependencyAnalyzer {
     if (ts.isTypeQueryNode(node)) {
       const exprName = node.exprName;
       if (ts.isIdentifier(exprName)) {
-        addValueReference(exprName.text);
+        addReference(exprName.text);
       } else if (ts.isQualifiedName(exprName)) {
         DependencyAnalyzer.extractQualifiedName(exprName, references);
         const leftmost = DependencyAnalyzer.getLeftmostEntityName(exprName);
         if (leftmost) {
-          addValueReference(leftmost);
+          addReference(leftmost);
         }
       }
     }
@@ -411,6 +492,16 @@ export class DependencyAnalyzer {
       processHeritageClauses();
     }
 
+    if (ts.isFunctionLike(node) && "body" in node && node.body) {
+      node.forEachChild((child) => {
+        if (child === node.body) {
+          return;
+        }
+        this.extractTypeReferences(child, references, valueReferences);
+      });
+      return;
+    }
+
     node.forEachChild((child) => {
       this.extractTypeReferences(child, references, valueReferences);
     });
@@ -420,6 +511,9 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Pull the left-most identifier from a `QualifiedName` and add it to `references`.
+   */
   private static extractQualifiedName(qualifiedName: ts.QualifiedName, references: Set<string>): void {
     let current: ts.EntityName = qualifiedName;
     while (ts.isQualifiedName(current)) {
@@ -430,6 +524,10 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Inspect `node` for references to members of `namespaceName` and return the set
+   * of member identifiers found (e.g., from `MyNs.X` or `import("x").Y`).
+   */
   private static collectNamespaceMemberReferences(node: ts.Node, namespaceName: string): Set<string> {
     const members = new Set<string>();
 
@@ -473,6 +571,10 @@ export class DependencyAnalyzer {
     return members;
   }
 
+  /**
+   * Given a qualified name like `Ns.A.B`, return the first member `A` when the
+   * root matches `namespaceName`.
+   */
   private static getFirstQualifiedMember(qualifiedName: ts.QualifiedName, namespaceName: string): string | null {
     const parts: string[] = [];
     let current: ts.EntityName = qualifiedName;
@@ -488,6 +590,10 @@ export class DependencyAnalyzer {
     return null;
   }
 
+  /**
+   * Given a property access expression like `ns.A.B`, return the first member
+   * `A` when the root matches `namespaceName`.
+   */
   private static getFirstPropertyAccessMember(
     propAccess: ts.PropertyAccessExpression,
     namespaceName: string,
@@ -506,6 +612,10 @@ export class DependencyAnalyzer {
     return null;
   }
 
+  /**
+   * For a property access chain `ns.A.B`, extract the left-most identifier
+   * (`ns`) and add it to `references`.
+   */
   private static extractPropertyAccess(propAccess: ts.PropertyAccessExpression, references: Set<string>): void {
     // Extract only the leftmost identifier for a property access chain like MyModule.SomeCoolInterface
     let current: ts.Expression = propAccess;
@@ -517,6 +627,9 @@ export class DependencyAnalyzer {
     }
   }
 
+  /**
+   * Return the left-most identifier text from a property access chain or `null`.
+   */
   private static getLeftmostPropertyAccessRoot(propAccess: ts.PropertyAccessExpression): string | null {
     let current: ts.Expression = propAccess;
     while (ts.isPropertyAccessExpression(current)) {
@@ -525,6 +638,10 @@ export class DependencyAnalyzer {
     return ts.isIdentifier(current) ? current.text : null;
   }
 
+  /**
+   * Resolve declarations exported via `export * from ...` chains. Prevents
+   * infinite recursion by tracking visited files.
+   */
   private resolveStarExportedDeclarationIds(
     sourceFile: string,
     name: string,
