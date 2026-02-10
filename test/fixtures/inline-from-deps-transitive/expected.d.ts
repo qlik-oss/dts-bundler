@@ -4,10 +4,10 @@ import type { InterfaceFromTypesPackage } from "fake-types-lib";
 export interface File {
   path: Path;
 }
-export interface Interface {}
+interface Interface {}
 export interface InterfaceWithFields {
   field: Type;
   field2: Interface;
   field3: InterfaceFromTypesPackage;
 }
-export type Type = number | string;
+type Type = number | string;

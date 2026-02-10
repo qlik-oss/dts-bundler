@@ -35,14 +35,9 @@ export interface BundleTypesOptions {
   inlineDeclareExternals?: boolean;
 
   /**
-   * Whether to export referenced types automatically
+   * Whether to export referenced types automatically. E.g., if a type from an external library is used, it will be re-exported.
    */
   exportReferencedTypes?: boolean;
-
-  /**
-   * Whether to only include entry exports during tree-shaking
-   */
-  entryExportsOnly?: boolean;
 
   /**
    * Whether to include a banner in output

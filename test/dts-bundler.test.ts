@@ -366,6 +366,13 @@ describe("TypeScript Declaration Bundler", () => {
       });
       expect(result).toBe(expected);
     });
+
+    it("should export referenced types when enabled", () => {
+      const { expected, result } = runTestCase("export-referenced-types", {
+        exportReferencedTypes: true,
+      });
+      expect(result).toBe(expected);
+    });
   });
 
   describe("Re-export Patterns", () => {
@@ -663,11 +670,6 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it("should support entry-only exports", () => {
-      const { expected, result } = runTestCase("entry-exports-only", { entryExportsOnly: true });
-      expect(result).toBe(expected);
-    });
-
     it("should handle merged namespaces across files", () => {
       const { expected, result } = runTestCase("merged-namespaces");
       expect(result).toBe(expected);
@@ -776,7 +778,7 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
-    it("should tree-shake inlined library component exports", () => {
+    it("should tree shake inlined library component exports", () => {
       const { expected, result } = runTestCase("inlined-lib-components-tree-shaking", {
         inlinedLibraries: ["fake-inlined-lib"],
         inlineDeclareGlobals: true,

@@ -8,7 +8,7 @@ declare namespace Namespace {
   const baz: number;
 }
 declare type GenericType<T, U> = {};
-export interface Interface {}
+interface Interface {}
 declare namespace Namespace$1 {
   const baz: number;
 }

@@ -22,6 +22,31 @@ function getVersion(): string {
   }
 }
 
+export type OutputGeneratorOptions = {
+  noBanner?: boolean;
+  sortNodes?: boolean;
+  umdModuleName?: string;
+  includeEmptyExport?: boolean;
+  allowedTypesLibraries?: string[];
+  importedLibraries?: string[];
+  referencedTypes?: Set<string>;
+  detectedTypesLibraries?: Set<string>;
+  entryExportEquals?: ts.ExportAssignment | null;
+  entryExportDefault?: ts.ExportAssignment | null;
+  entryExportDefaultName?: string | null;
+  exportReferencedTypes?: boolean;
+  typeChecker?: ts.TypeChecker;
+  preserveConstEnums?: boolean;
+  respectPreserveConstEnum?: boolean;
+  entryFile?: string;
+  entryImportedFiles?: Set<string>;
+  declarationOrder?: Map<symbol, number>;
+  importTypeResolver?: {
+    shouldInline: (importPath: string, fromFile?: string) => boolean;
+    resolveImport: (fromFile: string, importPath: string) => string | null;
+  };
+};
+
 export class OutputGenerator {
   private registry: TypeRegistry;
   private usedDeclarations: Set<symbol>;
@@ -32,57 +57,13 @@ export class OutputGenerator {
   private astPrinter: AstPrinter;
   private namespaceValueAliasesByFile: Map<string, Set<string>>;
   private entryExportData: EntryExportData | null = null;
-  private options: {
-    noBanner?: boolean;
-    sortNodes?: boolean;
-    umdModuleName?: string;
-    includeEmptyExport?: boolean;
-    allowedTypesLibraries?: string[];
-    importedLibraries?: string[];
-    referencedTypes?: Set<string>;
-    detectedTypesLibraries?: Set<string>;
-    entryExportEquals?: ts.ExportAssignment | null;
-    entryExportDefault?: ts.ExportAssignment | null;
-    entryExportDefaultName?: string | null;
-    typeChecker?: ts.TypeChecker;
-    preserveConstEnums?: boolean;
-    respectPreserveConstEnum?: boolean;
-    entryFile?: string;
-    entryImportedFiles?: Set<string>;
-    declarationOrder?: Map<symbol, number>;
-    importTypeResolver?: {
-      shouldInline: (importPath: string, fromFile?: string) => boolean;
-      resolveImport: (fromFile: string, importPath: string) => string | null;
-    };
-  };
+  private options: OutputGeneratorOptions;
 
   constructor(
     registry: TypeRegistry,
     usedDeclarations: Set<symbol>,
     usedExternals: Map<string, Set<ExternalImport>>,
-    options: {
-      noBanner?: boolean;
-      sortNodes?: boolean;
-      umdModuleName?: string;
-      includeEmptyExport?: boolean;
-      allowedTypesLibraries?: string[];
-      importedLibraries?: string[];
-      referencedTypes?: Set<string>;
-      detectedTypesLibraries?: Set<string>;
-      entryExportEquals?: ts.ExportAssignment | null;
-      entryExportDefault?: ts.ExportAssignment | null;
-      entryExportDefaultName?: string | null;
-      typeChecker?: ts.TypeChecker;
-      preserveConstEnums?: boolean;
-      respectPreserveConstEnum?: boolean;
-      entryFile?: string;
-      entryImportedFiles?: Set<string>;
-      declarationOrder?: Map<symbol, number>;
-      importTypeResolver?: {
-        shouldInline: (importPath: string, fromFile?: string) => boolean;
-        resolveImport: (fromFile: string, importPath: string) => string | null;
-      };
-    } = {},
+    options: OutputGeneratorOptions = {},
   ) {
     this.registry = registry;
     this.usedDeclarations = usedDeclarations;
@@ -175,85 +156,6 @@ export class OutputGenerator {
         this.nameMap.set(key, declaration.normalizedName);
       }
     }
-  }
-
-  private generateExternalImports(): string[] {
-    const lines: string[] = [];
-    const sortedModules = Array.from(this.usedExternals.keys()).sort();
-
-    for (const moduleName of sortedModules) {
-      const imports = Array.from(this.usedExternals.get(moduleName) ?? []);
-      if (imports.length === 0) continue;
-
-      // Separate CommonJS import = require() from ES6 imports
-      const cjsImports = imports.filter((imp) => imp.normalizedName.startsWith("= "));
-      const esImports = imports.filter((imp) => !imp.normalizedName.startsWith("= "));
-
-      // Emit CommonJS import = require() statements
-      for (const cjsImport of cjsImports) {
-        const importName = cjsImport.normalizedName.substring(2); // Remove "= " prefix
-        lines.push(`import ${importName} = require("${moduleName}");`);
-      }
-
-      // Emit ES6 imports if any
-      if (esImports.length === 0) continue;
-
-      const isTypeOnly = esImports.every((imp) => !imp.isValueUsage);
-      const typePrefix = isTypeOnly ? "type " : "";
-
-      const namespaceImports = esImports.filter((imp) => imp.normalizedName.startsWith("* as "));
-      const nonNamespaceImports = esImports.filter((imp) => !imp.normalizedName.startsWith("* as "));
-
-      const emittedNamespaces = new Set<string>();
-      for (const namespaceImport of namespaceImports) {
-        if (emittedNamespaces.has(namespaceImport.normalizedName)) {
-          continue;
-        }
-        emittedNamespaces.add(namespaceImport.normalizedName);
-        const namespacePrefix = namespaceImport.isValueUsage ? "" : "type ";
-        lines.push(`import ${namespacePrefix}${namespaceImport.normalizedName} from "${moduleName}";`);
-      }
-
-      if (nonNamespaceImports.length === 0) {
-        continue;
-      }
-
-      const defaultImports = nonNamespaceImports.filter((imp) => imp.normalizedName.startsWith("default as "));
-      const namedImports = nonNamespaceImports.filter((imp) => !imp.normalizedName.startsWith("default as "));
-      const primaryDefault = defaultImports.find((imp) => imp.isDefaultImport) ?? null;
-      const hasDefaultImport = Boolean(primaryDefault);
-      const namedListOrdered = nonNamespaceImports
-        .filter((imp) => imp !== primaryDefault)
-        .map((imp) => imp.normalizedName);
-      const preferSingleLineNamed = namespaceImports.length > 0 && !hasDefaultImport && defaultImports.length === 0;
-
-      if (hasDefaultImport) {
-        const defaultName = primaryDefault?.normalizedName.substring("default as ".length) ?? "";
-        if (namedListOrdered.length > 0) {
-          if (namedListOrdered.length > 1) {
-            const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
-            lines.push(`import ${typePrefix}${defaultName}, {\n${namedBlock}\n} from "${moduleName}";`);
-          } else {
-            lines.push(`import ${typePrefix}${defaultName}, { ${namedListOrdered[0]} } from "${moduleName}";`);
-          }
-        } else {
-          lines.push(`import ${typePrefix}${defaultName} from "${moduleName}";`);
-        }
-      } else if (defaultImports.length > 0 || namedImports.length > 0) {
-        if (namedListOrdered.length > 1) {
-          if (preferSingleLineNamed) {
-            lines.push(`import ${typePrefix}{ ${namedListOrdered.join(", ")} } from "${moduleName}";`);
-          } else {
-            const namedBlock = namedListOrdered.map((name) => `  ${name},`).join("\n");
-            lines.push(`import ${typePrefix}{\n${namedBlock}\n} from "${moduleName}";`);
-          }
-        } else if (namedListOrdered.length === 1) {
-          lines.push(`import ${typePrefix}{ ${namedListOrdered[0]} } from "${moduleName}";`);
-        }
-      }
-    }
-
-    return lines;
   }
 
   private generateExternalPrelude(): { lines: string[] } {
@@ -542,6 +444,12 @@ export class OutputGenerator {
     return externalImport?.normalizedName ?? importName;
   }
 
+  private static hadExportInSource(declaration: TypeDeclaration): boolean {
+    if (declaration.exportInfo.wasOriginallyExported) return true;
+    if (!ts.canHaveModifiers(declaration.node)) return false;
+    return ts.getModifiers(declaration.node)?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+  }
+
   private generateDeclarations(): string[] {
     const lines: string[] = [];
     const aliasExportedNames = this.getAliasExportedNames();
@@ -648,7 +556,7 @@ export class OutputGenerator {
         !suppressExportForInlinedGlobalOnly &&
         (declaration.exportInfo.kind === ExportKind.Named ||
           declaration.exportInfo.kind === ExportKind.NamedAndDefault ||
-          declaration.exportInfo.wasOriginallyExported ||
+          (this.options.exportReferencedTypes && OutputGenerator.hadExportInSource(declaration)) ||
           shouldExportDefaultOnlyType ||
           shouldExportMergeGroup);
 

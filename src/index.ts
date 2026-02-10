@@ -22,7 +22,6 @@ function bundle(
     umdModuleName?: string;
     exportReferencedTypes?: boolean;
     includeEmptyExport?: boolean;
-    entryExportsOnly?: boolean;
     allowedTypesLibraries?: string[];
     importedLibraries?: string[];
     referencedTypes?: Set<string>;
@@ -116,8 +115,6 @@ function bundle(
   }
 
   const shaker = new TreeShaker(registry, {
-    exportReferencedTypes: options.exportReferencedTypes,
-    entryExportsOnly: options.entryExportsOnly,
     entryFile,
     entryImports: entryImports ?? undefined,
     entrySourceFile: entrySourceFile ?? undefined,
@@ -182,7 +179,6 @@ export function bundleTypes(options: BundleTypesOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
-    entryExportsOnly,
     inlineDeclareGlobals,
     inlineDeclareExternals,
     respectPreserveConstEnum,
@@ -197,7 +193,6 @@ export function bundleTypes(options: BundleTypesOptions): string {
     sortNodes,
     umdModuleName,
     exportReferencedTypes,
-    entryExportsOnly,
     allowedTypesLibraries,
     importedLibraries,
     inlineDeclareGlobals,

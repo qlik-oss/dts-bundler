@@ -8,8 +8,6 @@ export class TreeShaker {
   private usedExternals: Set<string>;
   private processedGlobal: Set<symbol>;
   private processedNonGlobal: Set<symbol>;
-  private exportReferencedTypes: boolean;
-  private entryExportsOnly: boolean;
   private entryFile?: string;
   private entryImports?: Map<string, ImportInfo>;
   private entrySourceFile?: ts.SourceFile;
@@ -19,8 +17,6 @@ export class TreeShaker {
   constructor(
     registry: TypeRegistry,
     options: {
-      exportReferencedTypes?: boolean;
-      entryExportsOnly?: boolean;
       entryFile?: string;
       entryImports?: Map<string, ImportInfo>;
       entrySourceFile?: ts.SourceFile;
@@ -33,8 +29,6 @@ export class TreeShaker {
     this.usedExternals = new Set();
     this.processedGlobal = new Set();
     this.processedNonGlobal = new Set();
-    this.exportReferencedTypes = options.exportReferencedTypes ?? true;
-    this.entryExportsOnly = options.entryExportsOnly ?? false;
     this.entryFile = options.entryFile;
     this.entryImports = options.entryImports;
     this.entrySourceFile = options.entrySourceFile;
@@ -48,27 +42,7 @@ export class TreeShaker {
     detectedTypesLibraries: Set<string>;
     declarationOrder: Map<symbol, number>;
   } {
-    const useEntryExportsOnly = Boolean(this.entryFile) || this.entryExportsOnly;
-    const declarationOrder = this.buildDeclarationOrder(useEntryExportsOnly);
-
-    if (!useEntryExportsOnly) {
-      const exported = this.registry.getAllExported();
-
-      for (const declaration of exported) {
-        if (this.entryFile) {
-          const isEntryFile = declaration.sourceFile === this.entryFile;
-          const isEntryImport = this.entryImportedFiles.has(declaration.sourceFile);
-          if (!isEntryFile && !isEntryImport) {
-            continue;
-          }
-          if (declaration.isFromInlinedLibrary && !isEntryFile) {
-            continue;
-          }
-        }
-        const context = TreeShaker.isGlobalDeclaration(declaration) ? "global" : "nonGlobal";
-        this.markUsed(declaration.id, context);
-      }
-    }
+    const declarationOrder = this.buildDeclarationOrder();
 
     for (const declaration of this.registry.declarations.values()) {
       if (!declaration.forceInclude) {
@@ -122,7 +96,7 @@ export class TreeShaker {
     };
   }
 
-  private buildDeclarationOrder(useEntryExportsOnly: boolean): Map<symbol, number> {
+  private buildDeclarationOrder(): Map<symbol, number> {
     const order = new Map<symbol, number>();
     const visited = new Set<symbol>();
 
@@ -132,23 +106,13 @@ export class TreeShaker {
       const declaration = this.registry.getDeclaration(id);
       if (!declaration) return;
       order.set(id, order.size);
-      const shouldIncludeDependencies = this.exportReferencedTypes || declaration.dependencies.size > 0;
+      const shouldIncludeDependencies = declaration.dependencies.size > 0;
       if (shouldIncludeDependencies) {
         for (const depId of declaration.dependencies) {
           record(depId);
         }
       }
     };
-
-    if (!useEntryExportsOnly) {
-      const exported = this.registry.getAllExported();
-      for (const declaration of exported) {
-        if (declaration.isFromInlinedLibrary) {
-          continue;
-        }
-        record(declaration.id);
-      }
-    }
 
     for (const declaration of this.registry.declarations.values()) {
       if (declaration.forceInclude) {
@@ -193,7 +157,7 @@ export class TreeShaker {
     processed.add(declarationId);
     this.used.add(declarationId);
 
-    const shouldIncludeDependencies = this.exportReferencedTypes || declaration.dependencies.size > 0;
+    const shouldIncludeDependencies = declaration.dependencies.size > 0;
     if (shouldIncludeDependencies) {
       for (const depId of declaration.dependencies) {
         this.markUsed(depId, context);

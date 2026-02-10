@@ -1,4 +1,4 @@
-export interface LibConfig {
+interface LibConfig {
   enabled: boolean;
   timeout: number;
 }
