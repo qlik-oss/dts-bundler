@@ -43,7 +43,7 @@
     "@qlik/prettier-config": "^0.4.35",
     "@qlik/tsconfig": "^0.3.1",
     "@types/node": "^25.3.3",
-    "eslint": "^10.0.2",
+    "eslint": "^9.39.3",
     "prettier": "^3.8.1",
     "tsdown": "^0.21.0",
     "vitest": "^4.0.18"
@@ -54,5 +54,12 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "pnpm": {
+    "updateConfig": {
+      "ignoreDependencies": [
+        "eslint"
+      ]
+    }
   }
 }
