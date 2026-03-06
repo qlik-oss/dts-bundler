@@ -88,51 +88,61 @@ export class ImportParser {
     const importPath = moduleSpecifier.text;
     const isTypeOnly = statement.importClause?.isTypeOnly ?? false;
 
-    if (this.fileCollector.shouldInline(importPath, filePath)) {
-      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
-      if (!resolvedPath) return;
+    const shouldInline = this.fileCollector.shouldInline(importPath, filePath);
 
-      const importClause = statement.importClause;
-      if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
-        for (const element of importClause.namedBindings.elements) {
-          const localName = element.name.text;
-          const originalName = element.propertyName?.text || localName;
+    if (shouldInline) {
+      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+      if (!resolvedPath) {
+        console.warn(
+          `Warning: Could not resolve inlined library "${importPath}" from "${filePath}". Treating as external.`,
+        );
+      } else {
+        const importClause = statement.importClause;
+        if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
+          for (const element of importClause.namedBindings.elements) {
+            const localName = element.name.text;
+            const originalName = element.propertyName?.text || localName;
+            fileImports.set(localName, {
+              originalName,
+              sourceFile: resolvedPath,
+              isExternal: false,
+              aliasName: localName !== originalName ? localName : null,
+              isTypeOnly,
+            });
+          }
+        }
+
+        if (importClause?.namedBindings && ts.isNamespaceImport(importClause.namedBindings)) {
+          const localName = importClause.namedBindings.name.text;
           fileImports.set(localName, {
-            originalName,
+            originalName: `* as ${localName}`,
             sourceFile: resolvedPath,
             isExternal: false,
-            aliasName: localName !== originalName ? localName : null,
+            aliasName: null,
             isTypeOnly,
           });
+          const key = `${filePath}:${localName}`;
+          this.registry.namespaceImports.set(key, {
+            namespaceName: localName,
+            sourceFile: resolvedPath,
+          });
         }
-      }
 
-      if (importClause?.namedBindings && ts.isNamespaceImport(importClause.namedBindings)) {
-        const localName = importClause.namedBindings.name.text;
-        fileImports.set(localName, {
-          originalName: `* as ${localName}`,
-          sourceFile: resolvedPath,
-          isExternal: false,
-          aliasName: null,
-          isTypeOnly,
-        });
-        const key = `${filePath}:${localName}`;
-        this.registry.namespaceImports.set(key, {
-          namespaceName: localName,
-          sourceFile: resolvedPath,
-        });
-      }
+        if (importClause?.name) {
+          const localName = importClause.name.text;
+          fileImports.set(localName, {
+            originalName: "default",
+            sourceFile: resolvedPath,
+            isExternal: false,
+            aliasName: null,
+          });
+        }
 
-      if (importClause?.name) {
-        const localName = importClause.name.text;
-        fileImports.set(localName, {
-          originalName: "default",
-          sourceFile: resolvedPath,
-          isExternal: false,
-          aliasName: null,
-        });
+        return;
       }
-    } else {
+    }
+
+    {
       const moduleName = importPath;
       const { typesLibraryName } = this.fileCollector.resolveExternalImport(filePath, moduleName);
 
@@ -201,18 +211,28 @@ export class ImportParser {
     const importName = statement.name.text;
     const isTypeOnly = statement.isTypeOnly;
 
-    if (this.fileCollector.shouldInline(importPath, filePath)) {
-      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
-      if (!resolvedPath) return;
+    const shouldInline = this.fileCollector.shouldInline(importPath, filePath);
 
-      fileImports.set(importName, {
-        originalName: importName,
-        sourceFile: resolvedPath,
-        isExternal: false,
-        aliasName: null,
-        isTypeOnly,
-      });
-    } else {
+    if (shouldInline) {
+      const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
+      if (!resolvedPath) {
+        console.warn(
+          `Warning: Could not resolve inlined library "${importPath}" from "${filePath}". Treating as external.`,
+        );
+      } else {
+        fileImports.set(importName, {
+          originalName: importName,
+          sourceFile: resolvedPath,
+          isExternal: false,
+          aliasName: null,
+          isTypeOnly,
+        });
+
+        return;
+      }
+    }
+
+    {
       fileImports.set(importName, {
         originalName: `= ${importName}`,
         sourceFile: importPath,

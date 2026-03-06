@@ -12,6 +12,10 @@ type LocalHelper = {
 type OtherLocalHelper = {
   helpMe(): void;
 };
+type LibType = {
+  name: string;
+  version: string;
+};
 export interface Combined {
   local: LocalHelper;
   otherLocal: OtherLocalHelper;

@@ -269,11 +269,21 @@ export class DependencyAnalyzer {
             }
           } else {
             const resolved = this.resolveStarExportedDeclarationIds(importInfo.sourceFile, originalName, new Set());
-            if (resolved) {
-              for (const depId of resolved.declarationIds) {
+            const namedResolved =
+              resolved ?? this.resolveNamedExportedDeclarationIds(importInfo.sourceFile, originalName, new Set());
+            if (namedResolved) {
+              for (const depId of namedResolved.declarationIds) {
+                const depDecl = this.registry.getDeclaration(depId);
+                if (
+                  depDecl &&
+                  depDecl.exportInfo.kind === ExportKind.NotExported &&
+                  depDecl.exportInfo.wasOriginallyExported
+                ) {
+                  depDecl.exportInfo.kind = ExportKind.Named;
+                }
                 declaration.dependencies.add(depId);
               }
-              importInfo.sourceFile = resolved.targetFile;
+              importInfo.sourceFile = namedResolved.targetFile;
             }
           }
         }
@@ -666,6 +676,44 @@ export class DependencyAnalyzer {
       }
 
       const nested = this.resolveStarExportedDeclarationIds(starExport.targetFile, name, visited);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve declarations exported via named re-export chains like
+   * `export { Foo } from "./bar"`. Prevents infinite recursion by tracking
+   * visited files.
+   */
+  private resolveNamedExportedDeclarationIds(
+    sourceFile: string,
+    name: string,
+    visited: Set<string>,
+  ): { targetFile: string; declarationIds: Set<symbol> } | null {
+    if (visited.has(sourceFile)) {
+      return null;
+    }
+
+    visited.add(sourceFile);
+
+    const exportedNames = this.registry.exportedNamesByFile.get(sourceFile) ?? [];
+    for (const exportedName of exportedNames) {
+      if (exportedName.name !== name || !exportedName.sourceFile) {
+        continue;
+      }
+
+      const targetName = exportedName.originalName ?? exportedName.name;
+      const key = `${exportedName.sourceFile}:${targetName}`;
+      const declarationIds = this.registry.getDeclarationIdsByKey(key);
+      if (declarationIds) {
+        return { targetFile: exportedName.sourceFile, declarationIds };
+      }
+
+      const nested = this.resolveNamedExportedDeclarationIds(exportedName.sourceFile, targetName, visited);
       if (nested) {
         return nested;
       }

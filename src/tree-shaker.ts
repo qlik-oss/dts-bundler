@@ -345,7 +345,7 @@ export class TreeShaker {
           declName = defaultName;
         }
       }
-      this.markDeclarationsUsedByName(declFile, declName, context);
+      this.markDeclarationsUsedWithExportChain(declFile, declName, context, new Set());
 
       const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, exported.name);
       if (namespaceInfo?.targetFile) {
@@ -391,11 +391,52 @@ export class TreeShaker {
           declName = defaultName;
         }
       }
-      this.markDeclarationsUsedByName(declFile, declName, context);
+      this.markDeclarationsUsedWithExportChain(declFile, declName, context, new Set());
 
       if (declFile !== entryFile) {
-        this.markDeclarationsUsedByName(entryFile, exported.name, context);
+        this.markDeclarationsUsedWithExportChain(entryFile, exported.name, context, new Set());
       }
+    }
+  }
+
+  private markDeclarationsUsedWithExportChain(
+    sourceFile: string,
+    name: string,
+    context: "global" | "nonGlobal",
+    visited: Set<string>,
+  ): void {
+    const visitKey = `${sourceFile}:${name}`;
+    if (visited.has(visitKey)) {
+      return;
+    }
+    visited.add(visitKey);
+
+    const declIds = this.registry.getDeclarationIds(sourceFile, name);
+    if (declIds && declIds.size > 0) {
+      for (const declId of declIds) {
+        const declaration = this.registry.getDeclaration(declId);
+        if (!declaration) continue;
+        const effectiveContext = TreeShaker.isGlobalDeclaration(declaration) ? "global" : context;
+        this.markUsed(declId, effectiveContext);
+      }
+      return;
+    }
+
+    const exportedNames = this.registry.exportedNamesByFile.get(sourceFile) ?? [];
+    for (const exportedName of exportedNames) {
+      if (exportedName.name !== name || !exportedName.sourceFile) {
+        continue;
+      }
+
+      const targetName = exportedName.originalName ?? exportedName.name;
+      this.markDeclarationsUsedWithExportChain(exportedName.sourceFile, targetName, context, visited);
+    }
+
+    for (const starExport of this.registry.getStarExports(sourceFile)) {
+      if (!starExport.targetFile) {
+        continue;
+      }
+      this.markDeclarationsUsedWithExportChain(starExport.targetFile, name, context, visited);
     }
   }
 
