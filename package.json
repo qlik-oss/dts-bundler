@@ -42,7 +42,7 @@
     "@qlik/eslint-config": "^1.4.22",
     "@qlik/prettier-config": "^0.4.35",
     "@qlik/tsconfig": "^0.3.1",
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.3.5",
     "eslint": "^9.39.3",
     "prettier": "^3.8.1",
     "tsdown": "^0.21.0",
