@@ -248,6 +248,9 @@ export class DeclarationCollector {
     const declarationNode = DeclarationCollector.createDefaultExportVariable(statement, syntheticName);
     const declaration = new TypeDeclaration(syntheticName, filePath, declarationNode, sourceFile, exportInfo);
     declaration.isTypeOnly = DeclarationCollector.isTypeOnlyDeclaration(declarationNode);
+    if (isEntry) {
+      declaration.forceInclude = true;
+    }
 
     if (ts.isVariableStatement(declarationNode)) {
       const varDecl = declarationNode.declarationList.declarations[0];

@@ -346,7 +346,19 @@ export class ExportResolver {
             isTypeOnly: statement.isTypeOnly,
           });
         } else {
-          this.registry.registerExportedName(filePath, { name: exportedName, isTypeOnly: statement.isTypeOnly });
+          const registerLocalSource =
+            this.fileCollector.isFromInlinedLibrary(filePath) && exportedName !== originalName;
+          this.registry.registerExportedName(
+            filePath,
+            registerLocalSource
+              ? {
+                  name: exportedName,
+                  sourceFile: filePath,
+                  originalName,
+                  isTypeOnly: statement.isTypeOnly,
+                }
+              : { name: exportedName, isTypeOnly: statement.isTypeOnly },
+          );
         }
 
         const namespaceInfo = this.registry.getNamespaceExportInfo(filePath, originalName);

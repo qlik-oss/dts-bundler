@@ -206,6 +206,13 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should treat unresolvable inlined libraries as external imports", () => {
+      const { expected, result } = runTestCase("inline-no-existing-libraries", {
+        inlinedLibraries: ["@notexisting/library"],
+      });
+      expect(result).toBe(expected);
+    });
+
     it("should handle module augmentation only exports", () => {
       const { expected, result } = runTestCase("module-augmentation", {
         inlinedLibraries: ["extensions-package"],
@@ -240,6 +247,18 @@ describe("TypeScript Declaration Bundler", () => {
 
     it("should resolve custom typeRoots for local types", () => {
       const { expected, result } = runTestCase("using-custom-types", { allowedTypesLibraries: [] });
+      expect(result).toBe(expected);
+    });
+
+    it("should inline scoped package subpath re-exports (regression)", () => {
+      const { expected, result } = runTestCase("scoped-mock-reexport", { inlinedLibraries: ["@scoped/mock"] });
+      expect(result).toBe(expected);
+    });
+
+    it("should follow aliased inlined library re-export chains", () => {
+      const { expected, result } = runTestCase("inline-library-reexport-chain", {
+        inlinedLibraries: ["@testlib/api"],
+      });
       expect(result).toBe(expected);
     });
   });

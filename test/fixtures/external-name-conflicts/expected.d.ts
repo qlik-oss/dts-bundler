@@ -18,6 +18,10 @@ type YetAnotherLocalHelper = {
   setup(): void;
   configuration: Config_2;
 };
+type LibType = {
+  name: string;
+  version: string;
+};
 export interface Combined {
   local: AnotherLocalHelper;
   otherLocal: AdditionalLocalHelper;
