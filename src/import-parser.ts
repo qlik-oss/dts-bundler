@@ -15,6 +15,7 @@ export class ImportParser {
   private registry: TypeRegistry;
   private fileCollector: FileCollector;
   private options: { inlineDeclareExternals: boolean };
+  private onWarn: (message: string) => void;
 
   /**
    * Create an `ImportParser`.
@@ -22,11 +23,19 @@ export class ImportParser {
    * @param fileCollector - `FileCollector` used to resolve and decide inline-ness.
    * @param options.inlineDeclareExternals - When true, treat `declare module` blocks
    *   as inline sources for import parsing.
+   * @param options.onWarn - Optional callback invoked when a warning is emitted
+   *   (e.g. when an inlined library cannot be resolved). Defaults to a no-op so
+   *   that the bundler never writes to stderr as a side effect.
    */
-  constructor(registry: TypeRegistry, fileCollector: FileCollector, options?: { inlineDeclareExternals?: boolean }) {
+  constructor(
+    registry: TypeRegistry,
+    fileCollector: FileCollector,
+    options?: { inlineDeclareExternals?: boolean; onWarn?: (message: string) => void },
+  ) {
     this.registry = registry;
     this.fileCollector = fileCollector;
     this.options = { inlineDeclareExternals: options?.inlineDeclareExternals ?? false };
+    this.onWarn = options?.onWarn ?? (() => {});
   }
 
   /**
@@ -93,7 +102,7 @@ export class ImportParser {
     if (shouldInline) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) {
-        console.warn(
+        this.onWarn(
           `Warning: Could not resolve inlined library "${importPath}" from "${filePath}". Treating as external.`,
         );
       } else {
@@ -216,7 +225,7 @@ export class ImportParser {
     if (shouldInline) {
       const resolvedPath = this.fileCollector.resolveImport(filePath, importPath);
       if (!resolvedPath) {
-        console.warn(
+        this.onWarn(
           `Warning: Could not resolve inlined library "${importPath}" from "${filePath}". Treating as external.`,
         );
       } else {
