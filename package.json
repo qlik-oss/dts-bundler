@@ -39,13 +39,13 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@qlik/eslint-config": "^1.4.24",
+    "@qlik/eslint-config": "^1.4.25",
     "@qlik/prettier-config": "^0.4.36",
     "@qlik/tsconfig": "^0.3.1",
     "@types/node": "^25.5.0",
     "eslint": "^9.39.3",
     "prettier": "^3.8.1",
-    "tsdown": "^0.21.2",
+    "tsdown": "^0.21.4",
     "vitest": "^4.1.0"
   },
   "packageManager": "pnpm@10.32.1",
