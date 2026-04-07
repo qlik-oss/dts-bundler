@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import * as ts from "typescript";
 import { DeclarationParser } from "./declaration-parser";
 import { DependencyAnalyzer } from "./dependency-analyzer";
 import { FileCollector } from "./file-collector";
@@ -136,7 +136,6 @@ function bundle(
     return Boolean(
       declaration &&
       ts.isModuleDeclaration(declaration.node) &&
-      // eslint-disable-next-line no-bitwise
       declaration.node.flags & ts.NodeFlags.GlobalAugmentation,
     );
   });

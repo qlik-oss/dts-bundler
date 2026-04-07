@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import type { FileCollector } from "./file-collector";
 import type { TypeRegistry } from "./registry";
 import type { ImportInfo } from "./types";

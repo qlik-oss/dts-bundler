@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
-import ts from "typescript";
+import * as ts from "typescript";
 import { getLibraryName, getTypesLibraryName } from "./helpers/node-modules";
 import { findTsConfig, getCompilerOptions } from "./helpers/typescript-config";
 

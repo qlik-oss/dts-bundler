@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { hasDefaultModifier } from "../declaration-utils";
 import type { TypeRegistry } from "../registry";
 import { ExportKind } from "../types";

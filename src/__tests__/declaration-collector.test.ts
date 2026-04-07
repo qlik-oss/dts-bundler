@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DeclarationCollector } from "../declaration-collector";
 import type { FileCollector } from "../file-collector";

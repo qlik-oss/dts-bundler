@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { getDeclarationName, hasDefaultModifier, hasExportModifier, isDeclaration } from "./declaration-utils";
 import type { FileCollector } from "./file-collector";
 import { collectBindingIdentifiersFromName } from "./helpers/binding-identifiers";
@@ -653,7 +653,7 @@ export class ExportResolver {
         const exportSymbol = exports.find((symbol) => symbol.name === exportName);
         if (exportSymbol) {
           const target =
-            exportSymbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exportSymbol) : exportSymbol; // eslint-disable-line no-bitwise
+            exportSymbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
           const declFile = target.declarations?.[0]?.getSourceFile();
           if (declFile) {
             const moduleName = getLibraryName(declFile.fileName);
@@ -925,19 +925,16 @@ export class ExportResolver {
     const fileImports = importMap.get(filePath);
     const importInfo = fileImports?.get(exportedName);
 
-    let key: string;
     let targetFilePath: string;
     let targetName: string;
-
     if (importInfo && !importInfo.isExternal && importInfo.sourceFile) {
       targetFilePath = importInfo.sourceFile;
       targetName = importInfo.originalName;
-      key = `${targetFilePath}:${targetName}`;
     } else {
       targetFilePath = filePath;
       targetName = exportedName;
-      key = `${filePath}:${exportedName}`;
     }
+    const key = `${targetFilePath}:${targetName}`;
 
     const declarationIds = this.registry.getDeclarationIdsByKey(key);
     if (!declarationIds) return;

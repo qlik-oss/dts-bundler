@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import ts from "typescript";
+import * as ts from "typescript";
 import type { TypeRegistry } from "../registry";
 import { ExportKind } from "../types";
 import { findSyntheticDefaultName, resolveDefaultExportNameFromRegistry } from "./default-export";

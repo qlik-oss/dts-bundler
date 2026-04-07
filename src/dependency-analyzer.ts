@@ -1,5 +1,5 @@
 import path from "node:path";
-import ts from "typescript";
+import * as ts from "typescript";
 import { hasDefaultModifier } from "./declaration-utils";
 import type { FileCollector } from "./file-collector";
 import type { TypeRegistry } from "./registry";
@@ -176,7 +176,18 @@ export class DependencyAnalyzer {
     importAliases: Map<string, { sourceFile: string; originalName: string; qualifiedName?: string }>;
     id: symbol;
   }): void {
-    const fileImports = this.importMap.get(declaration.sourceFile) ?? new Map();
+    const fileImports =
+      this.importMap.get(declaration.sourceFile) ??
+      new Map<
+        string,
+        {
+          originalName: string;
+          sourceFile: string | null;
+          isExternal: boolean;
+          aliasName?: string | null;
+          isTypeOnly?: boolean;
+        }
+      >();
     const references = new Set<string>();
     const valueReferences = new Set<string>();
 
@@ -216,7 +227,9 @@ export class DependencyAnalyzer {
             }
           } else {
             // Fallback: include all declarations from the namespace source file
-            const sourceFileDecls = this.registry.declarationsByFile.get(importInfo.sourceFile);
+            const sourceFileDecls = importInfo.sourceFile
+              ? this.registry.declarationsByFile.get(importInfo.sourceFile)
+              : null;
             if (sourceFileDecls) {
               for (const declId of sourceFileDecls) {
                 declaration.dependencies.add(declId);
@@ -383,7 +396,8 @@ export class DependencyAnalyzer {
    * Find the default export name for a given source file by inspecting
    * registered declarations and the file's export assignments.
    */
-  private getDefaultExportName(sourceFile: string): string | null {
+  private getDefaultExportName(sourceFile: string | null): string | null {
+    if (!sourceFile) return null;
     const declarations = this.registry.declarationsByFile.get(sourceFile);
     if (!declarations) return null;
 

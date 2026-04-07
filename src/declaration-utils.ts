@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 
 /**
  * Return true when the statement is a top-level declaration that should be
@@ -69,6 +69,5 @@ export function hasDefaultModifier(statement: ts.Statement): boolean {
  * Detect `declare global {}` module declarations (global augmentation).
  */
 export function isDeclareGlobal(statement: ts.Statement): statement is ts.ModuleDeclaration {
-  // eslint-disable-next-line no-bitwise
   return ts.isModuleDeclaration(statement) && (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
 }
