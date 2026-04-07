@@ -61,19 +61,19 @@ export class AstPrinter {
   }
 
   /**
-   * Print a `ts.Statement` to source text, applying the same transformation rules
+   * Print a `ts.Node` to source text, applying the same transformation rules
    * as `printNode` when options are supplied.
    *
-   * @param statement - The statement to print.
+   * @param node - The node to print.
    * @param sourceFile - The `SourceFile` context used by the printer.
    * @param options - Optional printing/transformation options.
-   * @returns The printed TypeScript text for `statement`.
+   * @returns The printed TypeScript text for `node`.
    */
-  printStatement(statement: ts.Statement, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
+  printStatement(node: ts.Node, sourceFile: ts.SourceFile, options: AstPrintOptions = {}): string {
     const transformed =
       options.renameMap || options.qualifiedNameMap || options.stripImportType
         ? AstPrinter.applyRenameTransformer(
-            statement,
+            node,
             options.renameMap,
             options.qualifiedNameMap,
             options.typeChecker,
@@ -81,7 +81,7 @@ export class AstPrinter {
             options.namespaceImportNames,
             options.stripImportType,
           )
-        : statement;
+        : node;
     return this.printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile);
   }
 

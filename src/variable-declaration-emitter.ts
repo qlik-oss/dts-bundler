@@ -1,6 +1,7 @@
 import * as ts from "typescript";
 import type { AstPrinter } from "./ast-printer";
 import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers";
+import { tryGetSourceFile } from "./helpers/file-utils";
 import { normalizePrintedStatement } from "./helpers/print-normalizer";
 import { ExportKind, type TypeDeclaration } from "./types";
 
@@ -35,23 +36,9 @@ export class VariableDeclarationEmitter {
     this.getRenameMap = getRenameMap;
   }
 
-  private static tryGetSourceFile(node: ts.Node): ts.SourceFile | null {
-    let current: ts.Node | undefined = node;
-
-    while (current) {
-      if (ts.isSourceFile(current)) {
-        return current;
-      }
-
-      current = (current as Omit<ts.Node, "parent"> & { parent?: ts.Node }).parent;
-    }
-
-    return null;
-  }
-
   private static getPrintSourceFile(node: ts.Node): ts.SourceFile {
     return (
-      VariableDeclarationEmitter.tryGetSourceFile(node) ??
+      tryGetSourceFile(node) ??
       ts.createSourceFile("__synthetic__.ts", "", ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
     );
   }
@@ -379,7 +366,7 @@ export class VariableDeclarationEmitter {
      */
     const renameMap = this.getRenameMap(declarations);
     const renameMapToUse = renameMap.size > 0 ? renameMap : undefined;
-    const sourceFile = VariableDeclarationEmitter.tryGetSourceFile(sourceStatement);
+    const sourceFile = tryGetSourceFile(sourceStatement);
     const printSourceFile = sourceFile ?? VariableDeclarationEmitter.getPrintSourceFile(statementNode);
     const printed = this.printer.printStatement(statementNode, printSourceFile, { renameMap: renameMapToUse });
     const originalText = sourceFile ? sourceStatement.getText(sourceFile) : "";

@@ -5,6 +5,7 @@ import * as ts from "typescript";
 import { AstPrinter } from "./ast-printer";
 import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer";
 import { buildEntryExportData, type EntryExportData } from "./helpers/entry-exports";
+import { tryGetSourceFile } from "./helpers/file-utils";
 import { normalizePrintedStatement } from "./helpers/print-normalizer";
 import type { TypeRegistry } from "./registry";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types";
@@ -1703,8 +1704,8 @@ export class OutputGenerator {
     stripConstEnum: boolean,
     typeChecker?: ts.TypeChecker,
     forceExport = false,
-  ): ts.Statement {
-    let statement = declaration.node as ts.Statement;
+  ): ts.Node {
+    let statement = declaration.node;
     const modifiersMap = modifiersToMap(getModifiers(statement));
     const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
     const shouldForceExport = shouldHaveExport && (forceExport || OutputGenerator.shouldForceExport(statement));
@@ -1829,7 +1830,7 @@ export class OutputGenerator {
    * parameter initializers, method bodies and strips export modifiers where
    * appropriate.
    */
-  private static createOutputTransformer(): ts.TransformerFactory<ts.Statement> {
+  private static createOutputTransformer(): ts.TransformerFactory<ts.Node> {
     return (context) => {
       const visit: ts.Visitor = (node) => {
         if (ts.isParameter(node) && node.initializer) {
@@ -2118,22 +2119,21 @@ export class OutputGenerator {
 
   /**
    * Decide whether a `declare` keyword should be added to a top-level
-   * statement after transformations were applied.
+   * node after transformations were applied.
    */
-  private static shouldAddDeclareKeyword(statement: ts.Statement, strippingExport: boolean): boolean {
+  private static shouldAddDeclareKeyword(node: ts.Node, strippingExport: boolean): boolean {
     // Only these statement types need a declare keyword at top level
     const needsDeclareKeyword =
-      ts.isClassDeclaration(statement) ||
-      ts.isEnumDeclaration(statement) ||
-      ts.isFunctionDeclaration(statement) ||
-      ts.isModuleDeclaration(statement);
+      ts.isClassDeclaration(node) ||
+      ts.isEnumDeclaration(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isModuleDeclaration(node);
 
     if (!needsDeclareKeyword) {
       return false;
     }
 
-    const sourceFile = statement.getSourceFile();
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const sourceFile = tryGetSourceFile(node);
     if (!sourceFile) {
       return true;
     }
@@ -2172,20 +2172,20 @@ export class OutputGenerator {
    * Decide whether a module declaration should be forcibly exported (used for
    * namespace/module augmentation cases).
    */
-  private static shouldForceExport(statement: ts.Statement): boolean {
-    if (!ts.isModuleDeclaration(statement)) {
+  private static shouldForceExport(node: ts.Node): boolean {
+    if (!ts.isModuleDeclaration(node)) {
       return false;
     }
 
-    if (!ts.isIdentifier(statement.name)) {
+    if (!ts.isIdentifier(node.name)) {
       return false;
     }
 
-    if (OutputGenerator.isNamespaceDeclaration(statement)) {
+    if (OutputGenerator.isNamespaceDeclaration(node)) {
       return false;
     }
 
-    if ((statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0) {
+    if ((node.flags & ts.NodeFlags.GlobalAugmentation) !== 0) {
       return false;
     }
 
