@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import type { TypeRegistry } from "./registry";
 import { ExportKind, type ExternalImport, type ImportInfo, type TypeDeclaration } from "./types";
 
@@ -547,7 +547,6 @@ export class TreeShaker {
      * for inclusion decisions.
      */
     if (!ts.isModuleDeclaration(declaration.node)) return false;
-    // eslint-disable-next-line no-bitwise
     return (declaration.node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
   }
 }

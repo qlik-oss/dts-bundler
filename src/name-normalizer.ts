@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import ts from "typescript";
+import * as ts from "typescript";
 import { isDeclareGlobal } from "./declaration-utils";
 import type { TypeRegistry } from "./registry";
 import { ExportKind, type ExternalImport, type TypeDeclaration } from "./types";
@@ -384,7 +384,7 @@ export class NameNormalizer {
     const files = new Set<string>();
 
     for (const [filePath, declarations] of this.registry.declarationsByFile.entries()) {
-      const declId = declarations.values().next().value as symbol | undefined;
+      const declId = declarations.values().next().value;
       if (!declId) continue;
       const decl = this.registry.getDeclaration(declId);
       if (!decl) continue;

@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 
 /**
  * Options that control how AST nodes are printed.
@@ -283,7 +283,7 @@ export class AstPrinter {
     };
 
     const result = ts.transform(node, [transformer]);
-    const transformed = result.transformed[0] as T;
+    const transformed = result.transformed[0];
     result.dispose();
     return transformed;
   }

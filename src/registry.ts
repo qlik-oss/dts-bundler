@@ -203,7 +203,7 @@ export class TypeRegistry {
     const localKey = `${fromFile}:${name}`;
     const ids = this.nameIndex.get(localKey);
     if (ids && ids.size > 0) {
-      const id = ids.values().next().value as symbol | undefined;
+      const id = ids.values().next().value;
       return id ? (this.declarations.get(id) ?? null) : null;
     }
     return null;
@@ -229,7 +229,7 @@ export class TypeRegistry {
   getFirstDeclarationIdByKey(key: string): symbol | null {
     const ids = this.nameIndex.get(key);
     if (!ids || ids.size === 0) return null;
-    return ids.values().next().value as symbol | null;
+    return ids.values().next().value ?? null;
   }
 
   /** Retrieve a declaration by its symbol id. */

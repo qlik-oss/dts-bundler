@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 
 type NormalizeOptions = {
   preserveJsDoc?: boolean;
@@ -28,7 +28,7 @@ function collapseSimpleTypeLiterals(text: string, originalText?: string): string
     return text;
   }
 
-  return text.replace(/\{\n([\s\S]*?)\n\s*\}/g, (match, body) => {
+  return text.replace(/\{\n([\s\S]*?)\n\s*\}/g, (match: string, body: string) => {
     const lines = body
       .split("\n")
       .map((line: string) => line.trim())
@@ -55,7 +55,7 @@ function collapseSimpleTypeLiterals(text: string, originalText?: string): string
 }
 
 function collapseGenericArguments(text: string): string {
-  return text.replace(/<([\s\S]*?)>/g, (match, body) => {
+  return text.replace(/<([\s\S]*?)>/g, (match: string, body: string) => {
     if (!body.includes("\n")) {
       return match;
     }
@@ -86,8 +86,8 @@ export function normalizePrintedStatement(
   let result = text.replace(/\t/g, "  ");
   result = normalizeIndentation(result);
   result = collapseGenericArguments(result);
-  result = result.replace(/<([^>]*?)\n\s*([^>]*?)>/g, (match, first, second) => {
-    return `<${String(first).trim()} ${String(second).trim()}>`;
+  result = result.replace(/<([^>]*?)\n\s*([^>]*?)>/g, (match: string, first: string, second: string) => {
+    return `<${first.trim()} ${second.trim()}>`;
   });
 
   if (!preserveJsDoc) {
@@ -100,10 +100,8 @@ export function normalizePrintedStatement(
 
   if (ts.isVariableStatement(node)) {
     result = preserveJsDoc ? stripLeadingNonJsDoc(result) : stripLeadingAllComments(result);
-    result = result.replace(/:\s*([^;]+);/g, (match, typeText) => {
-      const collapsed = String(typeText)
-        .replace(/\s*\n\s*/g, " ")
-        .trim();
+    result = result.replace(/:\s*([^;]+);/g, (match: string, typeText: string) => {
+      const collapsed = typeText.replace(/\s*\n\s*/g, " ").trim();
       return `: ${collapsed};`;
     });
     result = result.replace(/\{\s*([A-Za-z_$][\w$]*\??\s*:\s*[^;{}]+)\s*;\s*\}/g, "{ $1 }");
@@ -130,24 +128,27 @@ export function normalizePrintedStatement(
   if (ts.isEnumDeclaration(node)) {
     const printedBody = result.split("{")[1] ?? "";
     if (printedBody.includes("\n")) {
-      result = result.replace(/(^\s*[^\n{}]+)(\n)(?=\s*(?:[^\n{}]|\}))/gm, (match, line, newline) => {
-        const trimmed = String(line).trim();
-        if (trimmed.length === 0) {
-          return match;
-        }
-        if (
-          trimmed.startsWith("//") ||
-          trimmed.startsWith("/*") ||
-          trimmed.startsWith("*") ||
-          trimmed.startsWith("*/")
-        ) {
-          return match;
-        }
-        if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("}")) {
-          return match;
-        }
-        return `${line},${newline}`;
-      });
+      result = result.replace(
+        /(^\s*[^\n{}]+)(\n)(?=\s*(?:[^\n{}]|\}))/gm,
+        (match: string, line: string, newline: string) => {
+          const trimmed = line.trim();
+          if (trimmed.length === 0) {
+            return match;
+          }
+          if (
+            trimmed.startsWith("//") ||
+            trimmed.startsWith("/*") ||
+            trimmed.startsWith("*") ||
+            trimmed.startsWith("*/")
+          ) {
+            return match;
+          }
+          if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("}")) {
+            return match;
+          }
+          return `${line},${newline}`;
+        },
+      );
     }
   }
 

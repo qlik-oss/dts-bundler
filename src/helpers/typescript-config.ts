@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import ts from "typescript";
+import * as ts from "typescript";
 
 const parseConfigHost: ts.ParseConfigHost = {
   useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-  readDirectory: ts.sys.readDirectory,
-  fileExists: ts.sys.fileExists,
-  readFile: ts.sys.readFile,
+  readDirectory: (...args: Parameters<typeof ts.sys.readDirectory>) => ts.sys.readDirectory(...args),
+  fileExists: (fileName: string) => ts.sys.fileExists(fileName),
+  readFile: (fileName: string) => ts.sys.readFile(fileName),
 };
 
 /**
@@ -41,10 +41,11 @@ export function findTsConfig(inputFile: string): string {
  * @returns Parsed compiler options
  */
 export function getCompilerOptions(configPath: string): ts.CompilerOptions {
-  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+  const configFile = ts.readConfigFile(configPath, (fileName: string) => ts.sys.readFile(fileName));
 
   if (configFile.error) {
-    throw new Error(`Error reading tsconfig.json: ${configFile.error.messageText}`);
+    const message = ts.flattenDiagnosticMessageText(configFile.error.messageText, "\n");
+    throw new Error(`Error reading tsconfig.json: ${message}`);
   }
 
   const parsedConfig = ts.parseJsonConfigFileContent(
@@ -58,7 +59,7 @@ export function getCompilerOptions(configPath: string): ts.CompilerOptions {
   if (parsedConfig.errors.length > 0) {
     const errors = parsedConfig.errors
       .filter((d) => d.code !== 18003) // Ignore "No inputs found" error
-      .map((d) => d.messageText)
+      .map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"))
       .join("\n");
 
     if (errors) {

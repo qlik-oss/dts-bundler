@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AstPrinter } from "../ast-printer";
 import type { TypeDeclaration } from "../types";

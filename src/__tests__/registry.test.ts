@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TypeRegistry } from "../registry";
 import { ExportKind, type TypeDeclaration } from "../types";

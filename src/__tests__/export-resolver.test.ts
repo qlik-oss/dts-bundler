@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExportResolver } from "../export-resolver";
 import type { FileCollector } from "../file-collector";

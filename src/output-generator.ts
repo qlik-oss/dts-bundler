@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import * as ts from "typescript";
 import { AstPrinter } from "./ast-printer";
 import { getModifiers, modifiersToMap, recreateRootLevelNodeWithModifiers } from "./helpers/ast-transformer";
 import { buildEntryExportData, type EntryExportData } from "./helpers/entry-exports";
@@ -350,8 +350,9 @@ export class OutputGenerator {
       usedDeclarations: this.usedDeclarations,
       entryFile: this.options.entryFile,
       nameMap: this.nameMap,
-      getNormalizedExternalImportName: this.getNormalizedExternalImportName.bind(this),
-      extractImportName: OutputGenerator.extractImportName,
+      getNormalizedExternalImportName: (moduleName: string, importName: string) =>
+        this.getNormalizedExternalImportName(moduleName, importName),
+      extractImportName: (s: string) => OutputGenerator.extractImportName(s),
       entryAliasMap: this.getEntryExportAliasMap(),
     });
     return this.entryExportData;
@@ -1015,7 +1016,9 @@ export class OutputGenerator {
     }
 
     const exportedNames = this.registry.exportedNamesByFile.get(info.targetFile) ?? [];
-    const namespaceExports = this.registry.namespaceExportsByFile.get(info.targetFile) ?? new Map();
+    const namespaceExports =
+      this.registry.namespaceExportsByFile.get(info.targetFile) ??
+      new Map<string, { targetFile?: string; externalModule?: string; externalImportName?: string }>();
 
     for (const exported of exportedNames) {
       const childInfo = this.registry.getNamespaceExportInfo(info.targetFile, exported.name);
@@ -1776,7 +1779,6 @@ export class OutputGenerator {
               const inferred = typeChecker.typeToTypeNode(
                 returnType,
                 undefined,
-                // eslint-disable-next-line no-bitwise
                 ts.NodeBuilderFlags.NoTruncation |
                   ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
                   ts.NodeBuilderFlags.NoTypeReduction,
@@ -1814,10 +1816,10 @@ export class OutputGenerator {
       modifiersMap[ts.SyntaxKind.DeclareKeyword] = true;
     }
 
-    statement = recreateRootLevelNodeWithModifiers(statement, modifiersMap) as ts.Statement;
+    statement = recreateRootLevelNodeWithModifiers(statement, modifiersMap);
 
     const result = ts.transform(statement, [OutputGenerator.createOutputTransformer()]);
-    const transformed = result.transformed[0] as ts.Statement;
+    const transformed = result.transformed[0];
     result.dispose();
     return transformed;
   }
@@ -1880,7 +1882,6 @@ export class OutputGenerator {
         }
 
         if (ts.isModuleDeclaration(node)) {
-          // eslint-disable-next-line no-bitwise
           const isDeclareGlobal = (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
           const isExternalModule = ts.isStringLiteral(node.name) || ts.isNoSubstitutionTemplateLiteral(node.name);
           let body = node.body;
@@ -1895,7 +1896,6 @@ export class OutputGenerator {
 
           let flags = node.flags;
           if (!isDeclareGlobal && ts.isIdentifier(node.name) && OutputGenerator.isNamespaceDeclaration(node)) {
-            // eslint-disable-next-line no-bitwise
             flags |= ts.NodeFlags.Namespace;
           }
 
@@ -2185,7 +2185,6 @@ export class OutputGenerator {
       return false;
     }
 
-    // eslint-disable-next-line no-bitwise
     if ((statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0) {
       return false;
     }

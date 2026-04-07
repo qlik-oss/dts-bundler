@@ -1,4 +1,4 @@
-import ts from "typescript";
+import * as ts from "typescript";
 import type { AstPrinter } from "./ast-printer";
 import { collectBindingIdentifiersFromName, hasBindingPatternInitializer } from "./helpers/binding-identifiers";
 import { normalizePrintedStatement } from "./helpers/print-normalizer";
@@ -33,6 +33,32 @@ export class VariableDeclarationEmitter {
     this.addExtraDefaultExport = addExtraDefaultExport;
     this.printer = printer;
     this.getRenameMap = getRenameMap;
+  }
+
+  private static tryGetSourceFile(node: ts.Node): ts.SourceFile | null {
+    let current: ts.Node | undefined = node;
+
+    while (current) {
+      if (ts.isSourceFile(current)) {
+        return current;
+      }
+
+      current = (current as Omit<ts.Node, "parent"> & { parent?: ts.Node }).parent;
+    }
+
+    return null;
+  }
+
+  private static getPrintSourceFile(node: ts.Node): ts.SourceFile {
+    return (
+      VariableDeclarationEmitter.tryGetSourceFile(node) ??
+      ts.createSourceFile("__synthetic__.ts", "", ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+    );
+  }
+
+  private static tryGetVariableDeclarationList(decl: ts.VariableDeclaration): ts.VariableDeclarationList | null {
+    const parent = (decl as Omit<ts.VariableDeclaration, "parent"> & { parent?: ts.Node }).parent;
+    return parent && ts.isVariableDeclarationList(parent) ? parent : null;
   }
 
   generateVariableStatementLines(statement: ts.VariableStatement, declarations: TypeDeclaration[]): string[] {
@@ -119,14 +145,6 @@ export class VariableDeclarationEmitter {
     modifiers.push(ts.factory.createModifier(ts.SyntaxKind.DeclareKeyword));
 
     const variableStatement = ts.factory.createVariableStatement(modifiers, declarationList);
-    const sourceFile = statement.getSourceFile();
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!sourceFile) {
-      const pos = statement.pos;
-      const end = statement.end;
-      ts.setTextRange(variableStatement, { pos, end });
-      return variableStatement;
-    }
     const pos = statement.pos >= 0 ? statement.pos : 0;
     const end = statement.end >= 0 ? statement.end : pos;
     ts.setTextRange(variableStatement, { pos, end });
@@ -175,7 +193,6 @@ export class VariableDeclarationEmitter {
         const typeNode = this.checker.typeToTypeNode(
           type,
           undefined,
-          // eslint-disable-next-line no-bitwise
           ts.NodeBuilderFlags.NoTruncation |
             ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
             ts.NodeBuilderFlags.NoTypeReduction,
@@ -218,12 +235,10 @@ export class VariableDeclarationEmitter {
       let typeNode: ts.TypeNode | undefined;
 
       if (varDecl.initializer) {
-        // eslint-disable-next-line no-bitwise
         if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
           type = this.checker.getTypeAtLocation(varDecl.initializer);
         }
 
-        // eslint-disable-next-line no-bitwise
         if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
           if (ts.isNumericLiteral(varDecl.initializer)) {
             typeNode = ts.factory.createLiteralTypeNode(ts.factory.createNumericLiteral(varDecl.initializer.text));
@@ -250,7 +265,6 @@ export class VariableDeclarationEmitter {
         typeNode = this.checker.typeToTypeNode(
           type,
           undefined,
-          // eslint-disable-next-line no-bitwise
           ts.NodeBuilderFlags.NoTruncation |
             ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
             ts.NodeBuilderFlags.NoTypeReduction,
@@ -305,7 +319,6 @@ export class VariableDeclarationEmitter {
         const inferred = this.checker.typeToTypeNode(
           signatureReturnType,
           undefined,
-          // eslint-disable-next-line no-bitwise
           ts.NodeBuilderFlags.NoTruncation |
             ts.NodeBuilderFlags.UseAliasDefinedOutsideCurrentScope |
             ts.NodeBuilderFlags.NoTypeReduction,
@@ -366,15 +379,10 @@ export class VariableDeclarationEmitter {
      */
     const renameMap = this.getRenameMap(declarations);
     const renameMapToUse = renameMap.size > 0 ? renameMap : undefined;
-    const sourceFile = sourceStatement.getSourceFile();
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!sourceFile) {
-      const fallbackSource = statementNode.getSourceFile();
-      const printed = this.printer.printStatement(statementNode, fallbackSource, { renameMap: renameMapToUse });
-      return normalizePrintedStatement(printed, sourceStatement, "", { preserveJsDoc });
-    }
-    const printed = this.printer.printStatement(statementNode, sourceFile, { renameMap: renameMapToUse });
-    const originalText = sourceStatement.getText(sourceFile);
+    const sourceFile = VariableDeclarationEmitter.tryGetSourceFile(sourceStatement);
+    const printSourceFile = sourceFile ?? VariableDeclarationEmitter.getPrintSourceFile(statementNode);
+    const printed = this.printer.printStatement(statementNode, printSourceFile, { renameMap: renameMapToUse });
+    const originalText = sourceFile ? sourceStatement.getText(sourceFile) : "";
     return normalizePrintedStatement(printed, sourceStatement, originalText, { preserveJsDoc });
   }
 
@@ -401,12 +409,12 @@ export class VariableDeclarationEmitter {
       return false;
     }
 
-    const list = decl.parent as ts.Node | undefined;
-    if (!list || !ts.isVariableDeclarationList(list)) {
+    const list = VariableDeclarationEmitter.tryGetVariableDeclarationList(decl);
+    if (!list) {
       return false;
     }
+
     // Only preserve initializers for const declarations
-    // eslint-disable-next-line no-bitwise
     if ((list.flags & ts.NodeFlags.Const) === 0) {
       return false;
     }
