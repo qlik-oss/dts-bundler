@@ -617,9 +617,7 @@ export class NameNormalizer {
     }
 
     const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
-    return (
-      (this.typeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined
-    );
+    return this.typeChecker.resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined;
   }
 
   private collectGlobalReferencedNames(): Set<string> {
