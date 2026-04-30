@@ -238,7 +238,7 @@ describe("VariableDeclarationEmitter", () => {
         },
       ] as unknown as TypeDeclaration[];
 
-      const lines = emitter.generateVariableStatementLines(statement, declarations as unknown as TypeDeclaration[]);
+      const lines = emitter.generateVariableStatementLines(statement, declarations);
       expect(lines.length).toBeGreaterThan(0);
     });
   });

@@ -32,10 +32,11 @@ export function modifiersToMap(modifiers: readonly ts.Modifier[] | undefined | n
 export function modifiersMapToArray(modifiersMap: ModifiersMap): ts.Modifier[] {
   return Object.entries(modifiersMap)
     .filter(([, include]) => include)
-    .map(([kind]) => ts.factory.createModifier(Number(kind)))
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    .map(([kind]) => ts.factory.createModifier(Number(kind) as ts.ModifierSyntaxKind))
     .sort((a, b) => {
-      const aValue = modifiersPriority[a.kind as ts.ModifierSyntaxKind] || 0;
-      const bValue = modifiersPriority[b.kind as ts.ModifierSyntaxKind] || 0;
+      const aValue = modifiersPriority[a.kind] ?? 0;
+      const bValue = modifiersPriority[b.kind] ?? 0;
       return bValue - aValue;
     });
 }

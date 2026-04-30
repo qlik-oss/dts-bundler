@@ -616,18 +616,9 @@ export class NameNormalizer {
       return false;
     }
 
-    interface Ts54CompatTypeChecker extends ts.TypeChecker {
-      resolveName(
-        name: string,
-        location: ts.Node | undefined,
-        meaning: ts.SymbolFlags,
-        excludeGlobals: boolean,
-      ): ts.Symbol | undefined;
-    }
-
     const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
     return (
-      (this.typeChecker as Ts54CompatTypeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined
+      (this.typeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined
     );
   }
 
