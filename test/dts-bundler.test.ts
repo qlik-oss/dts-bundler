@@ -284,6 +284,16 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should strip class member implementations when members have modifiers", () => {
+      const { expected, result } = runTestCase("class-member-with-modifiers");
+      expect(result).toBe(expected);
+    });
+
+    it("should strip class member implementations when members have no modifiers", () => {
+      const { expected, result } = runTestCase("class-member-without-modifiers");
+      expect(result).toBe(expected);
+    });
+
     it("should handle default export of just declared class from entry", () => {
       const { expected, result } = runTestCase("export-default-just-declared-class-from-entry");
       expect(result).toBe(expected);

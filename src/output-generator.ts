@@ -1932,75 +1932,55 @@ export class OutputGenerator {
       return updated;
     }
 
-    if (modifiers) {
-      const filteredModifiers = OutputGenerator.stripAccessModifiers(modifiers);
-      if (filteredModifiers !== modifiers) {
-        if (ts.isMethodDeclaration(member)) {
-          const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
-          const updated = ts.factory.updateMethodDeclaration(
-            member,
-            filteredModifiers,
-            member.asteriskToken,
-            member.name,
-            member.questionToken,
-            member.typeParameters,
-            parameters,
-            member.type,
-            undefined,
-          );
-          ts.setTextRange(updated, member);
-          return updated;
-        }
-      }
+    const filteredModifiers = OutputGenerator.stripAccessModifiers(modifiers);
 
-      if (ts.isMethodDeclaration(member) && member.body) {
-        const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
-        const updated = ts.factory.updateMethodDeclaration(
-          member,
-          filteredModifiers,
-          member.asteriskToken,
-          member.name,
-          member.questionToken,
-          member.typeParameters,
-          parameters,
-          member.type,
-          undefined,
-        );
-        ts.setTextRange(updated, member);
-        return updated;
-      }
+    if (ts.isMethodDeclaration(member) && (filteredModifiers !== modifiers || member.body)) {
+      const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
+      const updated = ts.factory.updateMethodDeclaration(
+        member,
+        filteredModifiers,
+        member.asteriskToken,
+        member.name,
+        member.questionToken,
+        member.typeParameters,
+        parameters,
+        member.type,
+        undefined,
+      );
+      ts.setTextRange(updated, member);
+      return updated;
+    }
 
-      if (ts.isConstructorDeclaration(member) && member.body) {
-        const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
-        const updated = ts.factory.updateConstructorDeclaration(member, filteredModifiers, parameters, undefined);
-        ts.setTextRange(updated, member);
-        return updated;
-      }
+    if (ts.isConstructorDeclaration(member) && member.body) {
+      const parameters = member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter));
+      const updated = ts.factory.updateConstructorDeclaration(member, filteredModifiers, parameters, undefined);
+      ts.setTextRange(updated, member);
+      return updated;
+    }
 
-      if (ts.isGetAccessorDeclaration(member) && member.body) {
-        const updated = ts.factory.updateGetAccessorDeclaration(
-          member,
-          filteredModifiers,
-          member.name,
-          member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
-          member.type,
-          undefined,
-        );
-        ts.setTextRange(updated, member);
-        return updated;
-      }
+    if (ts.isGetAccessorDeclaration(member) && member.body) {
+      const updated = ts.factory.updateGetAccessorDeclaration(
+        member,
+        filteredModifiers,
+        member.name,
+        member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
+        member.type,
+        undefined,
+      );
+      ts.setTextRange(updated, member);
+      return updated;
+    }
 
-      if (ts.isSetAccessorDeclaration(member) && member.body) {
-        const updated = ts.factory.updateSetAccessorDeclaration(
-          member,
-          filteredModifiers,
-          member.name,
-          member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
-          undefined,
-        );
-        ts.setTextRange(updated, member);
-        return updated;
-      }
+    if (ts.isSetAccessorDeclaration(member) && member.body) {
+      const updated = ts.factory.updateSetAccessorDeclaration(
+        member,
+        filteredModifiers,
+        member.name,
+        member.parameters.map((parameter) => OutputGenerator.stripParameterInitializer(parameter)),
+        undefined,
+      );
+      ts.setTextRange(updated, member);
+      return updated;
     }
 
     return member;
@@ -2215,7 +2195,7 @@ export class OutputGenerator {
   }
 
   /**
-   * Remove access modifiers (public/private/protected) from a list of
+   * Remove access modifiers (public) from a list of
    * modifiers while preserving other modifiers.
    */
   private static stripAccessModifiers(
@@ -2225,12 +2205,7 @@ export class OutputGenerator {
       return modifiers;
     }
 
-    const filtered = modifiers.filter(
-      (modifier) =>
-        modifier.kind !== ts.SyntaxKind.PublicKeyword &&
-        modifier.kind !== ts.SyntaxKind.PrivateKeyword &&
-        modifier.kind !== ts.SyntaxKind.ProtectedKeyword,
-    );
+    const filtered = modifiers.filter((modifier) => modifier.kind !== ts.SyntaxKind.PublicKeyword);
 
     return filtered.length === modifiers.length ? modifiers : filtered;
   }
