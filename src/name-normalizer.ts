@@ -721,8 +721,7 @@ export class NameNormalizer {
     const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     type SuffixedEntity =
-      | { kind: "declaration"; declaration: TypeDeclaration }
-      | { kind: "external"; external: ExternalImport };
+      { kind: "declaration"; declaration: TypeDeclaration } | { kind: "external"; external: ExternalImport };
 
     const baseNameGroups = new Map<string, Map<string, SuffixedEntity[]>>();
 
