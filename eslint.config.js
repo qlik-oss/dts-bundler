@@ -10,6 +10,8 @@ export default defineConfig(
       "max-classes-per-file": "off",
       "no-continue": "off",
       "class-methods-use-this": "off",
+      // eslint-import-resolver can't follow npm aliases (typescript -> @typescript/typescript6)
+      "import-x/namespace": "off",
     },
   },
   // ignored files
