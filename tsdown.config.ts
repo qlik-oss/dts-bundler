@@ -4,4 +4,5 @@ export default defineConfig({
   outExtensions: () => ({ js: ".js" }),
   format: "esm",
   entry: ["src/index.ts"],
+  external: ["typescript"],
 });
