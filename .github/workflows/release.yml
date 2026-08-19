@@ -13,13 +13,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
       - name: Use Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: "pnpm"
       - name: Install dependencies
         run: pnpm install
@@ -27,8 +27,6 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
-      - name: Set NPM Token
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_CI_TOKEN }}" > .npmrc
       - name: Set version and publish
         run: |
           VERSION=$(git describe --tags --abbrev=7 --match "v*")
@@ -38,5 +36,3 @@ jobs:
           cat package.json
           # Publish npm package (--access public required for scoped packages)
           npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_CI_TOKEN }}

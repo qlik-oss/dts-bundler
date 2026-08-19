@@ -43,18 +43,17 @@
     "@qlik/prettier-config": "^1.0.2",
     "@qlik/tsconfig": "^1.0.2",
     "@types/node": "^26.2.0",
-    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^10.8.1",
     "prettier": "^3.9.6",
     "tsdown": "^0.22.14",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"
   },
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
