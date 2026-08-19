@@ -14,17 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Git Config
         run: |
           git config user.name "github-action"
           git config user.email "github-action@noreply.github.com"
       - name: Setup PNPM
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - name: Install Dependencies
         run: pnpm install
@@ -32,12 +32,12 @@ jobs:
         run: pnpm update --latest
       - name: Create Pull Request
         id: cpr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_ACCESS_TOKEN }}
           commit-message: "chore: update npm dependencies"
-          committer: svc-pipeline <svc_pipeline@qlik.com>
-          author: svc-pipeline <svc_pipeline@qlik.com>
+          committer: "svc-pipeline <svc_pipeline@qlik.com>"
+          author: "svc-pipeline <svc_pipeline@qlik.com>"
           branch: chore/update-dependencies
           delete-branch: true
           title: "chore: update npm dependencies"
