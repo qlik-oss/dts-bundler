@@ -39,16 +39,16 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "devDependencies": {
-    "@qlik/eslint-config": "2.1.0",
+    "@qlik/eslint-config": "2.1.1",
     "@qlik/prettier-config": "^1.1.0",
     "@qlik/tsconfig": "^1.1.0",
-    "@types/node": "^26.4.1",
-    "eslint": "^10.9.1",
+    "@types/node": "^26.5.1",
+    "eslint": "^10.10.0",
     "prettier": "^3.9.6",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.0"
   },
-  "packageManager": "pnpm@11.25.0",
+  "packageManager": "pnpm@12.4.1",
   "engines": {
     "node": ">=22"
   },
