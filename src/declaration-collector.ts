@@ -42,7 +42,7 @@ export class DeclarationCollector {
    * @param filePath - The source file path where the declaration was found.
    */
   private registerDeclaration(declaration: TypeDeclaration, filePath: string): void {
-    // eslint-disable-next-line no-param-reassign
+    // oxlint-disable-next-line no-param-reassign -- Update this declaration in place to preserve its identity.
     declaration.isFromInlinedLibrary = this.fileCollector.isFromInlinedLibrary(filePath);
     this.registry.register(declaration);
   }

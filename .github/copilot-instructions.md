@@ -62,7 +62,7 @@ The `dts-bundle-generator/` folder contains the original dts-bundle-generator pr
 ## Code Quality Standards
 
 - All code must pass TypeScript strict mode checks
-- Follow the existing code style (enforced by ESLint)
+- Follow the existing code style (enforced by Oxlint)
 - Use proper null checks - avoid unnecessary conditionals but handle edge cases
 - Add comments for complex logic, especially AST traversal code
 

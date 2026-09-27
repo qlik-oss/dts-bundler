@@ -95,6 +95,7 @@ export class ImportParser {
     }
 
     const importPath = moduleSpecifier.text;
+    // oxlint-disable-next-line typescript/no-deprecated -- Keep compatibility with TypeScript 5.3 import clauses.
     const isTypeOnly = statement.importClause?.isTypeOnly ?? false;
 
     const shouldInline = this.fileCollector.shouldInline(importPath, filePath);

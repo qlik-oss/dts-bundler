@@ -30,17 +30,14 @@ export function modifiersToMap(modifiers: readonly ts.Modifier[] | undefined | n
 }
 
 export function modifiersMapToArray(modifiersMap: ModifiersMap): ts.Modifier[] {
-  return (
-    Object.entries(modifiersMap)
-      .filter(([, include]) => include)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      .map(([kind]) => ts.factory.createModifier(Number(kind) as ts.ModifierSyntaxKind))
-      .sort((a, b) => {
-        const aValue = modifiersPriority[a.kind] ?? 0;
-        const bValue = modifiersPriority[b.kind] ?? 0;
-        return bValue - aValue;
-      })
-  );
+  return Object.entries(modifiersMap)
+    .filter(([, include]) => include)
+    .map(([kind]) => ts.factory.createModifier(Number(kind) as ts.ModifierSyntaxKind))
+    .sort((a, b) => {
+      const aValue = modifiersPriority[a.kind] ?? 0;
+      const bValue = modifiersPriority[b.kind] ?? 0;
+      return bValue - aValue;
+    });
 }
 
 export function recreateRootLevelNodeWithModifiers(
@@ -91,6 +88,7 @@ function recreateRootLevelNodeWithModifiersImpl(node: ts.Node, modifiersMap: Mod
       node.isTypeOnly,
       node.exportClause,
       node.moduleSpecifier,
+      // oxlint-disable-next-line typescript/no-deprecated -- Keep compatibility with TypeScript 5.3 declarations.
       (node as Ts53CompatExportDeclaration).attributes || node.assertClause,
     );
   }
@@ -116,6 +114,7 @@ function recreateRootLevelNodeWithModifiersImpl(node: ts.Node, modifiersMap: Mod
       modifiers,
       node.importClause,
       node.moduleSpecifier,
+      // oxlint-disable-next-line typescript/no-deprecated -- Keep compatibility with TypeScript 5.3 declarations.
       (node as Ts53CompatImportDeclaration).attributes || node.assertClause,
     );
   }

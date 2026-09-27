@@ -243,12 +243,11 @@ function parseArgs(): { entry: string | null; output: string | null; inlinedLibr
   return options;
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
-const __filename = fileURLToPath(import.meta.url);
+const fileName = fileURLToPath(import.meta.url);
 
 function isRunAsCli(): boolean {
   try {
-    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileName);
   } catch {
     return false;
   }
