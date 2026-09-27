@@ -3,58 +3,57 @@
   "version": "",
   "description": "Bundle TypeScript declaration files into a single file",
   "keywords": [],
+  "license": "ISC",
+  "author": "nilzona",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/qlik-oss/dts-bundler.git"
   },
-  "license": "ISC",
-  "author": "nilzona",
-  "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "bin": {
     "bundle-types": "dist/index.js"
   },
   "files": [
     "dist"
   ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsdown src/index.ts --outDir dist --format esm --dts",
     "check-types": "tsc6 --noEmit",
-    "format:check": "prettier --check '**' --ignore-unknown",
-    "format:write": "prettier --write '**' --ignore-unknown",
+    "format:check": "oxfmt --check",
+    "format:write": "oxfmt",
     "lint": "oxlint",
     "test": "vitest run",
     "test:update": "vitest run -u",
     "test:watch": "vitest"
   },
-  "prettier": "@qlik/prettier-config",
   "dependencies": {
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "devDependencies": {
+    "@qlik/oxfmt-config": "^0.2.1",
     "@qlik/oxlint-config": "^0.8.1",
-    "@qlik/prettier-config": "^1.1.0",
     "@qlik/tsconfig": "^1.1.0",
     "@types/node": "^26.6.2",
+    "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
     "oxlint-tsgolint": "^7.0.2003",
-    "prettier": "^3.9.9",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.1"
   },
-  "packageManager": "pnpm@12.6.0",
   "engines": {
     "node": ">=22"
   },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  }
+  "packageManager": "pnpm@12.6.0"
 }
