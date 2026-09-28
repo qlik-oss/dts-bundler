@@ -15,9 +15,8 @@ import { describe, expect, it } from "vitest";
 import { bundleTypes } from "../src/index";
 import { runTestCase } from "./run-test-case";
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageJsonPath = path.resolve(__dirname, "../package.json");
+const directoryName = path.dirname(fileURLToPath(import.meta.url));
+const packageJsonPath = path.resolve(directoryName, "../package.json");
 
 describe("TypeScript Declaration Bundler", () => {
   describe("Core Functionality", () => {

@@ -481,7 +481,7 @@ export class DependencyAnalyzer {
 
     const isCtsFile = (() => {
       const sourceFile = node.getSourceFile();
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Ignore AST nodes without a source file.
       if (!sourceFile) {
         return false;
       }

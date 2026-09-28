@@ -4,9 +4,8 @@ import { fileURLToPath } from "url";
 import { bundleTypes } from "../src/index";
 import type { BundleTypesOptions } from "../src/types";
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const testDir = path.join(__dirname, "fixtures");
+const directoryName = path.dirname(fileURLToPath(import.meta.url));
+const testDir = path.join(directoryName, "fixtures");
 
 // make this type partial from BundleDtsOptions without entry
 export type RunTestCaseOptions = Omit<Partial<BundleTypesOptions>, "entry">;

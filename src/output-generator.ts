@@ -19,9 +19,8 @@ import { VariableDeclarationEmitter } from "./variable-declaration-emitter";
  */
 function getVersion(): string {
   try {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const pkgPath = path.resolve(__dirname, "../package.json");
+    const directoryName = path.dirname(fileURLToPath(import.meta.url));
+    const pkgPath = path.resolve(directoryName, "../package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
     return pkg.version || "unversioned";
   } catch {
@@ -1707,7 +1706,7 @@ export class OutputGenerator {
   ): ts.Node {
     let statement = declaration.node;
     const modifiersMap = modifiersToMap(getModifiers(statement));
-    const hadExport = Boolean(modifiersMap[ts.SyntaxKind.ExportKeyword]);
+    const hadExport = modifiersMap[ts.SyntaxKind.ExportKeyword];
     const shouldForceExport = shouldHaveExport && (forceExport || OutputGenerator.shouldForceExport(statement));
     const shouldExportDefaultOnlyType =
       declaration.exportInfo.kind === ExportKind.DefaultOnly &&
@@ -1733,9 +1732,7 @@ export class OutputGenerator {
         const value = typeChecker.getConstantValue(member);
         if (value !== undefined) {
           const initializer =
-            typeof value === "number"
-              ? ts.factory.createNumericLiteral(value)
-              : ts.factory.createStringLiteral(String(value));
+            typeof value === "number" ? ts.factory.createNumericLiteral(value) : ts.factory.createStringLiteral(value);
           if (typeof value === "number") {
             nextNumericValue = value + 1;
           } else {
@@ -2134,7 +2131,7 @@ export class OutputGenerator {
    */
   private static isNamespaceDeclaration(node: ts.ModuleDeclaration): boolean {
     const sourceFile = node.getSourceFile();
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- Ignore AST nodes without a source file.
     if (!sourceFile) {
       return false;
     }

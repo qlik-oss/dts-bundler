@@ -19,7 +19,7 @@ export function findTsConfig(inputFile: string): string {
   let currentDir = path.dirname(absolutePath);
 
   // Walk up the directory tree looking for tsconfig.json
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Walk until reaching the filesystem root.
   while (true) {
     const configPath = path.join(currentDir, "tsconfig.json");
     if (fs.existsSync(configPath)) {
