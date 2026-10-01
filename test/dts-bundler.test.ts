@@ -263,6 +263,11 @@ describe("TypeScript Declaration Bundler", () => {
   });
 
   describe("Export Patterns", () => {
+    it("should preserve exports with per-specifier type modifiers", () => {
+      const { expected, result } = runTestCase("per-specifier-type-exports");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);

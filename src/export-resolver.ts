@@ -221,6 +221,7 @@ export class ExportResolver {
         for (const element of statement.exportClause.elements) {
           const exportedName = element.name.text;
           const originalName = element.propertyName?.text || exportedName;
+          const isTypeOnlyExport = statement.isTypeOnly || element.isTypeOnly;
 
           if (isInline && resolvedPath) {
             const namespaceInfo = this.registry.getNamespaceExportInfo(resolvedPath, originalName);
@@ -250,14 +251,14 @@ export class ExportResolver {
                   externalModule: exportedInfo.externalModule,
                   externalImportName,
                   exportFrom: exportedInfo.exportFrom,
-                  isTypeOnly: statement.isTypeOnly,
+                  isTypeOnly: isTypeOnlyExport,
                 });
               } else {
                 this.registry.registerExportedName(filePath, {
                   name: exportedName,
                   sourceFile: resolvedSourceFile,
                   originalName: resolvedOriginalName,
-                  isTypeOnly: statement.isTypeOnly,
+                  isTypeOnly: isTypeOnlyExport,
                 });
 
                 const starResolved = exportedInfo
@@ -273,7 +274,7 @@ export class ExportResolver {
                     externalModule: starResolved.moduleName,
                     externalImportName: starImportName,
                     exportFrom: true,
-                    isTypeOnly: statement.isTypeOnly,
+                    isTypeOnly: isTypeOnlyExport,
                   });
                 }
               }
@@ -281,12 +282,12 @@ export class ExportResolver {
           } else if (!isInline) {
             const importName = originalName === exportedName ? originalName : `${originalName} as ${exportedName}`;
             const typesLibraryName = this.getTypesLibraryName(filePath, importPath);
-            this.registry.registerExternal(importPath, importName, statement.isTypeOnly, false, typesLibraryName);
+            this.registry.registerExternal(importPath, importName, isTypeOnlyExport, false, typesLibraryName);
             this.registry.registerExportedName(filePath, {
               name: exportedName,
               externalModule: importPath,
               externalImportName: importName,
-              isTypeOnly: statement.isTypeOnly,
+              isTypeOnly: isTypeOnlyExport,
             });
           }
         }
@@ -296,6 +297,7 @@ export class ExportResolver {
       for (const element of statement.exportClause.elements) {
         const exportedName = element.name.text;
         const originalName = element.propertyName?.text || exportedName;
+        const isTypeOnlyExport = statement.isTypeOnly || element.isTypeOnly;
         const importInfo = fileImports?.get(originalName);
         let resolvedOriginalName = originalName;
         let resolvedSourceFile: string | null = importInfo?.sourceFile ?? null;
@@ -336,14 +338,14 @@ export class ExportResolver {
             name: exportedName,
             externalModule: importInfo.sourceFile,
             externalImportName: importInfo.originalName,
-            isTypeOnly: statement.isTypeOnly,
+            isTypeOnly: isTypeOnlyExport,
           });
         } else if (importInfo && resolvedSourceFile) {
           this.registry.registerExportedName(filePath, {
             name: exportedName,
             sourceFile: resolvedSourceFile,
             originalName: resolvedOriginalName,
-            isTypeOnly: statement.isTypeOnly,
+            isTypeOnly: isTypeOnlyExport,
           });
         } else {
           const registerLocalSource =
@@ -355,9 +357,9 @@ export class ExportResolver {
                   name: exportedName,
                   sourceFile: filePath,
                   originalName,
-                  isTypeOnly: statement.isTypeOnly,
+                  isTypeOnly: isTypeOnlyExport,
                 }
-              : { name: exportedName, isTypeOnly: statement.isTypeOnly },
+              : { name: exportedName, isTypeOnly: isTypeOnlyExport },
           );
         }
 
@@ -455,6 +457,7 @@ export class ExportResolver {
         for (const element of statement.exportClause.elements) {
           const exportedName = element.name.text;
           const originalName = element.propertyName?.text || exportedName;
+          const isTypeOnlyExport = statement.isTypeOnly || element.isTypeOnly;
 
           const importInfo = fileImports?.get(originalName);
           let resolvedOriginalName = originalName;
@@ -486,7 +489,7 @@ export class ExportResolver {
           }
 
           const declarationIds = this.registry.getDeclarationIdsByKey(key);
-          if (declarationIds && !moduleAugmentation) {
+          if (declarationIds && !moduleAugmentation && !isTypeOnlyExport) {
             const isReExportedImport = Boolean(
               importInfo && importInfo.sourceFile && importInfo.sourceFile !== filePath,
             );
@@ -510,7 +513,7 @@ export class ExportResolver {
             }
           }
 
-          if (!moduleAugmentation) {
+          if (!moduleAugmentation && !isTypeOnlyExport) {
             const localKey = `${filePath}:${originalName}`;
             const localDeclarationIds = this.registry.getDeclarationIdsByKey(localKey);
             if (localDeclarationIds) {
