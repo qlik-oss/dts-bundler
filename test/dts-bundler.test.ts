@@ -273,6 +273,31 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should keep type-only namespace re-exports type-only", () => {
+      const { expected, result } = runTestCase("type-only-namespace-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve local type-only default exports", () => {
+      const { expected, result } = runTestCase("type-only-local-default-export");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve direct type-only default re-exports", () => {
+      const { expected, result } = runTestCase("type-only-default-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve local default export specifiers", () => {
+      const { expected, result } = runTestCase("local-default-specifier-export");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep per-specifier type modifiers in mixed alias exports", () => {
+      const { expected, result } = runTestCase("mixed-type-value-alias-exports");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);

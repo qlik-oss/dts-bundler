@@ -10,6 +10,7 @@ export type EntryExportData = {
   exportFromTypeOnlyByModule: Map<string, Set<string>>;
   exportListItems: string[];
   exportListTypeOnlyItems: Set<string>;
+  exportListTypeModifierItems: Set<string>;
   exportListExternalDefaults: Set<string>;
   excludedExternalImports: Set<string>;
   requiredExternalImports: Set<string>;
@@ -124,6 +125,7 @@ export const buildEntryExportData = (params: {
   const exportFromTypeOnlyByModule = new Map<string, Set<string>>();
   const exportListItems: string[] = [];
   const exportListTypeOnlyItems = new Set<string>();
+  const exportListTypeModifierItems = new Set<string>();
   const exportListSet = new Set<string>();
   const exportListExternalDefaults = new Set<string>();
   const excludedExternalImports = new Set<string>();
@@ -136,6 +138,7 @@ export const buildEntryExportData = (params: {
       exportFromTypeOnlyByModule,
       exportListItems,
       exportListTypeOnlyItems,
+      exportListTypeModifierItems,
       exportListExternalDefaults,
       excludedExternalImports,
       requiredExternalImports,
@@ -167,7 +170,8 @@ export const buildEntryExportData = (params: {
   }
 
   for (const exported of exportedNames) {
-    if (exported.name === "default") {
+    // Default exports are emitted separately unless a value-capable symbol is exported as type-only.
+    if (exported.name === "default" && (exported.isTypeOnly !== true || exported.externalModule)) {
       continue;
     }
 
@@ -227,8 +231,11 @@ export const buildEntryExportData = (params: {
           .map((id) => params.registry.getDeclaration(id))
           .filter(Boolean)
       : [];
-    const isTypeOnlyDeclaration =
-      exported.isTypeOnly === true || (decls.length > 0 && decls.every((decl) => Boolean(decl && decl.isTypeOnly)));
+    const hasOnlyTypeDeclarations = decls.length > 0 && decls.every((decl) => Boolean(decl && decl.isTypeOnly));
+    if (exported.name === "default" && (decls.length === 0 || hasOnlyTypeDeclarations)) {
+      continue;
+    }
+    const isTypeOnlyDeclaration = exported.isTypeOnly === true || hasOnlyTypeDeclarations;
     const decl = decls[0] ?? null;
     const normalizedOriginal =
       decl?.normalizedName ??
@@ -251,6 +258,9 @@ export const buildEntryExportData = (params: {
       if (isTypeOnlyDeclaration) {
         exportListTypeOnlyItems.add(exportItem);
       }
+      if (exported.isTypeOnly === true && !hasOnlyTypeDeclarations) {
+        exportListTypeModifierItems.add(exportItem);
+      }
     }
   }
 
@@ -268,6 +278,7 @@ export const buildEntryExportData = (params: {
     exportFromTypeOnlyByModule,
     exportListItems,
     exportListTypeOnlyItems,
+    exportListTypeModifierItems,
     exportListExternalDefaults,
     excludedExternalImports,
     requiredExternalImports,

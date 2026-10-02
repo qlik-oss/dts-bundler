@@ -170,10 +170,12 @@ export class TypeRegistry {
   }
 
   /** Register a namespace export entry originating from the entry file. */
-  registerEntryNamespaceExport(filePath: string, name: string): void {
-    const exists = this.entryNamespaceExports.some((entry) => entry.name === name && entry.sourceFile === filePath);
-    if (!exists) {
-      this.entryNamespaceExports.push({ name, sourceFile: filePath });
+  registerEntryNamespaceExport(filePath: string, name: string, isTypeOnly = false): void {
+    const existing = this.entryNamespaceExports.find((entry) => entry.name === name && entry.sourceFile === filePath);
+    if (!existing) {
+      this.entryNamespaceExports.push({ name, sourceFile: filePath, isTypeOnly });
+    } else if (!isTypeOnly) {
+      existing.isTypeOnly = false;
     }
   }
 

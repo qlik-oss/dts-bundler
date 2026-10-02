@@ -312,13 +312,22 @@ export class OutputGenerator {
    * This will use `export type` when all exported items are type-only.
    */
   private generateNamedExports(): string[] {
-    const { exportListItems, exportListTypeOnlyItems, exportListExternalDefaults } = this.getEntryExportData();
-    if (exportListItems.length === 0) {
+    const {
+      exportListItems: rawExportListItems,
+      exportListTypeOnlyItems,
+      exportListTypeModifierItems,
+      exportListExternalDefaults,
+    } = this.getEntryExportData();
+    if (rawExportListItems.length === 0) {
       return [];
     }
 
-    const isTypeOnlyExport = exportListItems.every((item) => exportListTypeOnlyItems.has(item));
+    const isTypeOnlyExport = rawExportListItems.every((item) => exportListTypeOnlyItems.has(item));
     const exportPrefix = isTypeOnlyExport ? "export type" : "export";
+    // In mixed lists, value-capable symbols exported as type-only need an inline `type` modifier.
+    const exportListItems = isTypeOnlyExport
+      ? rawExportListItems
+      : rawExportListItems.map((item) => (exportListTypeModifierItems.has(item) ? `type ${item}` : item));
 
     const useMultilineForExternalDefaults =
       exportListItems.length > 1 &&
@@ -988,11 +997,20 @@ export class OutputGenerator {
       this.buildNamespaceBlocks(entry.sourceFile, entry.name, info, visited, blocks);
     }
 
+    const typeOnlyNames = new Set<string>();
     for (const entry of this.registry.entryNamespaceExports) {
       exportNames.push(entry.name);
+      if (entry.isTypeOnly) {
+        typeOnlyNames.add(entry.name);
+      }
     }
 
-    const exportList = exportNames.length > 0 ? [`export { ${exportNames.join(", ")} };`] : [];
+    const isTypeOnlyList = exportNames.every((name) => typeOnlyNames.has(name));
+    const exportItems = isTypeOnlyList
+      ? exportNames
+      : exportNames.map((name) => (typeOnlyNames.has(name) ? `type ${name}` : name));
+    const exportList =
+      exportNames.length > 0 ? [`export${isTypeOnlyList ? " type" : ""} { ${exportItems.join(", ")} };`] : [];
     return { blocks, exportList };
   }
 
