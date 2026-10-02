@@ -409,6 +409,7 @@ export class ExportResolver {
         for (const element of statement.exportClause.elements) {
           const exportedName = element.name.text;
           const originalName = element.propertyName?.text || exportedName;
+          const isTypeOnlyExport = statement.isTypeOnly || element.isTypeOnly;
           const defaultTarget = originalName === "default" ? this.resolveDefaultExportTarget(resolvedPath) : null;
           const resolvedOriginalName =
             originalName === "default" ? (defaultTarget?.name ?? originalName) : originalName;
@@ -417,7 +418,10 @@ export class ExportResolver {
 
           const key = `${resolvedSourceFile}:${resolvedOriginalName}`;
           const declarationIds = this.registry.getDeclarationIdsByKey(key);
-          if (declarationIds) {
+          const onlyTypeDeclarations =
+            declarationIds !== null &&
+            Array.from(declarationIds).every((id) => this.registry.getDeclaration(id)?.isTypeOnly === true);
+          if (declarationIds && (!isTypeOnlyExport || onlyTypeDeclarations)) {
             const isDefaultExport = exportedName === "default";
             const isAlias = exportedName !== resolvedOriginalName && !isDefaultExport;
             if (!isAlias) {
@@ -447,7 +451,7 @@ export class ExportResolver {
             }
           }
 
-          if (exportedName !== "default") {
+          if (exportedName !== "default" && (!isTypeOnlyExport || onlyTypeDeclarations)) {
             this.markMergedExportChain(filePath, exportedName, `${filePath}:${exportedName}`, new Set());
           }
         }

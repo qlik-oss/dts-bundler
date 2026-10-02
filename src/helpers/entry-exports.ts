@@ -227,7 +227,8 @@ export const buildEntryExportData = (params: {
           .map((id) => params.registry.getDeclaration(id))
           .filter(Boolean)
       : [];
-    const isTypeOnlyDeclaration = decls.length > 0 ? decls.every((decl) => Boolean(decl && decl.isTypeOnly)) : false;
+    const isTypeOnlyDeclaration =
+      exported.isTypeOnly === true || (decls.length > 0 && decls.every((decl) => Boolean(decl && decl.isTypeOnly)));
     const decl = decls[0] ?? null;
     const normalizedOriginal =
       decl?.normalizedName ??

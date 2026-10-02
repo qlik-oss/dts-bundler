@@ -268,6 +268,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should keep direct type-only re-exports of classes type-only", () => {
+      const { expected, result } = runTestCase("direct-type-only-class-reexport");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);
