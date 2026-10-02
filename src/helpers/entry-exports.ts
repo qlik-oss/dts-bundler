@@ -159,19 +159,23 @@ export const buildEntryExportData = (params: {
     params.registry.entryNamespaceExports.filter((entry) => entry.sourceFile === entryFile).map((entry) => entry.name),
   );
   const moduleAugmentations = new Set<string>();
+  const exportedModuleAugmentations = new Set<string>();
   const entryDeclarations = params.registry.declarationsByFile.get(entryFile);
   if (entryDeclarations) {
     for (const declId of entryDeclarations) {
       const decl = params.registry.getDeclaration(declId);
       if (decl && ts.isModuleDeclaration(decl.node) && ts.isIdentifier(decl.node.name)) {
         moduleAugmentations.add(decl.node.name.text);
+        if (ts.getModifiers(decl.node)?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword)) {
+          exportedModuleAugmentations.add(decl.node.name.text);
+        }
       }
     }
   }
 
   for (const exported of exportedNames) {
     // Default exports are emitted separately unless a value-capable symbol is exported as type-only.
-    if (exported.name === "default" && (exported.isTypeOnly !== true || exported.externalModule)) {
+    if (exported.name === "default" && exported.isTypeOnly !== true) {
       continue;
     }
 
@@ -179,14 +183,36 @@ export const buildEntryExportData = (params: {
       continue;
     }
 
-    if (moduleAugmentations.has(exported.name)) {
+    // Namespaces are normally exported via their declaration; type-only specifiers keep them local instead.
+    if (
+      moduleAugmentations.has(exported.name) &&
+      (exported.isTypeOnly !== true || exportedModuleAugmentations.has(exported.name))
+    ) {
       continue;
     }
 
     if (exported.externalModule && exported.externalImportName) {
-      const importName = params.getNormalizedExternalImportName(exported.externalModule, exported.externalImportName);
       const importKey = `${exported.externalModule}:${exported.externalImportName}`;
 
+      // `default` cannot be an import binding, so external type-only defaults are re-exported directly.
+      if (exported.name === "default") {
+        const [sourceName = exported.externalImportName] = exported.externalImportName.startsWith("default as ")
+          ? ["default"]
+          : exported.externalImportName.split(" as ");
+        const item = sourceName === "default" ? "default" : `${sourceName} as default`;
+        const list = exportFromByModule.get(exported.externalModule) ?? [];
+        list.push(item);
+        exportFromByModule.set(exported.externalModule, list);
+        const typeOnlySet = exportFromTypeOnlyByModule.get(exported.externalModule) ?? new Set<string>();
+        typeOnlySet.add(item);
+        exportFromTypeOnlyByModule.set(exported.externalModule, typeOnlySet);
+        if (!declarationExternalImports.has(importKey)) {
+          excludedExternalImports.add(importKey);
+        }
+        continue;
+      }
+
+      const importName = params.getNormalizedExternalImportName(exported.externalModule, exported.externalImportName);
       const typeOnlyExternal = exported.isTypeOnly === true;
 
       if (exported.exportFrom && !declarationExternalImports.has(importKey)) {
@@ -209,6 +235,8 @@ export const buildEntryExportData = (params: {
         exportListItems.push(exportName);
         if (typeOnlyExternal) {
           exportListTypeOnlyItems.add(exportName);
+          // External declarations are not analyzed, so keep the modifier in case the symbol is a value.
+          exportListTypeModifierItems.add(exportName);
         } else {
           params.registry.markExternalValueUsage(exported.externalModule, exported.externalImportName);
         }

@@ -298,6 +298,21 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should keep type-only external specifiers type-only in mixed export lists", () => {
+      const { expected, result } = runTestCase("type-only-external-mixed-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve type-only external default re-exports", () => {
+      const { expected, result } = runTestCase("type-only-external-default-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep type-only local namespace exports type-only", () => {
+      const { expected, result } = runTestCase("type-only-local-namespace-export");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);

@@ -292,7 +292,10 @@ export class OutputGenerator {
       if (exportItems.length > 0) {
         const typeOnlySet = exportFromTypeOnlyByModule.get(moduleName) ?? new Set<string>();
         const isTypeOnlyExport = exportItems.every((item) => typeOnlySet.has(item));
-        lines.push(OutputGenerator.buildExportFromLine(moduleName, exportItems, isTypeOnlyExport));
+        const items = isTypeOnlyExport
+          ? exportItems
+          : exportItems.map((item) => (typeOnlySet.has(item) ? `type ${item}` : item));
+        lines.push(OutputGenerator.buildExportFromLine(moduleName, items, isTypeOnlyExport));
       }
     }
 

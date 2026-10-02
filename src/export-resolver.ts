@@ -483,7 +483,7 @@ export class ExportResolver {
           }
 
           const moduleAugmentation = this.findModuleAugmentationDeclaration(filePath, originalName);
-          if (moduleAugmentation) {
+          if (moduleAugmentation && !isTypeOnlyExport) {
             moduleAugmentation.exportInfo = {
               kind: ExportKind.Named,
               wasOriginallyExported: true,
