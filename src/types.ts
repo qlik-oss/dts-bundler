@@ -102,6 +102,7 @@ export interface NamespaceExportInfo {
 export interface EntryNamespaceExport {
   name: string;
   sourceFile: string;
+  isTypeOnly?: boolean;
 }
 
 export interface StarExportInfo {

@@ -263,6 +263,61 @@ describe("TypeScript Declaration Bundler", () => {
   });
 
   describe("Export Patterns", () => {
+    it("should preserve exports with per-specifier type modifiers", () => {
+      const { expected, result } = runTestCase("per-specifier-type-exports");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep direct type-only re-exports of classes type-only", () => {
+      const { expected, result } = runTestCase("direct-type-only-class-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep type-only namespace re-exports type-only", () => {
+      const { expected, result } = runTestCase("type-only-namespace-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve local type-only default exports", () => {
+      const { expected, result } = runTestCase("type-only-local-default-export");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve direct type-only default re-exports", () => {
+      const { expected, result } = runTestCase("type-only-default-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve local default export specifiers", () => {
+      const { expected, result } = runTestCase("local-default-specifier-export");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep per-specifier type modifiers in mixed alias exports", () => {
+      const { expected, result } = runTestCase("mixed-type-value-alias-exports");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep type-only external specifiers type-only in mixed export lists", () => {
+      const { expected, result } = runTestCase("type-only-external-mixed-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should preserve type-only external default re-exports", () => {
+      const { expected, result } = runTestCase("type-only-external-default-reexport");
+      expect(result).toBe(expected);
+    });
+
+    it("should keep type-only local namespace exports type-only", () => {
+      const { expected, result } = runTestCase("type-only-local-namespace-export");
+      expect(result).toBe(expected);
+    });
+
+    it("should import aliased externals re-exported through an inlined wrapper", () => {
+      const { expected, result } = runTestCase("type-only-wrapper-external-alias-reexport");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);
