@@ -246,6 +246,19 @@ export class ExportResolver {
                   exportedName === resolvedOriginalName
                     ? exportedInfo.externalImportName
                     : `${ExportResolver.getExternalImportBaseName(exportedInfo.externalImportName)} as ${exportedName}`;
+                if (externalImportName !== exportedInfo.externalImportName) {
+                  // The aliased binding only exists if registered; the tree shaker emits registered imports only.
+                  const canonical = this.registry.externalImports
+                    .get(exportedInfo.externalModule)
+                    ?.get(exportedInfo.externalImportName);
+                  this.registry.registerExternal(
+                    exportedInfo.externalModule,
+                    externalImportName,
+                    isTypeOnlyExport || (canonical?.isTypeOnly ?? false),
+                    canonical?.isDefaultImport ?? false,
+                    canonical?.typesLibraryName ?? null,
+                  );
+                }
                 this.registry.registerExportedName(filePath, {
                   name: exportedName,
                   externalModule: exportedInfo.externalModule,

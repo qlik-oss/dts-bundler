@@ -313,6 +313,11 @@ describe("TypeScript Declaration Bundler", () => {
       expect(result).toBe(expected);
     });
 
+    it("should import aliased externals re-exported through an inlined wrapper", () => {
+      const { expected, result } = runTestCase("type-only-wrapper-external-alias-reexport");
+      expect(result).toBe(expected);
+    });
+
     it("should handle CommonJS export = from entry", () => {
       const { expected, result } = runTestCase("export-eq-from-entry");
       expect(result).toBe(expected);
