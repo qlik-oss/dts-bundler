@@ -45,15 +45,15 @@
     "@qlik/oxfmt-config": "^0.2.2",
     "@qlik/oxlint-config": "^0.8.3",
     "@qlik/tsconfig": "^1.1.0",
-    "@types/node": "^26.6.4",
-    "oxfmt": "^0.72.0",
-    "oxlint": "^1.87.0",
-    "oxlint-tsgolint": "^7.0.2003",
-    "tsdown": "^0.23.0",
-    "vitest": "^5.0.3"
+    "@types/node": "^26.6.5",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "tsdown": "^0.23.1",
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@12.10.1"
+  "packageManager": "pnpm@12.14.0"
 }
