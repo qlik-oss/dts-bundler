@@ -616,7 +616,7 @@ export class NameNormalizer {
       return false;
     }
 
-    const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+    const tsSymbolFlagsAll = ts.SymbolFlags.All;
     return this.typeChecker.resolveName(name, undefined, tsSymbolFlagsAll, false) !== undefined;
   }
 
@@ -641,7 +641,7 @@ export class NameNormalizer {
         ): ts.Symbol | undefined;
       }
 
-      const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+      const tsSymbolFlagsAll = ts.SymbolFlags.All;
       return (this.typeChecker as Ts54CompatTypeChecker).resolveName(name, undefined, tsSymbolFlagsAll, false);
     };
 
