@@ -2,6 +2,24 @@ import * as ts from "typescript";
 
 export type ModifiersMap = Record<ts.ModifierSyntaxKind, boolean>;
 
+const modifierSyntaxKindMap: Record<string, ts.ModifierSyntaxKind> = {
+  [ts.SyntaxKind.AbstractKeyword]: ts.SyntaxKind.AbstractKeyword,
+  [ts.SyntaxKind.AccessorKeyword]: ts.SyntaxKind.AccessorKeyword,
+  [ts.SyntaxKind.AsyncKeyword]: ts.SyntaxKind.AsyncKeyword,
+  [ts.SyntaxKind.ConstKeyword]: ts.SyntaxKind.ConstKeyword,
+  [ts.SyntaxKind.DeclareKeyword]: ts.SyntaxKind.DeclareKeyword,
+  [ts.SyntaxKind.DefaultKeyword]: ts.SyntaxKind.DefaultKeyword,
+  [ts.SyntaxKind.ExportKeyword]: ts.SyntaxKind.ExportKeyword,
+  [ts.SyntaxKind.InKeyword]: ts.SyntaxKind.InKeyword,
+  [ts.SyntaxKind.PrivateKeyword]: ts.SyntaxKind.PrivateKeyword,
+  [ts.SyntaxKind.ProtectedKeyword]: ts.SyntaxKind.ProtectedKeyword,
+  [ts.SyntaxKind.PublicKeyword]: ts.SyntaxKind.PublicKeyword,
+  [ts.SyntaxKind.ReadonlyKeyword]: ts.SyntaxKind.ReadonlyKeyword,
+  [ts.SyntaxKind.OutKeyword]: ts.SyntaxKind.OutKeyword,
+  [ts.SyntaxKind.OverrideKeyword]: ts.SyntaxKind.OverrideKeyword,
+  [ts.SyntaxKind.StaticKeyword]: ts.SyntaxKind.StaticKeyword,
+};
+
 const modifiersPriority: Partial<Record<ts.ModifierSyntaxKind, number>> = {
   [ts.SyntaxKind.ExportKeyword]: 4,
   [ts.SyntaxKind.DefaultKeyword]: 3,
@@ -32,7 +50,7 @@ export function modifiersToMap(modifiers: readonly ts.Modifier[] | undefined | n
 export function modifiersMapToArray(modifiersMap: ModifiersMap): ts.Modifier[] {
   return Object.entries(modifiersMap)
     .filter(([, include]) => include)
-    .map(([kind]) => ts.factory.createModifier(Number(kind) as ts.ModifierSyntaxKind))
+    .map(([kind]) => ts.factory.createModifier(modifierSyntaxKindMap[kind]))
     .sort((a, b) => {
       const aValue = modifiersPriority[a.kind] ?? 0;
       const bValue = modifiersPriority[b.kind] ?? 0;

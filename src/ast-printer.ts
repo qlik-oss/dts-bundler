@@ -125,7 +125,7 @@ export class AstPrinter {
           return false;
         }
 
-        const tsSymbolFlagsAll = -1 as ts.SymbolFlags;
+        const tsSymbolFlagsAll = ts.SymbolFlags.All;
         const globalSymbol = (typeChecker as Ts54CompatTypeChecker).resolveName(
           identifier.text,
           undefined,
