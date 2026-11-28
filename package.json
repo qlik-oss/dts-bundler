@@ -42,18 +42,18 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "devDependencies": {
-    "@qlik/oxfmt-config": "^0.2.6",
-    "@qlik/oxlint-config": "^0.8.7",
+    "@qlik/oxfmt-config": "^0.2.7",
+    "@qlik/oxlint-config": "^0.8.8",
     "@qlik/tsconfig": "^1.1.0",
-    "@types/node": "^26.6.6",
-    "oxfmt": "^0.79.0",
-    "oxlint": "^1.94.0",
-    "oxlint-tsgolint": "^7.0.2007",
+    "@types/node": "^26.6.11",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
+    "oxlint-tsgolint": "^7.0.2009",
     "tsdown": "^0.23.7",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.2"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@12.21.0"
+  "packageManager": "pnpm@12.23.0"
 }
